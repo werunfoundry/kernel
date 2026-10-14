@@ -15,24 +15,47 @@ enabledDomains:
   - relations
   - gtm
 
-# Each binding names a contract, the adapter that satisfies it, and the
-# environment variables that adapter may read — by name. A relative path is an
-# adapter in this instance; a bare specifier is a published package.
-providers:
-  - contract: crm
-    adapter: ./adapters/example-crm.ts
-    env:
-      - EXAMPLE_CRM_TOKEN
-    options:
-      baseUrl: https://api.example.invalid/v1
+# The networks a social profile or company id may belong to (decision 0013).
+# Named here, never in the engine. A key on a network not listed is refused.
+networks: []
 
-  # - contract: sequencer
-  #   adapter: "@werunfoundry/adapter-something"
-  #   env: [SOMETHING_API_KEY]
+# Every contract the engine has, each bound to a sandbox adapter that answers
+# from invented data in adapters/sandbox-data.json. With these, a new instance
+# migrates, verifies and runs its enrolment path before anyone has an account
+# anywhere. Replace them one at a time with real adapters — `example-crm.ts`
+# shows how one talks to an API — and add the variables each one needs to
+# `env` and to .env.example.
+#
+# A relative path is an adapter in this instance; a bare specifier is a
+# published package. A contract may be bound once per channel (0015).
+providers:
+  - contract: target_list
+    adapter: ./adapters/sandbox-target-list.ts
+    env: []
+  - contract: enrichment
+    adapter: ./adapters/sandbox-enrichment.ts
+    env: []
+  - contract: sequencer
+    adapter: ./adapters/sandbox-sequencer.ts
+    env: []
+  - contract: inbound
+    adapter: ./adapters/sandbox-inbound.ts
+    env: []
+  - contract: metrics
+    adapter: ./adapters/sandbox-metrics.ts
+    env: []
+  - contract: crm
+    adapter: ./adapters/sandbox-crm.ts
+    env: []
+
+  # A real binding looks like this:
   #
-  # - contract: targetList
-  #   adapter: ./adapters/our-warehouse.ts
-  #   env: [WAREHOUSE_CREDENTIALS_JSON]
+  # - contract: sequencer
+  #   adapter: "@werunfoundry/gtm/adapters/<provider>"
+  #   env: [PROVIDER_API_KEY]
+  #   channels: [email]
+  #   options:
+  #     campaign.welcome: <the provider's id for the sequence>
 
 # Where the truth documents live, relative to this file.
 truthsDir: truths

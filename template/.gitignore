@@ -6,3 +6,6 @@
 
 node_modules/
 *.log
+
+# What the sandbox adapters write. Local to this checkout, never shared.
+.sandbox-state.json

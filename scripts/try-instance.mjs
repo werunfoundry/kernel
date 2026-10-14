@@ -5,34 +5,37 @@
  * Inside the workspace the packages resolve to TypeScript source, through
  * links, with a loader in the tests — three things no instance will have. So
  * nothing run inside the workspace says whether a published kernel works.
- * This does it the long way round (decision 0008):
+ * This does it the long way round (decision 0008), with nothing added to the
+ * instance by hand:
  *
  *   1. pack every package, which builds it clean — the tarballs are what a
  *      publish would upload, byte for byte;
  *   2. generate an instance from `template/` into a temporary directory,
  *      outside the workspace, and install those tarballs into it;
- *   3. apply the migrations the packages ship, from the instance's own
- *      `node_modules`, to a real database;
- *   4. run the instance's checks and its `verify`, on plain Node — no loader,
- *      no flag — against a provider that answers;
- *   5. fail unless the run was opened, the provider was called with its id,
- *      and the run was closed as succeeded.
+ *   3. `kernel-migrate`: install the schemas from what the packages ship;
+ *   4. `kernel-check-instance` and `kernel-verify`, on plain Node — no
+ *      loader, no flag — which must find the configuration real, and every
+ *      experiment type measurable;
+ *   5. `kernel-enrol`, three times: a dry run that writes nothing, a live run
+ *      that enrols the open accounts' people and skips the protected one, and
+ *      a replay that enrols nobody twice. Every run is read back from the
+ *      database.
  *
  *   TEST_DATABASE_URL=postgresql://… node scripts/try-instance.mjs
  *
- * With `--manifest <file>`, that manifest replaces the template's and verify
- * talks to the providers it binds — a real one, with a real key — instead of
- * the fake one below. The variables the manifest names are passed through
- * from this process's environment, and nothing else is. Keep that manifest
- * outside the repository: it is an instance's file.
+ * With `--manifest <file>`, that manifest replaces the template's, and steps
+ * 3 and 4 run against the providers it binds — real ones, with real keys.
+ * Step 5 does not: enrolling through a real provider writes to a real
+ * workspace, which is never done without someone saying so. The variables the
+ * manifest names are passed through from this process's environment, and
+ * nothing else is. Keep that manifest outside the repository.
  *
- * Drops and recreates the `core`, `relations` and `gtm` schemas in that
+ * Drops the `core`, `relations`, `gtm` and `drizzle` schemas in that
  * database. Point it at a database that exists to be thrown away.
  */
 
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,9 +51,8 @@ if (!url) {
   process.exit(2);
 }
 
-/** In dependency order: the order the migrations must be applied in. */
 const PACKAGES = ["core", "domains/relations", "domains/gtm"];
-const SCHEMAS = ["gtm", "relations", "core"];
+const SCHEMAS = ["gtm", "relations", "core", "drizzle"];
 
 const work = mkdtempSync(join(tmpdir(), "try-instance-"));
 const packs = join(work, "packs");
@@ -71,8 +73,13 @@ function spawnAsync(cmd, args, options) {
   });
 }
 
-let server;
 let failed = false;
+const expect = (ok, why) => {
+  if (!ok) {
+    failed = true;
+    console.error(`try-instance: ${why}`);
+  }
+};
 
 try {
   step("pack");
@@ -86,8 +93,6 @@ try {
   sh(process.execPath, [join(kernel, "scripts/new-instance.mjs"), root], kernel);
   const pkgPath = join(root, "package.json");
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-  // The tarballs depend on each other by version, and that version is not on
-  // a registry yet: every reference, direct or not, is pointed at the file.
   for (const [name, file] of Object.entries(tarballs)) {
     if (pkg.dependencies[name]) pkg.dependencies[name] = `file:${file}`;
   }
@@ -97,82 +102,89 @@ try {
   const overrides = Object.entries(tarballs).map(([n, f]) => [n, `file:${f}`]);
   pkg.pnpm = { overrides: Object.fromEntries(overrides) };
   writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-  writeFileSync(
-    join(root, "pnpm-workspace.yaml"),
-    `overrides:\n${overrides.map(([n, f]) => `  "${n}": "${f.startsWith("file:") ? f : `file:${f}`}"\n`).join("")}`,
-  );
+  writeFileSync(join(root, "pnpm-workspace.yaml"), `overrides:\n${overrides.map(([n, f]) => `  "${n}": "${f}"\n`).join("")}`);
   sh("pnpm", ["install"], root);
 
-  step("migrate, from what the packages ship");
+  /** Credentials for the commands: none for the sandboxes, or those a real manifest names. */
+  let credentials = {};
+  if (realManifest) {
+    const text = readFileSync(realManifest, "utf8");
+    writeFileSync(join(root, "manifest.yaml"), text);
+    // Only names that are declared and set. Values never reach the output.
+    const names = new Set(text.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? []);
+    credentials = Object.fromEntries([...names].filter((n) => process.env[n]).map((n) => [n, process.env[n]]));
+  }
+  // Nothing inherited that could load a loader behind a command's back.
+  const env = { PATH: process.env.PATH, USER: process.env.USER ?? "", DATABASE_URL: url, DIRECT_URL: url, ...credentials };
+  const bin = (name, args = []) => spawnAsync(join(root, "node_modules/.bin", name), args, { cwd: root, env });
+  const show = (r) =>
+    console.log(`${r.stdout}${r.stderr}`.trim().split("\n").filter((l) => !/ExperimentalWarning|trace-warnings/.test(l)).join("\n"));
+
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   for (const schema of SCHEMAS) await client.query(`drop schema if exists ${schema} cascade`);
-  for (const pkgDir of PACKAGES) {
-    const name = pkgDir.split("/").pop();
-    const dir = join(root, "node_modules/@werunfoundry", name, "db/migrations");
-    for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
-      await client.query(readFileSync(join(dir, file), "utf8"));
-      console.log(`${name}/${file}`);
-    }
-  }
+  const runRow = async (id) => (await client.query("select status, dry_run from core.run where id = $1", [id])).rows[0];
+
+  step("migrate, with the kernel's own command");
+  const migrated = await bin("kernel-migrate");
+  show(migrated);
+  expect(migrated.status === 0, `kernel-migrate exited ${migrated.status}`);
+  const again = await bin("kernel-migrate");
+  expect(again.status === 0, `kernel-migrate, run twice, exited ${again.status}`);
 
   step("the instance checks itself");
   sh("git", ["init", "-q"], root);
   console.log(sh(join(root, "node_modules/.bin/kernel-check-instance"), [], root).trim());
 
-  step(realManifest ? "verify, on plain Node, against the providers the manifest binds" : "verify, on plain Node");
-  const calls = [];
-  const manifest = join(root, "manifest.yaml");
-  /** Credentials for verify: the fake's, or those a real manifest names. */
-  let credentials = { EXAMPLE_CRM_TOKEN: "try-instance" };
-  if (realManifest) {
-    const text = readFileSync(realManifest, "utf8");
-    writeFileSync(manifest, text);
-    // Only names that are declared and set. Values never reach the output.
-    const names = new Set(text.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? []);
-    credentials = Object.fromEntries([...names].filter((n) => process.env[n]).map((n) => [n, process.env[n]]));
-  } else {
-    server = createServer((req, res) => {
-      calls.push({ path: req.url, runId: req.headers["x-run-id"] });
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ data: [] }));
-    });
-    await new Promise((r) => server.listen(0, "127.0.0.1", r));
-    writeFileSync(
-      manifest,
-      readFileSync(manifest, "utf8").replace("https://api.example.invalid/v1", `http://127.0.0.1:${server.address().port}`),
-    );
+  step(realManifest ? "verify, against the providers the manifest binds" : "verify, against the sandboxes");
+  const verified = await bin("kernel-verify");
+  show(verified);
+  const verifyId = verified.stdout.match(/run: ([0-9a-f-]{36}) opened/)?.[1];
+  expect(verified.status === 0, `verify exited ${verified.status}`);
+  expect(Boolean(verifyId), "verify opened no run");
+  expect(/This configuration is real\./.test(verified.stdout), "verify did not find the configuration real");
+  const verifyRow = verifyId ? await runRow(verifyId) : undefined;
+  expect(verifyRow?.status === "succeeded" && verifyRow?.dry_run === true, `the verify run reads ${JSON.stringify(verifyRow)}`);
+
+  if (!realManifest) {
+    expect(/experiments: 6 of 6 measurable/.test(verified.stdout), "not every experiment type is measurable with the template's sources");
+
+    const enrolArgs = ["--sequence", "welcome", "--channel", "email", "--max-age", "60"];
+    const state = join(root, ".sandbox-state.json");
+    const enrolled = (out) => Number(out.match(/(?:would enrol|enrolled): (\d+)/)?.[1] ?? -1);
+    const runOf = async (out) => {
+      const id = out.match(/^run: ([0-9a-f-]{36})/m)?.[1];
+      return id ? await runRow(id) : undefined;
+    };
+
+    step("enrol, dry run");
+    const dry = await bin("kernel-enrol", enrolArgs);
+    show(dry);
+    expect(dry.status === 0, `the dry run exited ${dry.status}`);
+    expect(enrolled(dry.stdout) === 3, "the dry run would not enrol the three open people");
+    expect(!existsSync(state), "the dry run wrote the sandbox's state");
+    expect((await runOf(dry.stdout))?.dry_run === true, "the dry run is not recorded as one");
+
+    step("enrol, live");
+    const live = await bin("kernel-enrol", [...enrolArgs, "--live"]);
+    show(live);
+    expect(live.status === 0, `the live run exited ${live.status}`);
+    expect(enrolled(live.stdout) === 3, "the live run did not enrol the three open people");
+    expect(/skipped, protected: 1/.test(live.stdout), "the protected account was not skipped as protected");
+    const held = existsSync(state) ? Object.keys(JSON.parse(readFileSync(state, "utf8")).enrolments.welcome ?? {}) : [];
+    expect(!held.some((e) => e.endsWith("customer.example.net")), "a protected account's person was enrolled");
+    expect(held.length === 3, `the sequencer holds ${held.length} people, not 3`);
+    const liveRow = await runOf(live.stdout);
+    expect(liveRow?.status === "succeeded" && liveRow?.dry_run === false, `the live run reads ${JSON.stringify(liveRow)}`);
+
+    step("enrol, replayed");
+    const replay = await bin("kernel-enrol", [...enrolArgs, "--live"]);
+    show(replay);
+    expect(replay.status === 0, `the replay exited ${replay.status}`);
+    expect(enrolled(replay.stdout) === 0, "the replay enrolled someone again");
+    expect(/skipped, duplicate: 3/.test(replay.stdout), "the replay did not see the three as duplicates");
   }
-
-  // Asynchronous, and not for style: the provider above answers from this
-  // process, and a synchronous spawn would stop it answering — the script
-  // under test would wait on a server that is waiting on it.
-  const run = await spawnAsync(join(root, "node_modules/.bin/kernel-verify"), [], {
-    cwd: root,
-    // Nothing inherited that could load a loader behind this script's back.
-    env: { PATH: process.env.PATH, USER: process.env.USER ?? "", DATABASE_URL: url, ...credentials },
-  });
-  console.log(`${run.stdout}${run.stderr}`.trim());
-
-  const id = run.stdout.match(/run: ([0-9a-f-]{36}) opened/)?.[1];
-  const row = id ? (await client.query("select status, dry_run from core.run where id = $1", [id])).rows[0] : undefined;
   await client.end();
-
-  const expect = [
-    [run.status === 0, `verify exited ${run.status}`],
-    [Boolean(id), "no run was opened"],
-    // A real provider is not ours to inspect; verify's own report and the
-    // row it closed are the evidence then.
-    [Boolean(realManifest) || calls.some((c) => c.runId === id), "the provider was never called with the run's id"],
-    [!realManifest || /answered in \d+ ms/.test(run.stdout), "no adapter answered a probe"],
-    [row?.status === "succeeded" && row?.dry_run === true, `the run row reads ${JSON.stringify(row)}`],
-  ];
-  for (const [ok, why] of expect) {
-    if (!ok) {
-      failed = true;
-      console.error(`try-instance: ${why}`);
-    }
-  }
 } catch (error) {
   failed = true;
   // A failed command carries its output; without it the report is "failed".
@@ -180,9 +192,10 @@ try {
   console.error(`try-instance: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
   if (output) console.error(output.split("\n").slice(-25).join("\n"));
 } finally {
-  server?.close();
   rmSync(work, { recursive: true, force: true });
 }
 
-console.log(failed ? "\ntry-instance: failed" : "\ntry-instance: an instance installed from the packs runs on plain Node");
+console.log(
+  failed ? "\ntry-instance: failed" : "\ntry-instance: an instance generated from the template migrates, verifies and enrols on plain Node",
+);
 process.exit(failed ? 1 : 0);

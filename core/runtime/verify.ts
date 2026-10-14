@@ -28,8 +28,9 @@ import type { AdapterEnv } from "../contracts/types.js";
 import { loadTruths } from "../manifest/load.js";
 import { measurability } from "../manifest/measure.js";
 import { boot } from "./boot.js";
-import { resolvePackage } from "./resolve.js";
-import type { Database, OpenRun } from "./run.js";
+import type { Connection } from "./connect.js";
+import { connect } from "./connect.js";
+import type { OpenRun } from "./run.js";
 import { openRun } from "./run.js";
 
 export interface VerifyOptions {
@@ -39,44 +40,6 @@ export interface VerifyOptions {
   env: AdapterEnv;
   /** Where the report goes, one line at a time. */
   say?: (line: string) => void;
-}
-
-interface Connection {
-  db: Database;
-  end(): Promise<void>;
-}
-
-/**
- * The instance's driver, not one the kernel picks (see `run.ts`): `pg` and
- * `drizzle-orm` are resolved from the instance root, as decision 0007 resolves
- * every name the instance chose. The kernel declares neither.
- */
-async function connect(url: string, root: string): Promise<Connection> {
-  let pg: {
-    Client: new (config: { connectionString: string }) => {
-      connect(): Promise<void>;
-      end(): Promise<void>;
-      on(event: "error", listener: (error: Error) => void): void;
-    };
-  };
-  let drizzle: (client: unknown) => unknown;
-  try {
-    pg = ((await import(resolvePackage("pg", root))) as { default: typeof pg }).default;
-    ({ drizzle } = (await import(resolvePackage("drizzle-orm/node-postgres", root))) as { drizzle: typeof drizzle });
-  } catch (error) {
-    throw new Error(
-      `verify connects with this instance's own pg and drizzle-orm, and could not load them — ` +
-        `add both to its dependencies (${(error as Error).message.split("\n")[0]})`,
-    );
-  }
-  const client = new pg.Client({ connectionString: url });
-  // A connection the server drops emits "error" outside any await. Without a
-  // listener that is an uncaught exception, and the process dies with a stack
-  // trace instead of a report. The failure itself surfaces where it matters:
-  // in the query that needed the connection.
-  client.on("error", () => {});
-  await client.connect();
-  return { db: drizzle(client) as Database, end: () => client.end() };
 }
 
 /** Returns the exit code: 0 only when every step answered. */
@@ -141,7 +104,7 @@ export async function verify(options: VerifyOptions): Promise<number> {
 
   let connection: Connection;
   try {
-    connection = await connect(url, options.root);
+    connection = await connect(url, options.root, "verify");
   } catch (error) {
     say(`\nrun: cannot reach the database — ${(error as Error).message}`);
     return 1;

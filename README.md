@@ -33,14 +33,14 @@ scripts/              checks that make the doctrine enforceable
 | Piece | State |
 | --- | --- |
 | Doctrine | written, and checked by `scripts/check.mjs` |
-| Schema | written; migrations generated and applied in CI |
-| Contracts | written; two of them implemented |
+| Schema | written; migrations generated, and applied by `kernel-migrate` in a generated instance in CI |
+| Contracts | written, every capability: target list, enrichment, sequencer (every channel), inbound, metrics, CRM (0013–0018) |
 | Manifest | written, validated |
 | Binding resolver | written |
 | Run recorder | written |
 | Boot | written; resolves every name from the instance (0007) |
-| End to end | once: boot, a dry run, one adapter call, the run closed — `pnpm verify` in an instance |
-| Instance template | written, with one reference adapter |
+| End to end | in CI, a generated instance migrates, verifies and runs the enrolment path — dry, live and replayed (0019) |
+| Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
 | Adapters | two: an example against an invented API, and a sequencer verified read-only against a live provider (0011) |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
 

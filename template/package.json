@@ -9,9 +9,10 @@
   },
   "scripts": {
     "check": "kernel-check-instance",
+    "migrate": "kernel-migrate",
     "verify": "kernel-verify",
-    "typecheck": "tsc --noEmit",
-    "db:migrate": "echo 'runs the kernel migrations in dependency order — see README'"
+    "enrol": "kernel-enrol",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@werunfoundry/core": "workspace:*",

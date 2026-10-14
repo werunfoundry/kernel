@@ -306,6 +306,24 @@ describe("the enrolment path", { skip: base ? false : "TEST_DATABASE_URL is not 
     assert.deepEqual(r.capacity, { checked: false, why: "no sender was given" });
   });
 
+  it("stops, rather than calling it zero, when a provider does not say what capacity is left", async () => {
+    const original = sequencer.capacity;
+    sequencer.capacity = async ({ sender, channel }) => ok({ sender, channel, unit: "messages", window: "day" as const, asOf: NOW.toISOString() });
+    try {
+      const r = await run({ senders: [{ externalId: "sender@example.com" }] });
+      assert.equal(r.status, "failed");
+      assert.match(r.stoppedBy ?? "", /did not say what is left/);
+      assert.equal(world.enrolCalls, 0);
+    } finally {
+      sequencer.capacity = original;
+    }
+  });
+
+  it("records every run it opens, and says so", async () => {
+    const r = await run();
+    assert.equal(r.recorded, true);
+  });
+
   it("stops before enrolling when capacity cannot be read", async () => {
     world.failing.add("capacity");
     const r = await run({ senders: [{ externalId: "sender@example.com" }] });

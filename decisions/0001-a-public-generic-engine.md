@@ -1,5 +1,8 @@
 # 0001 — A public, generic engine, with private instances
 
+> Superseded in part by [0005](0005-an-instance-may-carry-its-own-adapters.md):
+> an instance may carry its own adapters.
+
 ## Decided
 
 The engine is one public repository, owned by an organisation that is not any

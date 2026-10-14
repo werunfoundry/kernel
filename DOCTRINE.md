@@ -101,4 +101,17 @@ An instance is generated from `template/` and depends on this package. It is
 not a copy of this repository.
 
 It holds its configuration, its context, its manifest values and its secrets.
-It holds no engine code: no adapter, no domain logic. That boundary is checked.
+
+It may also hold adapters, in one place — `adapters/` at its root — because
+there is always a tool this repository did not anticipate, and an engine that
+can only be used with the adapters it ships is not agnostic. A binding names a
+relative path for an instance's own adapter, or a package name for a published
+one.
+
+It holds nothing else that is code. No domain logic, no schema, no migration,
+no rule about who is targeted or suppressed. An adapter that reaches into the
+database, or that decides who to skip, is not an adapter — it is a domain
+that was written in the wrong repository.
+
+Both halves of that boundary are checked, by a check this package ships and
+the instance runs.

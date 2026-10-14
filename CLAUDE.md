@@ -97,6 +97,11 @@ the migration to a real database. Execute the script rather than reasoning
 about what it would do. When a test cannot run here, say so and say what was
 verified instead — never let "it should work" stand as a result.
 
+An injected seam tests the logic and hides the integration. When a test
+injects what it should pass through, also write the case that passes through
+it for real. The binding resolver's tests injected the importer, passed, and
+covered a resolver that could not load a single published adapter.
+
 ## 6. Decisions
 
 A decision that changes a boundary gets a file in `decisions/`, numbered, with

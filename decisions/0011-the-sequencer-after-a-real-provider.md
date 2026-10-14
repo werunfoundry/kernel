@@ -1,5 +1,7 @@
 # 0011 — The sequencer, after a real provider
 
+> Completed by [0012](0012-one-provider-workspace-per-instance.md): one provider workspace per instance.
+
 ## Decided
 
 The `Sequencer` contract changes in five places, all forced by writing its

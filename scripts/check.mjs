@@ -13,14 +13,25 @@ import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 
 const staged = process.argv.includes("--staged");
+const messageAt = process.argv.indexOf("--message");
 
-// Tracked *and* not-yet-tracked files. A check that only sees the index is
-// blind in a repository whose first commit has not happened yet.
 const list = staged
   ? "git diff --cached --name-only --diff-filter=ACMR"
   : "git ls-files --cached --others --exclude-standard";
 
-const files = execSync(list, { encoding: "utf8" })
+function listFiles(command) {
+  try {
+    return execSync(command, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (error) {
+    // A gate that answers a git problem with a stack trace is a gate people
+    // stop reading. Say what happened, in one line, and exit distinctly.
+    const detail = String(error?.stderr ?? error?.message ?? error).trim().split("\n")[0];
+    console.error(`doctrine: cannot list the files to check — ${detail}`);
+    process.exit(2);
+  }
+}
+
+const files = listFiles(list)
   .split("\n")
   .map((f) => f.trim())
   .filter(Boolean)
@@ -31,6 +42,32 @@ const files = execSync(list, { encoding: "utf8" })
       return false; // deleted in this commit
     }
   });
+
+/**
+ * Two listings, and the difference matters.
+ *
+ * Content checks — secrets, fixtures, provider names — look at what is being
+ * committed, so in `--staged` mode they see the staged files only.
+ *
+ * Structural checks — which layer depends on which, where an adapter lives,
+ * whether a domain declares itself — are about the repository as a whole. Run
+ * on a partial listing they report that `domains/x` has no `domain.yaml`
+ * whenever a commit happens not to touch that file, which is almost every
+ * commit. A gate that fires on correct work is a gate that gets bypassed.
+ */
+const allFiles = staged
+  ? listFiles("git ls-files --cached --others --exclude-standard")
+      .split("\n")
+      .map((f) => f.trim())
+      .filter(Boolean)
+      .filter((f) => {
+        try {
+          return statSync(f).isFile();
+        } catch {
+          return false;
+        }
+      })
+  : files;
 
 const failures = [];
 const fail = (rule, file, line, msg) =>
@@ -50,6 +87,40 @@ const SECRETS = [
   [/postgres(?:ql)?:\/\/[^\s:@/]+:[^\s@]{6,}@/, "connection string with password"],
 ];
 
+/* -- Rule 7: a commit message is as permanent as a file ----------------- */
+
+/**
+ * A commit message cannot be edited after it is pushed. Anything in it —
+ * a token pasted into a description, a link to internal tooling, a client
+ * name in a "fixes X for Y" — is published on the same terms as the code,
+ * and is not covered by any check that looks at files.
+ */
+const PRIVATE_IN_MESSAGE = [
+  [/\bclaude\.ai\/[^\s)]+/i, "a link to a private assistant session"],
+  [/\bchatgpt\.com\/[^\s)]+/i, "a link to a private assistant session"],
+  [/\bsession[_-][A-Za-z0-9]{12,}/, "an internal session identifier"],
+];
+
+if (messageAt !== -1) {
+  const file = process.argv[messageAt + 1];
+  const body = readFileSync(file, "utf8");
+  const problems = [];
+  body.split("\n").forEach((text, i) => {
+    if (text.startsWith("#")) return; // git's own comments, never committed
+    for (const [re, what] of [...SECRETS, ...PRIVATE_IN_MESSAGE]) {
+      const hit = text.match(re);
+      if (hit) problems.push(`  line ${i + 1}: ${what} — ${hit[0].slice(0, 60)}`);
+    }
+  });
+  if (problems.length === 0) process.exit(0);
+  console.error("\ndoctrine 7: this commit message would be published as written\n");
+  console.error(problems.join("\n"));
+  console.error("\nA pushed commit message cannot be edited. Remove it and commit again.\n");
+  process.exit(1);
+}
+
+// Tracked *and* not-yet-tracked files. A check that only sees the index is
+// blind in a repository whose first commit has not happened yet.
 /* -- Rule 7: fixtures are invented -------------------------------------- */
 
 const IS_FIXTURE = /(^|\/)(fixtures?|__fixtures__|seed|seeds)(\/|$)/i;
@@ -87,6 +158,14 @@ for (const file of files) {
     continue;
   }
   if (body.includes("\u0000")) continue; // binary
+
+  if (file.endsWith(".json")) {
+    try {
+      JSON.parse(body);
+    } catch (error) {
+      fail(6, file, 0, `is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   const lines = body.split("\n");
   const fixture = IS_FIXTURE.test(file);
@@ -169,7 +248,7 @@ function layerOf(file) {
 }
 
 const layers = new Map([["core", { dependsOn: [], schema: "core" }]]);
-for (const file of files) {
+for (const file of allFiles) {
   if (!/^domains\/[^/]+\/domain\.yaml$/.test(file)) continue;
   const declared = readDomainYaml(file);
   const dir = file.split("/")[1];
@@ -187,7 +266,7 @@ for (const [name, layer] of layers) {
   }
 }
 
-for (const file of files) {
+for (const file of allFiles) {
   if (!/\.ts$/.test(file)) continue;
   const self = layerOf(file);
   if (self === null) continue;
@@ -250,7 +329,7 @@ const SCHEMA_HOME = /^(core|domains\/[^/]+)\/db\/schema\.ts$/;
 
 const domainFolders = new Set();
 
-for (const file of files) {
+for (const file of allFiles) {
   if (ADAPTER_SEGMENT.test(file) && !ADAPTER_HOME.test(file)) {
     fail(6, file, 0, "an adapter lives in domains/<name>/adapters/ and nowhere else");
   }

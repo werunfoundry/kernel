@@ -28,6 +28,11 @@ jobs:
       - name: doctrine checks
         run: node scripts/check.mjs
 
+      # The checks are the only thing enforcing the doctrine, so they are the
+      # one file that must not be trusted on sight.
+      - name: test the checks
+        run: node --test "scripts/**/*.test.mjs"
+
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
 

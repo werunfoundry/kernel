@@ -8,6 +8,7 @@
   },
   "scripts": {
     "check": "node scripts/check.mjs",
+    "test": "node --test \"scripts/**/*.test.mjs\"",
     "prepare": "git config core.hooksPath .githooks",
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm -r --workspace-concurrency=1 db:generate",

@@ -1,0 +1,4 @@
+#!/bin/sh
+# A commit message is published on the same terms as the code, and cannot be
+# edited once pushed. See doctrine 7.
+exec node "$(dirname "$0")/../scripts/check.mjs" --message "$1"

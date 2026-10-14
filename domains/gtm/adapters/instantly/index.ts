@@ -37,6 +37,10 @@
  *   domain and, per Instantly's help centre, is checked "across ongoing
  *   campaigns" as well as at upload. Workspace-wide: it stops every campaign,
  *   and refuses the address in future uploads.
+ * - **One channel, `email`** (decision 0014). A person is reached by the
+ *   `email` key of their identity; an identity without one is refused.
+ *   `suppress` applies an identity's `email` keys and, for a company, its
+ *   `domain` keys, and reports every other key as one it cannot act on.
  * - **Capacity is per account**: its `daily_limit`, and what it sent today
  *   from the daily account analytics. A campaign may also cap sending
  *   (`daily_limit`, `daily_max_leads`); the contract has no place for that.
@@ -49,13 +53,15 @@ import type {
   CallResult,
 } from "@werunfoundry/core/contracts/types";
 
+import type { Identity, IdentityKey } from "@werunfoundry/core/identity";
+
 import type {
+  Capacity,
   Enrolment,
   EnrolmentState,
   EnrolmentStatus,
-  SenderCapacity,
-  SenderRef,
   Sequencer,
+  Suppression,
 } from "../../contracts/sequencer.js";
 
 /* -------------------------------------------------------------------------- */
@@ -227,6 +233,13 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     );
   }
 
+  /** The first `email` key: how Instantly reaches a person. */
+  const emailOf = (person: Identity): string | undefined =>
+    person.keys.find((k) => k.kind === "email" && k.value.trim() !== "")?.value.trim().toLowerCase();
+  const offChannel = (channel: string) =>
+    fail("invalid", `this adapter serves the channel "email" only, not "${channel}"`);
+  const noEmail = () => fail("invalid", "Instantly reaches a person by email; this identity has no email key");
+
   const nameParts = (fullName?: string) => {
     const [first, ...rest] = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
     return { ...(first ? { first_name: first } : {}), ...(rest.length ? { last_name: rest.join(" ") } : {}) };
@@ -234,6 +247,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
 
   return {
     provider: "instantly",
+    channels: ["email"],
 
     /**
      * Listing one campaign: the cheapest authenticated read, and one that
@@ -250,11 +264,12 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     async enrol(enrolment, ctx): Promise<CallResult<EnrolmentStatus>> {
       const campaign = campaignFor(enrolment.sequenceKey);
       if (!campaign) return unmapped(enrolment.sequenceKey);
+      if (enrolment.channel !== "email") return offChannel(enrolment.channel);
       if (enrolment.sender) {
         return fail("invalid", "Instantly chooses the sender from the campaign's accounts; enrol without a sender");
       }
-      const email = enrolment.person.email;
-      if (!email) return fail("invalid", "Instantly identifies a person by email; this enrolment has none");
+      const email = emailOf(enrolment.person);
+      if (!email) return noEmail();
 
       const found = await findLead(email, campaign, ctx);
       if (!found.ok) return found;
@@ -285,7 +300,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       };
       const added = await call<BulkAdd>("POST", "/api/v2/leads/add", ctx, {
         campaign_id: campaign,
-        leads: [{ email, ...nameParts(enrolment.person.fullName), custom_variables: variables }],
+        leads: [{ email, ...nameParts(enrolment.display?.fullName), custom_variables: variables }],
       });
       if (!added.ok) return added;
 
@@ -310,8 +325,8 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     async withdraw(request, ctx): Promise<CallResult<void>> {
       const campaign = campaignFor(request.sequenceKey);
       if (!campaign) return unmapped(request.sequenceKey);
-      const email = request.person.email;
-      if (!email) return fail("invalid", "Instantly identifies a person by email; this request has none");
+      const email = emailOf(request.person);
+      if (!email) return noEmail();
 
       const found = await findLead(email, campaign, ctx);
       if (!found.ok) return found;
@@ -323,28 +338,42 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       return deleted.ok ? { ok: true, value: undefined } : deleted;
     },
 
-    async suppress(request, ctx): Promise<CallResult<void>> {
-      // Instantly's format: a full address for a person, a bare domain —
-      // `example.com`, not `@example.com` — for an account.
-      const value = ("email" in request.target ? request.target.email : request.target.domain.replace(/^@/, ""))
-        .trim()
-        .toLowerCase();
-      if (!value) return fail("invalid", "nothing to suppress");
+    async suppress(request, ctx): Promise<CallResult<Suppression>> {
+      // Instantly's blocklist takes a full address, or a bare domain —
+      // `example.com`, not `@example.com` — which blocks a whole account.
+      // Every other key — a profile id, a company id — is one this provider
+      // cannot act on, and is reported as such.
+      const actionable: { key: IdentityKey; value: string }[] = [];
+      const notApplicable: IdentityKey[] = [];
+      for (const key of request.target.keys) {
+        const value = key.kind === "email" ? key.value.trim().toLowerCase()
+          : key.kind === "domain" ? key.value.trim().toLowerCase().replace(/^@/, "")
+          : "";
+        if (value) actionable.push({ key, value });
+        else notApplicable.push(key);
+      }
+      if (actionable.length === 0) {
+        return fail("invalid", "none of this identity's keys is an email or a domain, which is all Instantly can block");
+      }
 
-      const blocked = await isBlocked(value, ctx);
-      if (!blocked.ok) return blocked;
-      if (blocked.value) return { ok: true, value: undefined }; // idempotent: already on the list
-      if (ctx.dryRun) return { ok: true, simulated: true, value: undefined };
-
-      const created = await call<unknown>("POST", "/api/v2/block-lists-entries", ctx, { bl_value: value });
-      return created.ok ? { ok: true, value: undefined } : created;
+      const applied: IdentityKey[] = [];
+      for (const { key, value } of actionable) {
+        const blocked = await isBlocked(value, ctx);
+        if (!blocked.ok) return blocked;
+        if (!blocked.value && !ctx.dryRun) {
+          const created = await call<unknown>("POST", "/api/v2/block-lists-entries", ctx, { bl_value: value });
+          if (!created.ok) return created;
+        }
+        applied.push(key);
+      }
+      return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { applied, notApplicable } };
     },
 
     async status(request, ctx): Promise<CallResult<EnrolmentStatus>> {
       const campaign = campaignFor(request.sequenceKey);
       if (!campaign) return unmapped(request.sequenceKey);
-      const email = request.person.email;
-      if (!email) return fail("invalid", "Instantly identifies a person by email; this request has none");
+      const email = emailOf(request.person);
+      if (!email) return noEmail();
 
       const found = await findLead(email, campaign, ctx);
       if (!found.ok) return found;
@@ -354,7 +383,8 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       return { ok: true, value: statusOf(found.value, request.sequenceKey) };
     },
 
-    async capacity(sender: SenderRef, ctx): Promise<CallResult<SenderCapacity>> {
+    async capacity({ sender, channel }, ctx): Promise<CallResult<Capacity>> {
+      if (channel !== "email") return offChannel(channel);
       const email = encodeURIComponent(sender.externalId);
       const account = await call<Account>("GET", `/api/v2/accounts/${email}`, ctx);
       if (!account.ok) return account;
@@ -380,9 +410,12 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         ok: true,
         value: {
           sender,
-          ...(limit !== undefined ? { dailyLimit: limit } : {}),
-          usedToday: sent,
-          ...(limit !== undefined ? { remainingToday: sending ? Math.max(0, limit - sent) : 0 } : {}),
+          channel,
+          unit: "messages",
+          window: "day",
+          ...(limit !== undefined ? { limit } : {}),
+          used: sent,
+          ...(limit !== undefined ? { remaining: sending ? Math.max(0, limit - sent) : 0 } : {}),
           asOf: new Date().toISOString(),
         },
       };

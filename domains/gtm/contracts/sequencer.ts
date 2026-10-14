@@ -1,19 +1,24 @@
 /**
- * gtm/contracts — the outreach tool.
+ * gtm/contracts — the outreach tool, on every channel it reaches.
  *
  * The engine owns the copy, the variant and the decision to send; the
- * sequencer owns delivery, timing and the mailbox. Nothing here lets a caller
- * author a sequence or edit a step: a message that exists only in the provider
- * is a message no experiment can attribute, and doctrine 1 puts what is being
- * tried in the core.
+ * sequencer owns delivery, timing and the mailbox or profile. Nothing here
+ * lets a caller author a sequence or edit a step: a message that exists only
+ * in the provider is a message no experiment can attribute, and doctrine 1
+ * puts what is being tried in the core.
  *
- * `suppress` is as important as `enrol`, and is the reason this contract exists
- * at all rather than a fire-and-forget send. An account can become protected
- * after enrolment (decision 0004); without a way to stop every running
- * sequence reaching it, protection is a promise that holds only until the
- * next step fires. `withdraw` is the narrower, ordinary act — this person,
- * out of this sequence — and the two were one method until the first real
- * provider showed they are different operations (decision 0011).
+ * One contract for every channel, not one per channel (decision 0014). An
+ * adapter declares the channels it serves — values from the `channels` the
+ * enabled domains declare — and is asked about one channel at a time, except
+ * by `suppress`, which is never about one channel: a person suppressed on one
+ * channel and reachable on another is a hole in protection, not a scope.
+ *
+ * `suppress` is as important as `enrol`, and is the reason this contract
+ * exists at all rather than a fire-and-forget send. An account can become
+ * protected after enrolment (decision 0004); without a way to stop every
+ * running sequence reaching it, protection is a promise that holds only until
+ * the next step fires. `withdraw` is the narrower, ordinary act — this
+ * person, out of this sequence (decision 0011).
  *
  * A single message is a one-step sequence. There is no `send` here, so that
  * there is one path and one place where suppression is checked.
@@ -24,8 +29,9 @@ import type {
   CallContext,
   CallResult,
 } from "@werunfoundry/core/contracts/types";
+import type { Identity, IdentityKey } from "@werunfoundry/core/identity";
 
-/** The mailbox or profile a touch leaves from. Capacity is per sender. */
+/** The mailbox or profile a touch leaves from. Capacity is per sender and channel. */
 export interface SenderRef {
   /** The provider's identifier for the sender. */
   externalId: string;
@@ -47,13 +53,25 @@ export interface Enrolment {
   /** The sequence as the instance declared it, not as the provider names it. */
   sequenceKey: string;
   /**
+   * The channel this enrolment is for — one the adapter declares. An adapter
+   * asked for a channel it does not serve refuses as `invalid`.
+   */
+  channel: string;
+  /**
    * Who it must leave from. Optional, because some providers choose the
    * sender themselves, rotating across a pool the sequence owns. An adapter
    * that cannot honour an explicit sender refuses the enrolment as `invalid`
    * rather than accepting it and sending from someone else.
    */
   sender?: SenderRef;
-  person: { email?: string; externalId?: string; fullName?: string };
+  /**
+   * Who (decision 0013). The adapter reads the keys its channel reaches
+   * people by; an identity without one is refused as `invalid`, never
+   * enrolled under a guess.
+   */
+  person: Identity;
+  /** For the provider's templates and for humans. Never used for matching. */
+  display?: { fullName?: string };
   /**
    * Values substituted into the steps. The engine renders what it can itself;
    * what remains here is what the provider must resolve at send time.
@@ -66,6 +84,12 @@ export interface Enrolment {
 export type EnrolmentState =
   | "active"
   | "paused"
+  /**
+   * Enrolled, and waiting on a precondition the adapter declared for this
+   * channel — a connection accepted before a message can be sent. Not
+   * failed, and not yet reaching anyone.
+   */
+  | "awaiting_precondition"
   | "finished"
   | "stopped"
   | "bounced"
@@ -80,23 +104,53 @@ export type EnrolmentState =
 export interface EnrolmentStatus {
   state: EnrolmentState;
   sequenceKey?: string;
+  channel?: string;
   sender?: SenderRef;
   /** Which step the person is on, when the provider exposes it. */
   stepIndex?: number;
+  /** For `awaiting_precondition`: which of the declared preconditions are not met yet. */
+  pending?: string[];
   /** When the provider last changed this. */
   asOf: string;
 }
 
-/** What a sender has left today, so a plan can be sized before it is run. */
-export interface SenderCapacity {
+/**
+ * What a sender has left on one channel, in that channel's own unit — an
+ * email channel counts messages a day, an invitation channel may count
+ * invitations a week. Two channels' numbers are never added together.
+ */
+export interface Capacity {
   sender: SenderRef;
-  dailyLimit?: number;
-  usedToday?: number;
-  remainingToday?: number;
+  channel: string;
+  /** What is counted, e.g. `messages`, `invitations`. */
+  unit: string;
+  /** The period the limit resets over. */
+  window: "day" | "week";
+  limit?: number;
+  used?: number;
+  remaining?: number;
   asOf: string;
 }
 
+/** What a suppression reached. */
+export interface Suppression {
+  /** The keys the provider now refuses, including those it already refused. */
+  applied: IdentityKey[];
+  /** Keys of the identity this provider has no way to act on. */
+  notApplicable: IdentityKey[];
+}
+
 export interface Sequencer extends Contract {
+  /** The channels this adapter serves, from the enabled domains' `channels`. */
+  readonly channels: readonly string[];
+
+  /**
+   * Per channel, what an enrolment waits on before it reaches anyone — the
+   * names are the adapter's, for the engine to plan with and for `pending`
+   * to report. A channel absent here has none.
+   */
+  readonly preconditions?: Readonly<Record<string, readonly string[]>>;
+
   enrol(
     enrolment: Enrolment,
     ctx: CallContext,
@@ -110,7 +164,7 @@ export interface Sequencer extends Contract {
   withdraw(
     request: {
       idempotencyKey: string;
-      person: { email?: string; externalId?: string };
+      person: Identity;
       sequenceKey: string;
       /** For the audit trail. Never interpreted by the provider. */
       reason: string;
@@ -119,11 +173,14 @@ export interface Sequencer extends Contract {
   ): Promise<CallResult<void>>;
 
   /**
-   * Stop this provider reaching a person or a whole account — every running
-   * sequence, at once — and keep it stopped. What protection needs after
-   * enrolment (decision 0004), and why it takes a domain: what becomes
-   * protected is an account, and a person-by-person withdrawal misses the
-   * colleague nobody enrolled yet.
+   * Stop this provider reaching a person or a whole account, on every
+   * channel it serves, at once, and keep it stopped. What protection needs
+   * after enrolment (decision 0004). Takes an identity, not a string: the
+   * adapter applies every key of it that it can act on, and says which.
+   *
+   * An identity with no key this provider can act on is refused as
+   * `invalid`: a suppression that applied nothing has protected nothing, and
+   * must not look like one that did.
    *
    * On success, no further step of an already running sequence reaches the
    * target through this provider. Refusing future enrolments is the engine's
@@ -133,12 +190,12 @@ export interface Sequencer extends Contract {
   suppress(
     request: {
       idempotencyKey: string;
-      target: { email: string } | { domain: string };
+      target: Identity;
       /** For the audit trail. Never interpreted by the provider. */
       reason: string;
     },
     ctx: CallContext,
-  ): Promise<CallResult<void>>;
+  ): Promise<CallResult<Suppression>>;
 
   /**
    * One enrolment: this person, in this sequence. A person can be in several
@@ -146,12 +203,13 @@ export interface Sequencer extends Contract {
    * A read that finds no enrolment returns `state: "unknown"`, not an error.
    */
   status(
-    request: { person: { email?: string; externalId?: string }; sequenceKey: string },
+    request: { person: Identity; sequenceKey: string },
     ctx: CallContext,
   ): Promise<CallResult<EnrolmentStatus>>;
 
+  /** A sender's capacity on one of this adapter's channels. */
   capacity(
-    sender: SenderRef,
+    request: { sender: SenderRef; channel: string },
     ctx: CallContext,
-  ): Promise<CallResult<SenderCapacity>>;
+  ): Promise<CallResult<Capacity>>;
 }

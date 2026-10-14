@@ -71,8 +71,11 @@ run in the database, probes every adapter that offers a probe, and closes the
 run with what happened. It ships from the engine too, as `kernel-verify`, for
 the same reason.
 
-The engine validates the manifest itself at startup — domains, dependencies,
-contracts, truths — where it is parsed anyway.
+At startup the engine validates the manifest — domains, dependencies,
+bindings, credentials — and nothing else: startup answers whether the system
+can run. Truths are not part of that, because a truth nobody has confirmed
+lately must not stop a run from being recorded. `pnpm verify` loads and
+reports them, and each process loads the ones it uses where it uses them.
 
 ## What never goes here
 

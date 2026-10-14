@@ -82,8 +82,14 @@ export default ({ options }) => ({
 });
 `;
 
-/** An instance on disk; `driver: false` leaves out pg and drizzle-orm. */
-function instance(adapter: string, { driver = true } = {}): string {
+/**
+ * An instance on disk; `driver: false` leaves out pg and drizzle-orm. `truths`
+ * are files under `truths/`; giving any enables `gtm`, which declares a kind.
+ */
+function instance(
+  adapter: string,
+  { driver = true, truths = {} as Record<string, string> } = {},
+): string {
   const root = mkdtempSync(join(tmpdir(), "verify-"));
   made.push(root);
   const link = (name: string, to: string) => {
@@ -92,6 +98,10 @@ function instance(adapter: string, { driver = true } = {}): string {
     symlinkSync(to, at, "dir");
   };
   link("@werunfoundry/relations", join(kernel, "domains/relations"));
+  link("@werunfoundry/gtm", join(kernel, "domains/gtm"));
+  const domains = Object.keys(truths).length ? "[relations, gtm]" : "[relations]";
+  mkdirSync(join(root, "truths"));
+  for (const [name, body] of Object.entries(truths)) writeFileSync(join(root, "truths", name), body);
   // The template's own copies: the ones an instance installs.
   if (driver) {
     link("pg", join(kernel, "template/node_modules/pg"));
@@ -102,7 +112,7 @@ function instance(adapter: string, { driver = true } = {}): string {
     [
       "instance: test",
       "truthsDir: truths",
-      "enabledDomains: [relations]",
+      `enabledDomains: ${domains}`,
       "providers:",
       `  - { contract: crm, adapter: ./adapter.mjs, env: [], options: { baseUrl: "http://127.0.0.1:${port}" } }`,
       "",
@@ -177,6 +187,31 @@ describe("verify", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () =
     const { code, said } = await run(instance(probing("/up")), {});
     assert.equal(code, 1);
     assert.match(said, /DATABASE_URL is not set/);
+  });
+
+  it("refuses a truth no enabled domain understands, and still makes the round trip", async () => {
+    const { code, said } = await run(
+      instance(probing("/up"), {
+        truths: { "odd.yaml": "key: odd\nkind: horoscope\nowner: ops\nvalidatedAt: \"2026-01-01\"\n" },
+      }),
+    );
+    assert.equal(code, 1);
+    assert.match(said, /no enabled domain declares the truth kind "horoscope"/);
+    assert.match(said, /truths: 0 loaded, 1 refused/);
+    const r = await row(said);
+    assert.equal(r.status, "failed");
+    assert.match(r.error, /truths: 1 refused/);
+  });
+
+  it("warns about a stale truth and does not fail on it", async () => {
+    const { code, said } = await run(
+      instance(probing("/up"), {
+        truths: { "icp.yaml": "key: old\nkind: icp\nowner: ops\nvalidatedAt: \"2020-01-01\"\n" },
+      }),
+    );
+    assert.equal(code, 0, said);
+    assert.match(said, /! truths\/icp\.yaml:validatedAt/);
+    assert.match(said, /truths: 1 loaded$/m);
   });
 
   it("uses the instance's driver, and says so when the instance has none", async () => {

@@ -188,6 +188,39 @@ describe("booting an instance", () => {
     assert.match(messages(r).join("\n"), /providers\.1\.contract contract "sequencer" is bound twice, and the kernel can only hold one adapter per contract today/);
   });
 
+  it("carries the identity vocabulary the installed domains declare, and the instance's networks", async () => {
+    const root = instance({
+      "manifest.yaml": manifest(["enabledDomains: [relations]", "providers: []", "networks: [net_a]"]),
+    }, ["relations"]);
+    const r = await boot({ root, env: {} });
+    assert.equal(r.ok, true, JSON.stringify(r.issues));
+    if (!r.ok) return;
+    assert.deepEqual([...r.identity.kinds.keys()].sort(), ["domain", "email", "social_company_id", "social_profile_id"]);
+    assert.deepEqual([...r.identity.subjects].sort(), ["company", "person"]);
+    assert.deepEqual([...r.identity.networks], ["net_a"]);
+  });
+
+  it("refuses an identity key declared by two enabled domains", async () => {
+    const root = instance({
+      "manifest.yaml": manifest(["enabledDomains: [relations, twin]", "providers: []"]),
+      "node_modules/@werunfoundry/twin/package.json":
+        '{ "name": "@werunfoundry/twin", "exports": { "./domain.yaml": "./domain.yaml" } }\n',
+      "node_modules/@werunfoundry/twin/domain.yaml":
+        "name: twin\nversion: 0.0.0\ndescription: x\nschema: twin\ndependsOn: []\n" +
+        "identityKeys:\n  - kind: email\n    subject: person\n    immutable: false\n",
+    }, ["relations"]);
+    const r = await boot({ root, env: {} });
+    assert.equal(r.ok, false);
+    assert.match(messages(r).join("\n"), /"email" is declared by both "relations" and "twin"; a key two domains need belongs one layer down/);
+  });
+
+  it("refuses a network that is not an identifier", async () => {
+    const root = instance({ "manifest.yaml": manifest(["enabledDomains: [relations]", "providers: []", "networks: [Net-A]"]) }, ["relations"]);
+    const r = await boot({ root, env: {} });
+    assert.equal(r.ok, false);
+    assert.match(messages(r).join("\n"), /networks\.0/);
+  });
+
   it("reports a manifest that is not YAML, and does not throw", async () => {
     const root = instance({ "manifest.yaml": "instance: [unclosed\n" }, []);
     const r = await boot({ root, env: {} });

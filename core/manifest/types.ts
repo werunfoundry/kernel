@@ -47,6 +47,30 @@ export interface DomainManifest {
 
   /** Kinds of truth this domain understands, e.g. `icp`, `persona`. */
   truthKinds?: string[];
+
+  /**
+   * The keys that name the subjects this domain owns (decision 0013). A kind
+   * is declared by one domain only: two needing it is the signal it moves
+   * down.
+   */
+  identityKeys?: IdentityKeyKind[];
+}
+
+/** One kind of identity key, as a domain declares it. */
+export interface IdentityKeyKind {
+  kind: string;
+  /** What it names, e.g. `person`. Declared here, never in the core. */
+  subject: string;
+  /**
+   * Whether a value, once issued, always names the same subject. Immutable
+   * keys are authoritative: two identities whose immutable keys of one kind
+   * differ are different subjects, whatever else they share.
+   */
+  immutable: boolean;
+  /** Whether a value only means something within a network the instance declares. */
+  networked?: boolean;
+  /** Whether case carries no meaning, as in an address or a domain. */
+  caseInsensitive?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -80,6 +104,14 @@ export interface InstanceManifest {
 
   /** Directory holding truth documents, relative to the instance root. */
   truthsDir: string;
+
+  /**
+   * The networks a networked identity key may belong to (decision 0013).
+   * Here and not in a domain, because naming one names a provider, which the
+   * kernel never does (doctrine 6) and the instance may. A key whose network
+   * is not listed is refused.
+   */
+  networks?: string[];
 }
 
 /* -------------------------------------------------------------------------- */

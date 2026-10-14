@@ -7,3 +7,24 @@ channels: []
 eventTypes:
   - relations.person.merged
   - relations.person.opted_out
+# What names the people and companies this domain owns (decision 0013).
+# Immutable keys are authoritative; mutable ones are evidence. A networked key
+# belongs to a network the instance declares in its manifest — never here,
+# because naming a network names a provider.
+identityKeys:
+  - kind: email
+    subject: person
+    immutable: false
+    caseInsensitive: true
+  - kind: social_profile_id
+    subject: person
+    immutable: true
+    networked: true
+  - kind: domain
+    subject: company
+    immutable: false
+    caseInsensitive: true
+  - kind: social_company_id
+    subject: company
+    immutable: true
+    networked: true

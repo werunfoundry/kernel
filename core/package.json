@@ -16,7 +16,8 @@
     "./runtime/boot": "./runtime/boot.ts",
     "./runtime/resolve": "./runtime/resolve.ts",
     "./runtime/run": "./runtime/run.ts",
-    "./runtime/verify": "./runtime/verify.ts"
+    "./runtime/verify": "./runtime/verify.ts",
+    "./identity": "./identity/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -68,6 +69,10 @@
       "./runtime/verify": {
         "types": "./dist/runtime/verify.d.ts",
         "default": "./dist/runtime/verify.js"
+      },
+      "./identity": {
+        "types": "./dist/identity/index.d.ts",
+        "default": "./dist/identity/index.js"
       }
     },
     "bin": {

@@ -172,20 +172,66 @@ describe("booting an instance", () => {
     assert.doesNotMatch(said, /No "exports" main defined/);
   });
 
-  it("refuses a contract bound twice, and says it is a limit rather than a design", async () => {
-    const root = instance({
-      "manifest.yaml": manifest([
-        "enabledDomains: [relations]",
-        "providers:",
-        "  - { contract: sequencer, adapter: ./adapters/a.mjs, env: [] }",
-        "  - { contract: sequencer, adapter: ./adapters/b.mjs, env: [] }",
-      ]),
-      "adapters/a.mjs": ADAPTER,
-      "adapters/b.mjs": ADAPTER,
-    }, ["relations"]);
-    const r = await boot({ root, env: {} });
-    assert.equal(r.ok, false);
-    assert.match(messages(r).join("\n"), /providers\.1\.contract contract "sequencer" is bound twice, and the kernel can only hold one adapter per contract today/);
+  describe("a contract bound per channel (0015)", () => {
+    /** An adapter that serves the given channels. */
+    const serving = (...channels: string[]) =>
+      `export default () => ({ provider: "fixture", channels: ${JSON.stringify(channels)} });\n`;
+    const twoSequencers = (a: string, b: string, extra: string[] = []) =>
+      instance({
+        "manifest.yaml": manifest([
+          "enabledDomains: [relations, gtm]",
+          "providers:",
+          `  - { contract: sequencer, adapter: ./adapters/a.mjs, env: []${extra[0] ?? ""} }`,
+          `  - { contract: sequencer, adapter: ./adapters/b.mjs, env: []${extra[1] ?? ""} }`,
+        ]),
+        "adapters/a.mjs": a,
+        "adapters/b.mjs": b,
+      });
+
+    it("binds one adapter per channel, and finds each by its channel", async () => {
+      const r = await boot({ root: twoSequencers(serving("email"), serving("social_message", "social_invite")), env: {} });
+      assert.equal(r.ok, true, JSON.stringify(r.issues));
+      if (!r.ok) return;
+      assert.ok(r.registry.forChannel("sequencer", "email"));
+      assert.equal(r.registry.forChannel("sequencer", "social_invite"), r.registry.forChannel("sequencer", "social_message"));
+      assert.notEqual(r.registry.forChannel("sequencer", "email"), r.registry.forChannel("sequencer", "social_message"));
+      assert.equal(r.registry.forChannel("sequencer", "profile_visit"), undefined);
+      assert.equal(r.registry.all("sequencer").length, 2);
+      assert.throws(() => r.registry.get("sequencer"), /bound per channel/);
+    });
+
+    it("refuses two adapters claiming the same channel, naming both", async () => {
+      const r = await boot({ root: twoSequencers(serving("email"), serving("email", "social_message")), env: {} });
+      assert.equal(r.ok, false);
+      assert.match(messages(r).join("\n"), /providers\.1\.channels the channel "email" of contract "sequencer" is already taken by providers\.0; one adapter per channel/);
+    });
+
+    it("lets a binding narrow an adapter to some of its channels, which resolves the overlap", async () => {
+      const r = await boot({
+        root: twoSequencers(serving("email"), serving("email", "social_message"), ["", ", channels: [social_message]"]),
+        env: {},
+      });
+      assert.equal(r.ok, true, JSON.stringify(r.issues));
+    });
+
+    it("refuses a binding that assigns a channel the adapter does not serve", async () => {
+      const r = await boot({ root: twoSequencers(serving("email"), serving("social_message"), ["", ", channels: [social_invite]"]), env: {} });
+      assert.equal(r.ok, false);
+      assert.match(messages(r).join("\n"), /"social_invite" is not a channel this adapter serves/);
+    });
+
+    it("refuses a contract bound twice where a binding takes no channel", async () => {
+      const r = await boot({ root: twoSequencers(serving("email"), ADAPTER), env: {} });
+      assert.equal(r.ok, false);
+      assert.match(messages(r).join("\n"), /bound more than once, so each binding takes channels, and this one takes none/);
+    });
+
+    it("refuses a channel no enabled domain declares, whoever names it", async () => {
+      const declaredByAdapter = await boot({ root: twoSequencers(serving("email"), serving("carrier_pigeon")), env: {} });
+      assert.match(messages(declaredByAdapter).join("\n"), /no enabled domain declares the channel "carrier_pigeon"/);
+      const namedByManifest = await boot({ root: twoSequencers(serving("email"), serving("social_message"), ["", ", channels: [carrier_pigeon]"]), env: {} });
+      assert.match(messages(namedByManifest).join("\n"), /no enabled domain declares the channel "carrier_pigeon"/);
+    });
   });
 
   it("carries the identity vocabulary the installed domains declare, and the instance's networks", async () => {

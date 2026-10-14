@@ -150,6 +150,17 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     : undefined;
   if (resolved) issues.push(...resolved.issues.map((i) => ({ ...i, at: `${file}:${i.at}` })));
 
+  // A channel an adapter declares for itself is vocabulary like any other:
+  // one no enabled domain declares is refused (decision 0015).
+  const channels = new Set(loaded.domains.flatMap((d) => d.channels ?? []));
+  for (const r of resolved?.registry?.list() ?? []) {
+    for (const channel of r.channels) {
+      if (!channels.has(channel)) {
+        issues.push(error(`${file}:providers.${r.index}.channels`, `no enabled domain declares the channel "${channel}"`, 1));
+      }
+    }
+  }
+
   if (issues.some((i) => i.severity === "error") || !validated.manifest || !resolved?.registry) {
     // A failure with no error in it would be a bug here, and an empty report
     // is the worst way to show one.

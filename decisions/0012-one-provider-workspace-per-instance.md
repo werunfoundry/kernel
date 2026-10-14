@@ -1,5 +1,7 @@
 # 0012 — One provider workspace per instance
 
+> Completed by [0015](0015-one-adapter-per-contract-and-channel.md): the kernel binds one adapter per contract and channel.
+
 ## Decided
 
 **A workspace at a provider serves one instance.** Two instances never share a

@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import type {
   DomainManifest,
+  IdentityKeyKind,
   InstanceManifest,
   ProviderBinding,
   Severity,
@@ -72,6 +73,17 @@ export const domainManifestSchema = z.object({
   experimentTypes: z.array(identifier).optional(),
   eventTypes: z.array(namespacedKey).optional(),
   truthKinds: z.array(identifier).optional(),
+  identityKeys: z
+    .array(
+      z.object({
+        kind: identifier,
+        subject: identifier,
+        immutable: z.boolean(),
+        networked: z.boolean().optional(),
+        caseInsensitive: z.boolean().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const providerBindingSchema = z.object({
@@ -86,6 +98,7 @@ export const instanceManifestSchema = z.object({
   enabledDomains: z.array(identifier).min(1),
   providers: z.array(providerBindingSchema),
   truthsDir: relativePath,
+  networks: z.array(identifier).optional(),
 });
 
 export const truthDocSchema = z.object({
@@ -137,6 +150,11 @@ export function validateDomain(input: unknown): ValidationResult & { manifest?: 
   if (m.dependsOn.includes("core")) {
     issues.push(issue("warning", "dependsOn", "core is the bottom layer; depending on it is implicit", 2));
   }
+  const kinds = new Set<string>();
+  for (const [i, k] of (m.identityKeys ?? []).entries()) {
+    if (kinds.has(k.kind)) issues.push(issue("error", `identityKeys.${i}.kind`, `"${k.kind}" is declared twice`));
+    kinds.add(k.kind);
+  }
   for (const [i, key] of (m.eventTypes ?? []).entries()) {
     if (!key.startsWith(`${m.name}.`)) {
       issues.push(issue("error", `eventTypes.${i}`, `an event type is namespaced by its domain: expected "${m.name}.…"`, 1));
@@ -178,6 +196,29 @@ export function validateInstance(
         issues.push(issue("error", `enabledDomains.${i}`, `"${name}" depends on "${dep}", which is not enabled`, 2));
       }
     }
+  }
+
+  const owners = new Map<string, string>();
+  for (const name of m.enabledDomains) {
+    for (const k of known.get(name)?.identityKeys ?? []) {
+      const owner = owners.get(k.kind);
+      if (owner && owner !== name) {
+        issues.push(
+          issue(
+            "error",
+            "enabledDomains",
+            `the identity key "${k.kind}" is declared by both "${owner}" and "${name}"; a key two domains need belongs one layer down`,
+            2,
+          ),
+        );
+      }
+      owners.set(k.kind, name);
+    }
+  }
+  const networks = new Set<string>();
+  for (const [i, n] of (m.networks ?? []).entries()) {
+    if (networks.has(n)) issues.push(issue("error", `networks.${i}`, `"${n}" is listed twice`));
+    networks.add(n);
   }
 
   const seen = new Set<string>();
@@ -270,6 +311,9 @@ export type _DomainManifestMatches = Expect<
 >;
 export type _InstanceManifestMatches = Expect<
   Mutual<z.infer<typeof instanceManifestSchema>, InstanceManifest>
+>;
+export type _IdentityKeyKindMatches = Expect<
+  Mutual<z.infer<typeof domainManifestSchema>["identityKeys"], IdentityKeyKind[] | undefined>
 >;
 export type _ProviderBindingMatches = Expect<
   Mutual<z.infer<typeof providerBindingSchema>, ProviderBinding>

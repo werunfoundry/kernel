@@ -169,6 +169,18 @@ describe("rule 1 — a provider is named only inside its adapter", () => {
     refuses(repo({ "decisions/0099-x.md": "# 0099 — x\n\nWe chose lemlist because it was there.\n" }), 1, "lemlist");
   });
 
+  it("refuses a social network named outside an adapter, even as an identity key", () => {
+    refuses(repo({ "domains/alpha/domain.yaml": BASELINE["domains/alpha/domain.yaml"] + "identityKeys:\n  - kind: linkedin_profile_id\n" }), 1, "linkedin");
+  });
+
+  it("refuses one inside an identifier, where an underscore is not a boundary for \\b", () => {
+    refuses(repo({ "core/x.ts": "export const hubspot_id = 1;\n" }), 1, "hubspot");
+  });
+
+  it("does not refuse a word that merely contains one", () => {
+    accepts(repo({ "core/x.ts": "export const clayey = 1; // a soil, not a provider\nexport const apollonian = 2;\n" }));
+  });
+
   it("refuses one in the README", () => {
     refuses(repo({ "README.md": "# kernel\n\nWorks well with pipedrive.\n" }), 1, "pipedrive");
   });

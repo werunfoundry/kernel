@@ -22,6 +22,8 @@ import { fileURLToPath } from "node:url";
 import { join, resolve as resolvePath } from "node:path";
 
 import type { AdapterEnv } from "../contracts/types.js";
+import type { IdentityVocabulary } from "../identity/index.js";
+import { identityVocabulary } from "../identity/index.js";
 import { loadDomain, loadInstance, readDocument } from "../manifest/load.js";
 import type {
   DomainManifest,
@@ -52,6 +54,8 @@ export interface Booted {
   /** In the order the manifest enables them. */
   domains: DomainManifest[];
   registry: Registry;
+  /** The identity keys and subjects the enabled domains declare, and the instance's networks (0013). */
+  identity: IdentityVocabulary;
 }
 
 /** On success, `issues` holds only warnings. On failure, every error found. */
@@ -159,5 +163,6 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     manifest: validated.manifest,
     domains: loaded.domains,
     registry: resolved.registry,
+    identity: identityVocabulary(loaded.domains, validated.manifest.networks ?? []),
   };
 }

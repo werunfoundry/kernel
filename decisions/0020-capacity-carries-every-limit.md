@@ -46,6 +46,21 @@ starts again — is a fact, and `resetsAt` carries it. Four periods cover the
 limits seen so far. A fifth is a one-word change to this union, made the day a
 provider needs it.
 
+## Known limit: a rolling window
+
+A closed set of windows does not express a rolling one. A ceiling of
+invitations over seven rolling days never starts again all at once: each
+invitation frees up seven days after it was sent, one at a time. Reported as
+`window: "week"` with a `resetsAt`, it is approximated, and nothing says so.
+Without `resetsAt` it is honest about not knowing when, and still says
+nothing about the trickle.
+
+What it costs: on such a limit, the engine plans against an approximation.
+Within a run that is harmless, because `remaining` is read at the start and
+the tightest limit binds. Across runs, a plan that expects a full week's
+allowance back on a date will find it arriving piecemeal. This is free to
+note now, and fixing it needs a decision after this one merges.
+
 ## What did not change
 
 The email adapter's network calls did not change, and its pinned endpoint list

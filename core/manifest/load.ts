@@ -126,6 +126,16 @@ export function loadTruths(
   try {
     entries = readdirSync(truthsDir).sort();
   } catch (error) {
+    // Absent is an instance with no truths yet, which is no different from an
+    // empty folder and is reported the same way: worth knowing, not a failure.
+    // Present and unreadable — a file, a permission — is something broken.
+    if ((error as { code?: unknown }).code === "ENOENT") {
+      return {
+        ok: true,
+        issues: [{ severity: "warning", at: truthsDir, message: "does not exist; no truths were loaded" }],
+        truths: [],
+      };
+    }
     return { ...failed(truthsDir, `cannot be listed: ${(error as Error).message}`), truths: [] };
   }
 

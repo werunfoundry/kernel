@@ -100,7 +100,11 @@ export default ({ options }) => ({
  */
 function instance(
   adapter: string,
-  { driver = true, truths = {} as Record<string, string> } = {},
+  {
+    driver = true,
+    truths = {} as Record<string, string>,
+    truthsDir = "folder" as "folder" | "absent" | "file",
+  } = {},
 ): string {
   const root = mkdtempSync(join(tmpdir(), "verify-"));
   made.push(root);
@@ -112,7 +116,8 @@ function instance(
   link("@werunfoundry/relations", join(kernel, "domains/relations"));
   link("@werunfoundry/gtm", join(kernel, "domains/gtm"));
   const domains = Object.keys(truths).length ? "[relations, gtm]" : "[relations]";
-  mkdirSync(join(root, "truths"));
+  if (truthsDir === "folder") mkdirSync(join(root, "truths"));
+  if (truthsDir === "file") writeFileSync(join(root, "truths"), "not a folder\n");
   for (const [name, body] of Object.entries(truths)) writeFileSync(join(root, "truths", name), body);
   // The template's own copies: the ones an instance installs.
   if (driver) {
@@ -233,6 +238,19 @@ describe("verify", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () =
     assert.equal(code, 0, said);
     assert.match(said, /! truths\/icp\.yaml:validatedAt/);
     assert.match(said, /truths: 1 loaded$/m);
+  });
+
+  it("warns about a truths directory that does not exist, and does not fail on it", async () => {
+    const { code, said } = await run(instance(probing("/up"), { truthsDir: "absent" }));
+    assert.equal(code, 0, said);
+    assert.match(said, /! truths\n\s+does not exist/);
+    assert.match(said, /truths: 0 loaded$/m);
+  });
+
+  it("refuses a truths directory that cannot be read", async () => {
+    const { code, said } = await run(instance(probing("/up"), { truthsDir: "file" }));
+    assert.equal(code, 1);
+    assert.match(said, /✖ truths\n\s+cannot be listed/);
   });
 
   it("uses the instance's driver, and says so when the instance has none", async () => {

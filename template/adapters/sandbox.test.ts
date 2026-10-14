@@ -55,7 +55,7 @@ describe("found nothing is not could not look", () => {
   });
 
   it("metrics: a key the source does not read is refused, never zero", async () => {
-    const r = await metricsFactory({ options: { stateFile: join(dir, "m.json") }, env: {} }).read({ key: "gtm.bounced" }, ctx(true));
+    const r = await metricsFactory({ options: { stateFile: join(dir, "m.json") }, env: {} }).read({ key: "gtm.opened" }, ctx(true));
     assert.equal(r.ok, false);
   });
 });

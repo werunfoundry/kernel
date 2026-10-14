@@ -43,10 +43,16 @@ metrics:
     unit: people
   - key: gtm.meetings_booked
     unit: meetings
+#
+# gtm.bounced and gtm.unsubscribed are guardrails, in every type: no type is
+# tied to a channel, so any of them can carry email, and an experiment can
+# win on replies while it damages deliverability. offer_test reads
+# gtm.replied too, to tell "nobody bit" from "people replied and did not
+# book".
 experimentMetrics:
-  campaign: [gtm.enrolled, gtm.replied, gtm.meetings_booked]
-  audience_test: [gtm.enrolled, gtm.replied]
-  message_test: [gtm.enrolled, gtm.replied]
-  channel_test: [gtm.enrolled, gtm.replied]
-  signal_play: [gtm.enrolled, gtm.replied, gtm.meetings_booked]
-  offer_test: [gtm.enrolled, gtm.meetings_booked]
+  campaign: [gtm.enrolled, gtm.replied, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]
+  audience_test: [gtm.enrolled, gtm.replied, gtm.bounced, gtm.unsubscribed]
+  message_test: [gtm.enrolled, gtm.replied, gtm.bounced, gtm.unsubscribed]
+  channel_test: [gtm.enrolled, gtm.replied, gtm.bounced, gtm.unsubscribed]
+  signal_play: [gtm.enrolled, gtm.replied, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]
+  offer_test: [gtm.enrolled, gtm.replied, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]

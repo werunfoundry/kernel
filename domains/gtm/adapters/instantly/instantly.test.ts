@@ -13,6 +13,7 @@
  */
 
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, it } from "node:test";
@@ -41,6 +42,8 @@ const state = {
   missNextList: false,
 };
 let seen: Seen[] = [];
+/** Every request of the whole run. `seen` is reset per test; this never is. */
+const everyRequest: Seen[] = [];
 let server: Server;
 let baseUrl = "";
 
@@ -57,6 +60,7 @@ before(async () => {
     const text = await read(req);
     const body = text ? (JSON.parse(text) as Record<string, unknown>) : undefined;
     seen.push({ method: req.method ?? "", path: url.pathname + url.search, ...(body ? { body } : {}), ...(req.headers.authorization ? { auth: req.headers.authorization } : {}) });
+    everyRequest.push({ method: req.method ?? "", path: url.pathname });
     const reply = (status: number, value?: unknown) => {
       res.statusCode = status;
       res.setHeader("content-type", "application/json");
@@ -331,5 +335,63 @@ describe("capacity", () => {
     const r = await adapter().capacity({ externalId: "sender@example.com" }, ctx(true));
     assert.equal(r.ok, false);
     if (!r.ok) assert.deepEqual([r.error.code, r.error.retryable], ["rate_limited", true]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The endpoint surface, pinned                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every endpoint this adapter may call, and no other. `{}` stands for one
+ * path segment the adapter fills in; query strings are not part of the
+ * surface.
+ *
+ * The API this adapter talks to can empty the whole workspace blocklist in one
+ * call (`DELETE /api/v2/block-lists-entries`) — the blocklist that is defence
+ * in depth for protected accounts (0012). Today nothing here can do that: the
+ * only delete is one lead, the only blocklist write is one entry. This list is
+ * what keeps it so. Adding an endpoint is a change to this list, made on
+ * purpose and seen in review — never a side effect of a new method.
+ */
+const ALLOWED = [
+  "GET /api/v2/campaigns",
+  "GET /api/v2/campaigns/{}",
+  "POST /api/v2/leads/list",
+  "POST /api/v2/leads/add",
+  "DELETE /api/v2/leads/{}",
+  "GET /api/v2/block-lists-entries",
+  "POST /api/v2/block-lists-entries",
+  "GET /api/v2/accounts/{}",
+  "GET /api/v2/accounts/analytics/daily",
+].sort();
+
+const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+
+describe("the endpoint surface", () => {
+  it("is exactly the pinned list, read from the source — including paths no test exercises", () => {
+    // `call<T>("METHOD", "path" | `path`, …)`. A template expression stands
+    // for one segment; the query string is dropped.
+    const sites = [...source.matchAll(/\bcall<[\s\S]*?>\(\s*"([A-Z]+)",\s*(`[^`]*`|"[^"]*")/g)].map(([, method, path]) => {
+      const bare = path!.slice(1, -1).replace(/\$\{[^}]*\}/g, "{}").split("?")[0];
+      return `${method} ${bare}`;
+    });
+    // Every call site must be one the pattern above can read. A call written
+    // another way would be invisible to it, so it is refused rather than
+    // missed: the count of `call<` must match what was read, less the
+    // definition itself.
+    const callSites = (source.match(/\bcall</g) ?? []).length - 1;
+    assert.equal(sites.length, callSites, "a call site is written in a form this test cannot read");
+    assert.deepEqual([...new Set(sites)].sort(), ALLOWED);
+    // And nothing reaches the network except through `call`.
+    assert.equal((source.match(/\bfetch\(/g) ?? []).length, 1, "fetch is called outside `call`");
+  });
+
+  it("is never left by any request the suite made", () => {
+    const shape = (path: string) =>
+      path.replace(/^\/api\/v2\/(campaigns|leads|accounts)\/(?!list$|add$|analytics\/daily$)[^/]+$/, "/api/v2/$1/{}");
+    const outside = everyRequest.map((r) => `${r.method} ${shape(r.path)}`).filter((e) => !ALLOWED.includes(e));
+    assert.ok(everyRequest.length > 0, "no request was recorded; this test would pass by seeing nothing");
+    assert.deepEqual([...new Set(outside)], []);
   });
 });

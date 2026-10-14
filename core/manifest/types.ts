@@ -54,6 +54,26 @@ export interface DomainManifest {
    * down.
    */
   identityKeys?: IdentityKeyKind[];
+
+  /**
+   * The numbers this domain defines, namespaced like its events —
+   * `gtm.replied` (decision 0018). A metric source says which it can read;
+   * nothing here stores them.
+   */
+  metrics?: MetricDeclaration[];
+
+  /**
+   * For each experiment type, the metrics it is judged on. What gives an
+   * experiment type a surface: an instance can tell, before running one,
+   * whether its bound sources can measure it.
+   */
+  experimentMetrics?: Record<string, string[]>;
+}
+
+export interface MetricDeclaration {
+  key: string;
+  /** What is counted, e.g. `people`, `replies`. */
+  unit: string;
 }
 
 /** One kind of identity key, as a domain declares it. */

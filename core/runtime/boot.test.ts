@@ -172,6 +172,23 @@ describe("booting an instance", () => {
     assert.doesNotMatch(said, /No "exports" main defined/);
   });
 
+  it("loads the metrics gtm declares, and refuses a source that reads an undeclared one", async () => {
+    const source = (...metrics: string[]) => `export default () => ({ provider: "fixture", metrics: ${JSON.stringify(metrics)} });\n`;
+    const good = instance({
+      "manifest.yaml": manifest(["enabledDomains: [relations, gtm]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),
+      "adapters/m.mjs": source("gtm.enrolled", "gtm.replied"),
+    });
+    const r = await boot({ root: good, env: {} });
+    assert.equal(r.ok, true, JSON.stringify(r.issues));
+    if (r.ok) assert.deepEqual(r.domains.find((d) => d.name === "gtm")?.experimentMetrics?.message_test, ["gtm.enrolled", "gtm.replied"]);
+
+    const bad = instance({
+      "manifest.yaml": manifest(["enabledDomains: [relations, gtm]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),
+      "adapters/m.mjs": source("gtm.enrolled", "gtm.revenue"),
+    });
+    assert.match(messages(await boot({ root: bad, env: {} })).join("\n"), /reads "gtm.revenue", which no enabled domain declares/);
+  });
+
   describe("a contract bound per channel (0015)", () => {
     /** An adapter that serves the given channels. */
     const serving = (...channels: string[]) =>

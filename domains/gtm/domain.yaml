@@ -30,3 +30,23 @@ eventTypes:
   - gtm.bounce
   - gtm.unsubscribe
   - gtm.meeting_booked
+# The numbers this domain defines, and what each experiment type is judged on
+# (decision 0018). A metric source says which it can read; none is stored.
+metrics:
+  - key: gtm.enrolled
+    unit: people
+  - key: gtm.replied
+    unit: people
+  - key: gtm.bounced
+    unit: people
+  - key: gtm.unsubscribed
+    unit: people
+  - key: gtm.meetings_booked
+    unit: meetings
+experimentMetrics:
+  campaign: [gtm.enrolled, gtm.replied, gtm.meetings_booked]
+  audience_test: [gtm.enrolled, gtm.replied]
+  message_test: [gtm.enrolled, gtm.replied]
+  channel_test: [gtm.enrolled, gtm.replied]
+  signal_play: [gtm.enrolled, gtm.replied, gtm.meetings_booked]
+  offer_test: [gtm.enrolled, gtm.meetings_booked]

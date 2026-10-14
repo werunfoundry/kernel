@@ -73,6 +73,8 @@ export const domainManifestSchema = z.object({
   experimentTypes: z.array(identifier).optional(),
   eventTypes: z.array(namespacedKey).optional(),
   truthKinds: z.array(identifier).optional(),
+  metrics: z.array(z.object({ key: namespacedKey, unit: z.string().min(1) })).optional(),
+  experimentMetrics: z.record(identifier, z.array(namespacedKey)).optional(),
   identityKeys: z
     .array(
       z.object({
@@ -156,6 +158,16 @@ export function validateDomain(input: unknown): ValidationResult & { manifest?: 
     if (kinds.has(k.kind)) issues.push(issue("error", `identityKeys.${i}.kind`, `"${k.kind}" is declared twice`));
     kinds.add(k.kind);
   }
+  for (const [i, metric] of (m.metrics ?? []).entries()) {
+    if (!metric.key.startsWith(`${m.name}.`)) {
+      issues.push(issue("error", `metrics.${i}.key`, `a metric is namespaced by its domain: expected "${m.name}.…"`, 1));
+    }
+  }
+  for (const type of Object.keys(m.experimentMetrics ?? {})) {
+    if (!(m.experimentTypes ?? []).includes(type)) {
+      issues.push(issue("error", `experimentMetrics.${type}`, `"${type}" is not an experiment type this domain declares`));
+    }
+  }
   for (const [i, key] of (m.eventTypes ?? []).entries()) {
     if (!key.startsWith(`${m.name}.`)) {
       issues.push(issue("error", `eventTypes.${i}`, `an event type is namespaced by its domain: expected "${m.name}.…"`, 1));
@@ -216,6 +228,19 @@ export function validateInstance(
       owners.set(k.kind, name);
     }
   }
+  // An experiment type may be judged on another enabled domain's metric, but
+  // only on one some enabled domain declares.
+  const metricKeys = new Set(m.enabledDomains.flatMap((n) => (known.get(n)?.metrics ?? []).map((x) => x.key)));
+  for (const name of m.enabledDomains) {
+    for (const [type, keys] of Object.entries(known.get(name)?.experimentMetrics ?? {})) {
+      for (const key of keys) {
+        if (!metricKeys.has(key)) {
+          issues.push(issue("error", "enabledDomains", `"${name}" judges "${type}" on "${key}", which no enabled domain declares`));
+        }
+      }
+    }
+  }
+
   const networks = new Set<string>();
   for (const [i, n] of (m.networks ?? []).entries()) {
     if (networks.has(n)) issues.push(issue("error", `networks.${i}`, `"${n}" is listed twice`));

@@ -26,6 +26,7 @@ import { join } from "node:path";
 
 import type { AdapterEnv } from "../contracts/types.js";
 import { loadTruths } from "../manifest/load.js";
+import { measurability } from "../manifest/measure.js";
 import { boot } from "./boot.js";
 import { resolvePackage } from "./resolve.js";
 import type { Database, OpenRun } from "./run.js";
@@ -97,6 +98,23 @@ export async function verify(options: VerifyOptions): Promise<number> {
   for (const a of booted.registry.list()) {
     const on = a.channels.length > 0 ? ` [${a.channels.join(", ")}]` : "";
     say(`  ${a.contract}${on} → ${a.provider} (${a.specifier})`);
+  }
+
+  // Which experiment types the bound sources can judge (decision 0018). Not
+  // a failure when they cannot: an instance need not run experiments. Said,
+  // so that nobody finds out after the experiment.
+  const sources = booted.registry
+    .list()
+    .map((r) => (r.adapter as { metrics?: unknown }).metrics)
+    .filter((m): m is string[] => Array.isArray(m))
+    .map((metrics) => ({ metrics }));
+  const judged = measurability(booted.domains, sources);
+  if (judged.length > 0) {
+    const ok = judged.filter((j) => j.measurable).map((j) => j.experimentType);
+    say(`experiments: ${ok.length} of ${judged.length} measurable${ok.length ? ` (${ok.join(", ")})` : ""}`);
+    for (const j of judged.filter((x) => !x.measurable)) {
+      say(`  ${j.experimentType}: ${j.metrics.length === 0 ? "judged on no metric" : `no source reads ${j.missing.join(", ")}`}`);
+    }
   }
 
   /* 2. truths ----------------------------------------------------------- */

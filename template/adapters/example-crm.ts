@@ -152,6 +152,17 @@ const factory: AdapterFactory<Crm> = ({ options, env }) => {
     // CHANGE: the one place in this repository a provider may be named.
     provider: "example-crm",
 
+    /**
+     * The cheapest authenticated read this API has. It asks whether the
+     * provider answers and accepts the token — not what it holds — so the
+     * domain is invented and the result is discarded.
+     */
+    async probe(ctx): Promise<CallResult<void>> {
+      // CHANGE: your provider's cheapest authenticated read.
+      const answered = await call<unknown>("/companies?domain=example.com", { method: "GET" }, ctx);
+      return answered.ok ? { ok: true, value: undefined } : answered;
+    },
+
     findCompanyByDomain(domain, ctx): Promise<CrmLookup<CrmCompany>> {
       return findOne(`/companies?domain=${encodeURIComponent(domain)}`, asCompany, ctx);
     },

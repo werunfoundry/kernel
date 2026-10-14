@@ -94,7 +94,10 @@ export async function verify(options: VerifyOptions): Promise<number> {
     return 1;
   }
   say(`boot: ${booted.manifest.instance} — domains ${booted.domains.map((d) => d.name).join(", ")}`);
-  for (const a of booted.registry.list()) say(`  ${a.contract} → ${a.provider} (${a.specifier})`);
+  for (const a of booted.registry.list()) {
+    const on = a.channels.length > 0 ? ` [${a.channels.join(", ")}]` : "";
+    say(`  ${a.contract}${on} → ${a.provider} (${a.specifier})`);
+  }
 
   /* 2. truths ----------------------------------------------------------- */
 

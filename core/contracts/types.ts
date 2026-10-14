@@ -68,6 +68,14 @@ export interface Contract {
   readonly provider: string;
 
   /**
+   * The channels this adapter serves, when its contract is about channels —
+   * values from the `channels` the enabled domains declare. A contract bound
+   * more than once is bound per channel (decision 0015), and this is how an
+   * adapter says which it can take.
+   */
+  readonly channels?: readonly string[];
+
+  /**
    * Can the provider be reached, and does it accept these credentials? The
    * cheapest call that answers both, and nothing more (decision 0009).
    *

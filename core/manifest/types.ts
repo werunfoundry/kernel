@@ -90,6 +90,12 @@ export interface ProviderBinding {
   /** Names of environment variables. Values live in the environment. */
   env: string[];
   options?: Record<string, string | number | boolean>;
+  /**
+   * The channels this binding takes (decision 0015). Defaults to every
+   * channel the adapter declares. A contract may be bound more than once,
+   * one adapter per channel, and never two on the same channel.
+   */
+  channels?: string[];
 }
 
 export interface InstanceManifest {

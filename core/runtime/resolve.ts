@@ -30,6 +30,14 @@ export interface ResolvedAdapter {
   /** What the adapter calls itself. Logged, never matched on. */
   provider: string;
   adapter: Contract;
+  /**
+   * The channels this binding takes: the ones the manifest names, or else
+   * every one the adapter declares. Empty for a contract that is not about
+   * channels.
+   */
+  channels: readonly string[];
+  /** Its position in the manifest's `providers`, for messages. */
+  index: number;
 }
 
 /**
@@ -38,6 +46,11 @@ export interface ResolvedAdapter {
  * and supplies the type.
  */
 export interface Registry {
+  /**
+   * The adapter bound to a contract, when exactly one is. A contract bound
+   * per channel has no single answer, and asking for one throws rather than
+   * returning one of them at random (decision 0015).
+   */
   get(contract: string): Contract | undefined;
   /**
    * For a contract the caller knows is bound, because the manifest was
@@ -45,6 +58,13 @@ export interface Registry {
    * case where throwing is right: no run can continue past it.
    */
   require<T extends Contract>(contract: string): T;
+  /** The adapter that takes this channel for this contract, if one does. */
+  forChannel<T extends Contract>(contract: string, channel: string): T | undefined;
+  /**
+   * Every adapter bound to a contract. What an operation that must reach all
+   * of them uses — suppressing someone is suppressing them on every channel.
+   */
+  all<T extends Contract>(contract: string): readonly T[];
   list(): readonly ResolvedAdapter[];
 }
 
@@ -220,6 +240,19 @@ async function build(
     };
   }
 
+  const declared = (adapter as { channels?: unknown }).channels;
+  const serves = Array.isArray(declared) ? declared.filter((c): c is string => typeof c === "string") : undefined;
+  const channelIssues: ValidationIssue[] = [];
+  for (const [j, channel] of (binding.channels ?? []).entries()) {
+    if (serves && !serves.includes(channel)) {
+      channelIssues.push(issue(`${at}.channels.${j}`, `"${channel}" is not a channel this adapter serves (it serves ${serves.join(", ") || "none"})`));
+    }
+  }
+  if (binding.channels && !serves) {
+    channelIssues.push(issue(`${at}.channels`, "this adapter declares no channels, so a binding cannot assign it any"));
+  }
+  if (channelIssues.length > 0) return { issues: channelIssues };
+
   return {
     issues: [],
     resolved: {
@@ -227,6 +260,8 @@ async function build(
       specifier: binding.adapter,
       provider,
       adapter: adapter as Contract,
+      channels: binding.channels ?? serves ?? [],
+      index,
     },
   };
 }
@@ -254,17 +289,57 @@ export async function resolveAdapters(
     if (result.resolved) resolved.push(result.resolved);
   }
 
+  // A contract bound more than once is bound per channel: each binding must
+  // take at least one channel, and no channel twice (decision 0015).
+  const byContract = new Map<string, ResolvedAdapter[]>();
+  for (const r of resolved) byContract.set(r.contract, [...(byContract.get(r.contract) ?? []), r]);
+  for (const [contract, bound] of byContract) {
+    if (bound.length < 2) continue;
+    const taken = new Map<string, number>();
+    for (const r of bound) {
+      if (r.channels.length === 0) {
+        issues.push(
+          issue(
+            `providers.${r.index}`,
+            `contract "${contract}" is bound more than once, so each binding takes channels, and this one takes none`,
+          ),
+        );
+      }
+      for (const channel of r.channels) {
+        const other = taken.get(channel);
+        if (other !== undefined) {
+          issues.push(
+            issue(
+              `providers.${r.index}.channels`,
+              `the channel "${channel}" of contract "${contract}" is already taken by providers.${other}; one adapter per channel`,
+            ),
+          );
+        } else {
+          taken.set(channel, r.index);
+        }
+      }
+    }
+  }
+
   if (issues.some((i) => i.severity === "error")) return { ok: false, issues };
 
-  const byContract = new Map(resolved.map((r) => [r.contract, r]));
+  const single = (contract: string): ResolvedAdapter | undefined => {
+    const bound = byContract.get(contract) ?? [];
+    if (bound.length > 1) {
+      throw new Error(
+        `the contract "${contract}" is bound per channel (${bound.flatMap((r) => r.channels).join(", ")}); ask for one channel, or for all`,
+      );
+    }
+    return bound[0];
+  };
 
   return {
     ok: true,
     issues,
     registry: {
-      get: (contract) => byContract.get(contract)?.adapter,
+      get: (contract) => single(contract)?.adapter,
       require<T extends Contract>(contract: string): T {
-        const found = byContract.get(contract);
+        const found = single(contract);
         if (!found) {
           throw new Error(
             `no adapter is bound to the contract "${contract}" — the manifest enables it or it does not exist`,
@@ -272,6 +347,9 @@ export async function resolveAdapters(
         }
         return found.adapter as T;
       },
+      forChannel: <T extends Contract>(contract: string, channel: string) =>
+        (byContract.get(contract) ?? []).find((r) => r.channels.includes(channel))?.adapter as T | undefined,
+      all: <T extends Contract>(contract: string) => (byContract.get(contract) ?? []).map((r) => r.adapter as T),
       list: () => resolved,
     },
   };

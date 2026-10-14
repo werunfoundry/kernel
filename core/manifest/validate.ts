@@ -91,6 +91,7 @@ export const providerBindingSchema = z.object({
   adapter: z.string().min(1),
   env: z.array(envVarName),
   options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+  channels: z.array(identifier).optional(),
 });
 
 export const instanceManifestSchema = z.object({
@@ -221,19 +222,27 @@ export function validateInstance(
     networks.add(n);
   }
 
-  const seen = new Set<string>();
+  // Channels a binding names explicitly are checked here; the ones an adapter
+  // declares for itself are only known once it is built, and boot checks
+  // those (decision 0015).
+  const declaredChannels = new Set(m.enabledDomains.flatMap((n) => known.get(n)?.channels ?? []));
+  const claimed = new Map<string, number>(); // `${contract}/${channel}` -> binding index
   for (const [i, binding] of m.providers.entries()) {
-    if (seen.has(binding.contract)) {
-      issues.push(
-        issue(
-          "error",
-          `providers.${i}.contract`,
-          `contract "${binding.contract}" is bound twice, and the kernel can only hold one adapter per contract today — ` +
-            `two providers for one capability is a known limit, not a design (README, "Where the work is")`,
-        ),
-      );
+    const mine = new Set<string>();
+    for (const [j, channel] of (binding.channels ?? []).entries()) {
+      const at = `providers.${i}.channels.${j}`;
+      if (!declaredChannels.has(channel)) issues.push(issue("error", at, `no enabled domain declares the channel "${channel}"`, 1));
+      if (mine.has(channel)) issues.push(issue("error", at, `"${channel}" is listed twice`));
+      mine.add(channel);
+      const other = claimed.get(`${binding.contract}/${channel}`);
+      if (other !== undefined) {
+        issues.push(
+          issue("error", at, `the channel "${channel}" of contract "${binding.contract}" is already taken by providers.${other}; one adapter per channel`),
+        );
+      } else {
+        claimed.set(`${binding.contract}/${channel}`, i);
+      }
     }
-    seen.add(binding.contract);
     if (binding.env.length === 0) {
       issues.push(issue("warning", `providers.${i}.env`, "no credentials declared; is this adapter really unauthenticated?"));
     }

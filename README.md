@@ -57,15 +57,6 @@ one fails by contacting someone it should not have.
 repository does not have — how a target list is actually served, and whether
 it can say when it was last recomputed.
 
-**One adapter per contract.** A manifest can bind each contract once:
-`core/manifest/validate.ts` refuses a contract bound twice, and
-`core/runtime/resolve.ts` files adapters by contract name, so a second one has
-nowhere to go. That blocks an instance from reaching people through two tools
-for the same capability — email through one sequencer, social messages
-through another — which decision 0012 allows in principle. It is a limit of
-the kernel, not a design: nothing yet says how a caller would choose between
-two adapters for one contract, and that is the question to answer first.
-
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
 

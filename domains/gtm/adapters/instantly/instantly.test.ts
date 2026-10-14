@@ -374,15 +374,15 @@ describe("capacity", () => {
     const r = await adapter().capacity({ sender: { externalId: "sender@example.com" }, channel: "email" }, ctx(true));
     assert.equal(r.ok, true, JSON.stringify(r));
     if (r.ok) {
-      assert.deepEqual([r.value.limit, r.value.used, r.value.remaining], [40, 15, 25]);
-      assert.deepEqual([r.value.channel, r.value.unit, r.value.window], ["email", "messages", "day"]);
+      assert.equal(r.value.channel, "email");
+      assert.deepEqual(r.value.limits, [{ unit: "messages", window: "day", limit: 40, used: 15, remaining: 25 }]);
     }
   });
 
   it("is nothing left for an account that is not active", async () => {
     state.accounts["sender@example.com"] = { daily_limit: 40, status: 2 };
     const r = await adapter().capacity({ sender: { externalId: "sender@example.com" }, channel: "email" }, ctx(true));
-    if (r.ok) assert.equal(r.value.remaining, 0);
+    if (r.ok) assert.equal(r.value.limits[0]?.remaining, 0);
   });
 
   it("maps the workspace rate limit to a retryable error", async () => {

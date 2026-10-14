@@ -10,8 +10,9 @@
  * the following run.
  */
 
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { isAbsolute, resolve as resolvePath } from "node:path";
+import { isAbsolute, join, resolve as resolvePath } from "node:path";
 
 import type { AdapterEnv, AdapterFactory, Contract } from "../contracts/types.js";
 import type {
@@ -83,6 +84,26 @@ function locate(specifier: string, root: string): string {
 }
 
 /**
+ * A package name, found where the instance installed it (decision 0007).
+ *
+ * Not `import(name)` from here, which is what this file did first: a bare
+ * specifier resolves from the module that imports it, and this module is the
+ * core, which depends on no domain and on no adapter. Under pnpm it cannot see
+ * them at all. It also cannot be `import.meta.resolve(name, parent)` — the
+ * second argument is ignored unless Node runs with a flag, silently.
+ *
+ * So the instance's own resolution, anchored at its root: the answer is the
+ * one the instance would get if it had written the import itself. The anchor
+ * file does not need to exist.
+ *
+ * Throws what Node throws. Callers turn it into an issue.
+ */
+export function resolvePackage(specifier: string, root: string): string {
+  const require = createRequire(pathToFileURL(join(resolvePath(root), "package.json")));
+  return pathToFileURL(require.resolve(specifier)).href;
+}
+
+/**
  * The variables this binding declared, and only those.
  *
  * An adapter is handed its credentials rather than reaching for them, so that
@@ -113,7 +134,9 @@ async function build(
   options: ResolveOptions,
 ): Promise<{ resolved?: ResolvedAdapter; issues: ValidationIssue[] }> {
   const at = `providers.${index}`;
-  const importModule = options.importModule ?? ((s: string) => import(s));
+  const importModule =
+    options.importModule ??
+    ((s: string) => import(s.startsWith("file:") ? s : resolvePackage(s, options.root)));
 
   const { env, issues } = envFor(binding, options.env, at);
   if (issues.length > 0) return { issues };
@@ -122,7 +145,8 @@ async function build(
   try {
     module = await importModule(locate(binding.adapter, options.root));
   } catch (error) {
-    const why = error instanceof Error ? error.message : String(error);
+    // Node appends a require stack to a miss; the first line is the reason.
+    const why = (error instanceof Error ? error.message : String(error)).split("\n")[0];
     return { issues: [issue(`${at}.adapter`, `cannot be loaded: ${why}`)] };
   }
 

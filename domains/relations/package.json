@@ -7,6 +7,7 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./domain.yaml": "./domain.yaml",
     "./db/schema": "./db/schema.ts",
     "./contracts": "./contracts/index.ts",
     "./contracts/crm": "./contracts/crm.ts"

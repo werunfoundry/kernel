@@ -13,7 +13,10 @@
     "./manifest/validate": "./manifest/validate.ts",
     "./manifest/load": "./manifest/load.ts",
     "./contracts": "./contracts/index.ts",
-    "./contracts/types": "./contracts/types.ts"
+    "./contracts/types": "./contracts/types.ts",
+    "./runtime/boot": "./runtime/boot.ts",
+    "./runtime/resolve": "./runtime/resolve.ts",
+    "./runtime/run": "./runtime/run.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
@@ -33,6 +36,7 @@
     "db",
     "manifest",
     "contracts",
+    "runtime",
     "scripts"
   ]
 }

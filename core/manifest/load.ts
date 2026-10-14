@@ -29,7 +29,13 @@ const failed = (at: string, message: string): ValidationResult => ({
   issues: [{ severity: "error", at, message }],
 });
 
-function readDocument(file: string): { value?: unknown; result?: ValidationResult } {
+/**
+ * One YAML file, parsed and not yet validated. Exported for the one caller
+ * that must look inside a manifest before it can be validated: boot, which
+ * learns from `enabledDomains` which domains to load before it has anything
+ * to validate the manifest against.
+ */
+export function readDocument(file: string): { value?: unknown; result?: ValidationResult } {
   let text: string;
   try {
     text = readFileSync(file, "utf8");

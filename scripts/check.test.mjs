@@ -46,6 +46,10 @@ const BASELINE = {
     'import { pgSchema } from "drizzle-orm/pg-core";\nexport const core = pgSchema("core");\n',
   "domains/alpha/domain.yaml":
     "name: alpha\nversion: 0.0.0\ndescription: x\nschema: alpha\ndependsOn: []\n",
+  "domains/alpha/package.json":
+    '{ "name": "@werunfoundry/alpha", "exports": { "./domain.yaml": "./domain.yaml" } }\n',
+  "domains/beta/package.json":
+    '{ "name": "@werunfoundry/beta", "exports": { "./domain.yaml": "./domain.yaml" } }\n',
   "domains/alpha/db/schema.ts":
     'import { pgSchema } from "drizzle-orm/pg-core";\nexport const alpha = pgSchema("alpha");\n',
   "domains/beta/domain.yaml":
@@ -58,6 +62,7 @@ function repo(extra = {}, { git = true } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "doctrine-"));
   made.push(dir);
   for (const [path, body] of Object.entries({ ...BASELINE, ...extra })) {
+    if (body === undefined) continue; // removes a baseline file
     const full = join(dir, path);
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, body);
@@ -250,6 +255,29 @@ describe("rule 6 — a rule can only hold where it can see", () => {
 
   it("refuses one at the root of this repository, which is not an instance", () => {
     refuses(repo({ "adapters/crm.ts": "export const x = 1;\n" }), 6, "adapter lives in");
+  });
+
+  it("refuses a domain that does not export its domain.yaml, which no instance could boot", () => {
+    refuses(
+      repo({ "domains/alpha/package.json": '{ "name": "@werunfoundry/alpha", "exports": {} }\n' }),
+      6,
+      "does not export",
+    );
+  });
+
+  it("refuses a domain whose package an instance would look for under another name", () => {
+    refuses(
+      repo({
+        "domains/alpha/package.json":
+          '{ "name": "@werunfoundry/a", "exports": { "./domain.yaml": "./domain.yaml" } }\n',
+      }),
+      6,
+      "looks for this domain",
+    );
+  });
+
+  it("refuses a domain with no package.json", () => {
+    refuses(repo({ "domains/alpha/package.json": undefined }), 6, "without a readable package.json");
   });
 
   it("refuses JSON no machine can read", () => {

@@ -258,6 +258,31 @@ for (const file of allFiles) {
   layers.set(dir, declared);
 }
 
+/**
+ * An instance finds a domain by its package name and reads its `domain.yaml`
+ * through the package's exports (decision 0007). A domain whose package is
+ * misnamed, or that does not export the file, passes every other check here
+ * and cannot be enabled by anyone — which is learned at the first boot of the
+ * first instance that tries, in someone else's repository.
+ */
+for (const name of layers.keys()) {
+  if (name === "core") continue;
+  const file = `domains/${name}/package.json`;
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    fail(6, file, 0, "a domain is a package; without a readable package.json no instance can install it");
+    continue;
+  }
+  if (pkg.name !== `${PKG}/${name}`) {
+    fail(6, file, 0, `is named "${pkg.name}"; an instance looks for this domain as "${PKG}/${name}"`);
+  }
+  if (pkg.exports?.["./domain.yaml"] !== "./domain.yaml") {
+    fail(6, file, 0, 'does not export "./domain.yaml": "./domain.yaml", so boot cannot read it (decision 0007)');
+  }
+}
+
 for (const [name, layer] of layers) {
   for (const dep of layer.dependsOn) {
     if (!layers.has(dep)) {

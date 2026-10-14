@@ -38,6 +38,7 @@ scripts/              checks that make the doctrine enforceable
 | Manifest | written, validated |
 | Binding resolver | written |
 | Run recorder | written |
+| Boot | written; resolves every name from the instance (0007) |
 | Instance template | written, with one reference adapter |
 | Adapters | one, against an invented API |
 | Published build | decided (0006), not wired |

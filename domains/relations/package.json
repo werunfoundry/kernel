@@ -9,7 +9,8 @@
     "./domain.yaml": "./domain.yaml",
     "./db/schema": "./db/schema.ts",
     "./contracts": "./contracts/index.ts",
-    "./contracts/crm": "./contracts/crm.ts"
+    "./contracts/crm": "./contracts/crm.ts",
+    "./contracts/enrichment": "./contracts/enrichment.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -30,6 +31,10 @@
       "./contracts/crm": {
         "types": "./dist/contracts/crm.d.ts",
         "default": "./dist/contracts/crm.js"
+      },
+      "./contracts/enrichment": {
+        "types": "./dist/contracts/enrichment.d.ts",
+        "default": "./dist/contracts/enrichment.js"
       }
     }
   },

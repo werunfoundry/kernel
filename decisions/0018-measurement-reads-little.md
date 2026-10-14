@@ -1,5 +1,7 @@
 # 0018 — Measurement reads little, and says what it cannot read
 
+> Superseded in part by [0021](0021-a-metric-may-not-apply.md): what `read` returns may be "not applicable", never zero.
+
 ## Decided
 
 `MetricSource` gets work to do, and the six experiment types get a surface.

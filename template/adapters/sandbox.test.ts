@@ -54,6 +54,14 @@ describe("found nothing is not could not look", () => {
     assert.equal(r.ok, false);
   });
 
+  it("metrics: a guardrail asked about a channel it does not exist on is not applicable, never zero", async () => {
+    const source = metricsFactory({ options: { stateFile: join(dir, "m.json") }, env: {} });
+    const social = await source.read({ key: "gtm.bounced", channel: "social_message" }, ctx(true));
+    assert.ok(social.ok && !social.value.applicable, JSON.stringify(social));
+    const email = await source.read({ key: "gtm.bounced", channel: "email" }, ctx(true));
+    assert.ok(email.ok && email.value.applicable && email.value.value === 0);
+  });
+
   it("metrics: a key the source does not read is refused, never zero", async () => {
     const r = await metricsFactory({ options: { stateFile: join(dir, "m.json") }, env: {} }).read({ key: "gtm.opened" }, ctx(true));
     assert.equal(r.ok, false);

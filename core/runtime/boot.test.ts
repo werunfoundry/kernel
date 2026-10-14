@@ -209,6 +209,18 @@ describe("booting an instance", () => {
     assert.match(messages(await boot({ root: bad, env: {} })).join("\n"), /reads "gtm.revenue", which no enabled domain declares/);
   });
 
+  it("refuses a metric scoped to a channel no enabled domain declares", async () => {
+    const root = instance({
+      "manifest.yaml": manifest(["enabledDomains: [relations, scoped]", "providers: []"]),
+      "node_modules/@werunfoundry/scoped/package.json":
+        '{ "name": "@werunfoundry/scoped", "exports": { "./domain.yaml": "./domain.yaml" } }\n',
+      "node_modules/@werunfoundry/scoped/domain.yaml":
+        "name: scoped\nversion: 0.0.0\ndescription: x\nschema: scoped\ndependsOn: [relations]\n" +
+        "channels: [email]\nmetrics:\n  - key: scoped.bounced\n    unit: people\n    channels: [carrier_pigeon]\n",
+    }, ["relations"]);
+    assert.match(messages(await boot({ root, env: {} })).join("\n"), /scopes "scoped.bounced" to the channel "carrier_pigeon"/);
+  });
+
   describe("a contract bound per channel (0015)", () => {
     /** An adapter that serves the given channels. */
     const serving = (...channels: string[]) =>

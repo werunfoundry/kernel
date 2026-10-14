@@ -73,7 +73,7 @@ export const domainManifestSchema = z.object({
   experimentTypes: z.array(identifier).optional(),
   eventTypes: z.array(namespacedKey).optional(),
   truthKinds: z.array(identifier).optional(),
-  metrics: z.array(z.object({ key: namespacedKey, unit: z.string().min(1) })).optional(),
+  metrics: z.array(z.object({ key: namespacedKey, unit: z.string().min(1), channels: z.array(identifier).optional() })).optional(),
   experimentMetrics: z.record(identifier, z.array(namespacedKey)).optional(),
   identityKeys: z
     .array(
@@ -228,6 +228,18 @@ export function validateInstance(
       owners.set(k.kind, name);
     }
   }
+  // A metric scoped to channels names declared ones.
+  const channelVocabulary = new Set(m.enabledDomains.flatMap((n) => known.get(n)?.channels ?? []));
+  for (const name of m.enabledDomains) {
+    for (const metric of known.get(name)?.metrics ?? []) {
+      for (const channel of metric.channels ?? []) {
+        if (!channelVocabulary.has(channel)) {
+          issues.push(issue("error", "enabledDomains", `"${name}" scopes "${metric.key}" to the channel "${channel}", which no enabled domain declares`, 1));
+        }
+      }
+    }
+  }
+
   // An experiment type may be judged on another enabled domain's metric, but
   // only on one some enabled domain declares.
   const metricKeys = new Set(m.enabledDomains.flatMap((n) => (known.get(n)?.metrics ?? []).map((x) => x.key)));

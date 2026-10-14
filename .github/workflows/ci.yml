@@ -29,12 +29,16 @@ jobs:
         run: node scripts/check.mjs
 
       # The checks are the only thing enforcing the doctrine, so they are the
-      # one file that must not be trusted on sight.
+      # one file that must not be trusted on sight. They need nothing
+      # installed, which is why they are still above this line.
       - name: test the checks
         run: node --test "scripts/**/*.test.mjs"
 
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
+
+      - name: test the engine
+        run: pnpm test:engine
 
       # The drift assertions in core/manifest/validate.ts are only true if
       # something compiles them. This is that something.

@@ -8,7 +8,9 @@
   },
   "scripts": {
     "check": "node scripts/check.mjs",
-    "test": "node --test \"scripts/**/*.test.mjs\"",
+    "test": "pnpm test:checks && pnpm test:engine",
+    "test:checks": "node --test \"scripts/**/*.test.mjs\"",
+    "test:engine": "node --import tsx --test \"core/**/*.test.ts\"",
     "new-instance": "node scripts/new-instance.mjs",
     "prepare": "git config core.hooksPath .githooks",
     "typecheck": "pnpm -r typecheck",
@@ -16,8 +18,9 @@
     "db:migrate": "pnpm -r --workspace-concurrency=1 db:migrate"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "drizzle-kit": "^0.31.0",
-    "typescript": "^5.6.3",
-    "@types/node": "^22.10.0"
+    "tsx": "^4.21.0",
+    "typescript": "^5.6.3"
   }
 }

@@ -5,9 +5,24 @@
 The engine's packages publish compiled JavaScript and `.d.ts` declarations.
 They do not publish TypeScript source.
 
-The workspace keeps consuming source — no build while developing, and an edit
-is visible to the next command. Only the published artifact is compiled, which
-`publishConfig.exports` swaps in at publish time.
+The workspace keeps consuming source: `tsc` maps a `./x.js` specifier back to
+`x.ts` without complaint, so typechecking needs no build. Only the published
+artifact is compiled, which `publishConfig.exports` swaps in at publish time.
+
+Running the source is a different matter, and this decision costs something
+there. Node's type stripping does not rewrite a `.js` specifier to a `.ts`
+file — verified, not assumed:
+
+```
+import { value } from "./dep.js";   // only dep.ts exists
+ERR_MODULE_NOT_FOUND
+```
+
+So from the moment the specifiers changed, the source stopped being runnable
+by plain Node. Tests and scripts go through `tsx`, a development dependency
+that does the rewrite and is never published. The alternative was to add the
+build immediately and run everything against `dist`, which buys nothing today
+and makes every edit wait for a compile.
 
 Taken now; the build itself is added when the first instance has to run. What
 is done now is the part that gets expensive later: relative imports are

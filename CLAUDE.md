@@ -103,6 +103,11 @@ injects what it should pass through, also write the case that passes through
 it for real. The binding resolver's tests injected the importer, passed, and
 covered a resolver that could not load a single published adapter.
 
+Never filter a command's error output. A command whose error is hidden is no
+better than one that was never run: `gh pr edit` failed on every call while
+its error line was filtered away as noise, and four pull request bodies stayed
+wrong until someone read one back.
+
 ## 6. Decisions
 
 A decision that changes a boundary gets a file in `decisions/`, numbered, with

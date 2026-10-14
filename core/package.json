@@ -1,7 +1,6 @@
 {
   "name": "@werunfoundry/core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Governance core. Contains no business word.",
   "license": "Apache-2.0",
   "type": "module",
@@ -18,12 +17,63 @@
     "./runtime/resolve": "./runtime/resolve.ts",
     "./runtime/run": "./runtime/run.ts"
   },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./db/schema": {
+        "types": "./dist/db/schema.d.ts",
+        "default": "./dist/db/schema.js"
+      },
+      "./manifest/types": {
+        "types": "./dist/manifest/types.d.ts",
+        "default": "./dist/manifest/types.js"
+      },
+      "./manifest": {
+        "types": "./dist/manifest/index.d.ts",
+        "default": "./dist/manifest/index.js"
+      },
+      "./manifest/validate": {
+        "types": "./dist/manifest/validate.d.ts",
+        "default": "./dist/manifest/validate.js"
+      },
+      "./manifest/load": {
+        "types": "./dist/manifest/load.d.ts",
+        "default": "./dist/manifest/load.js"
+      },
+      "./contracts": {
+        "types": "./dist/contracts/index.d.ts",
+        "default": "./dist/contracts/index.js"
+      },
+      "./contracts/types": {
+        "types": "./dist/contracts/types.d.ts",
+        "default": "./dist/contracts/types.js"
+      },
+      "./runtime/boot": {
+        "types": "./dist/runtime/boot.d.ts",
+        "default": "./dist/runtime/boot.js"
+      },
+      "./runtime/resolve": {
+        "types": "./dist/runtime/resolve.d.ts",
+        "default": "./dist/runtime/resolve.js"
+      },
+      "./runtime/run": {
+        "types": "./dist/runtime/run.d.ts",
+        "default": "./dist/runtime/run.js"
+      }
+    }
+  },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
   "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "prepack": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && pnpm build",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
@@ -32,11 +82,9 @@
     "kernel-check-instance": "./scripts/check-instance.mjs"
   },
   "files": [
-    "index.ts",
-    "db",
-    "manifest",
-    "contracts",
-    "runtime",
-    "scripts"
+    "dist",
+    "db/migrations",
+    "scripts",
+    "!dist/*.tsbuildinfo"
   ]
 }

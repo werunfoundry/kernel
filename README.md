@@ -42,7 +42,7 @@ scripts/              checks that make the doctrine enforceable
 | End to end | once: boot, a dry run, one adapter call, the run closed — `pnpm verify` in an instance |
 | Instance template | written, with one reference adapter |
 | Adapters | one, against an invented API |
-| Published build | decided (0006), not wired |
+| Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
 
 ## Where the work is
 
@@ -57,8 +57,9 @@ one fails by contacting someone it should not have.
 on answers this repository does not have — how a target list is actually
 served, and whether it can say when it was last recomputed.
 
-**The build.** Decision 0006 settled what gets published; wiring it waits
-until something has to be consumed from outside this repository.
+**Publication.** The packs are built, checked and run as an instance in CI
+(0008). Putting them on the registry needs the `@werunfoundry` scope to exist
+there, which is an account, not code.
 
 **A first instance.** Generated from `template/`, in its own repository. It is
 last on purpose: an instance built before the engine runs would be built

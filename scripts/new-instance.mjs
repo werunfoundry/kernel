@@ -46,6 +46,15 @@ pkg.name = target.split("/").filter(Boolean).pop();
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
 // Outside the workspace there is no ../tsconfig.base.json to extend.
+//
+// Two options here look like mistakes next to the kernel's own config, and are
+// not (decision 0008). The kernel emits JavaScript, so it writes `./x.js` and
+// cannot allow `.ts` imports. An instance never emits: Node runs its
+// TypeScript directly, by stripping the types, and Node only finds a file by
+// the name it has — so an instance writes `./x.ts`, and needs
+// `allowImportingTsExtensions` to say so. `erasableSyntaxOnly` refuses, at
+// typecheck, the syntax stripping cannot remove — enums, namespaces,
+// constructor parameter properties — which would otherwise fail at run time.
 const tsconfig = join(to, "tsconfig.json");
 writeFileSync(
   tsconfig,
@@ -64,6 +73,7 @@ writeFileSync(
         resolveJsonModule: true,
         noEmit: true,
         allowImportingTsExtensions: true,
+        erasableSyntaxOnly: true,
         types: ["node"],
       },
       include: ["**/*.ts"],

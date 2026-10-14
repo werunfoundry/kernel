@@ -17,6 +17,19 @@ truths/             the claims you stand behind, machine half and prose half
 context/            prose the engine may cite and will never parse
 ```
 
+## Your TypeScript runs as it is
+
+An instance has no build. Node runs its TypeScript directly, by stripping the
+types — Node 22.18 or later, no loader, no flag (decision 0008). Two things
+follow:
+
+- **Relative imports name the file**: `./mapping.ts`, not `./mapping.js`.
+  Node finds a file by the name it has.
+- **Only syntax that can be erased.** No enums, no namespaces, no constructor
+  parameter properties: stripping cannot remove them, and they would fail at
+  run time. `erasableSyntaxOnly` in `tsconfig.json` refuses them at typecheck
+  instead.
+
 ## Starting one
 
 ```

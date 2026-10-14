@@ -63,6 +63,15 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://postgres@localhost:5432/postgres
 
+      # Everything above runs inside the workspace, against TypeScript source
+      # and with a loader. No instance has either. This packs the packages as
+      # a publish would, installs them into an instance generated outside the
+      # workspace, and runs it on plain Node against a real database.
+      - name: an instance, from the packs, on plain Node
+        run: node scripts/try-instance.mjs
+        env:
+          TEST_DATABASE_URL: postgresql://postgres@localhost:5432/postgres
+
       # The drift assertions in core/manifest/validate.ts are only true if
       # something compiles them. This is that something.
       - name: typecheck

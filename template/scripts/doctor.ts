@@ -20,6 +20,11 @@
  * whose last result nobody can check.
  *
  * Exits 0 only when every step answered.
+ *
+ * It runs on plain Node, against the published packages (decision 0008).
+ * Inside the kernel's workspace those packages are TypeScript source and this
+ * cannot run as it is; `pnpm try-instance` at the kernel root runs it the way
+ * an instance would.
  */
 
 import { existsSync } from "node:fs";

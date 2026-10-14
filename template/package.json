@@ -4,9 +4,12 @@
   "private": true,
   "description": "An instance of the engine. Configuration, context, truths, secrets — and adapters.",
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "check": "kernel-check-instance",
-    "verify": "node --import tsx scripts/doctor.ts",
+    "verify": "node scripts/doctor.ts",
     "typecheck": "tsc --noEmit",
     "db:migrate": "echo 'runs the kernel migrations in dependency order — see README'"
   },
@@ -18,7 +21,6 @@
     "pg": "^8.13.0"
   },
   "devDependencies": {
-    "@types/pg": "^8.11.0",
-    "tsx": "^4.21.0"
+    "@types/pg": "^8.11.0"
   }
 }

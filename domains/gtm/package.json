@@ -12,7 +12,8 @@
     "./manifest": "./manifest/index.ts",
     "./contracts": "./contracts/index.ts",
     "./contracts/sequencer": "./contracts/sequencer.ts",
-    "./contracts/target-list": "./contracts/target-list.ts"
+    "./contracts/target-list": "./contracts/target-list.ts",
+    "./adapters/*": "./adapters/*/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -45,6 +46,10 @@
       "./contracts/target-list": {
         "types": "./dist/contracts/target-list.d.ts",
         "default": "./dist/contracts/target-list.js"
+      },
+      "./adapters/*": {
+        "types": "./dist/adapters/*/index.d.ts",
+        "default": "./dist/adapters/*/index.js"
       }
     }
   },

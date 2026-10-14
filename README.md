@@ -34,14 +34,14 @@ scripts/              checks that make the doctrine enforceable
 | --- | --- |
 | Doctrine | written, and checked by `scripts/check.mjs` |
 | Schema | written; migrations generated and applied in CI |
-| Contracts | written; one of them implemented |
+| Contracts | written; two of them implemented |
 | Manifest | written, validated |
 | Binding resolver | written |
 | Run recorder | written |
 | Boot | written; resolves every name from the instance (0007) |
 | End to end | once: boot, a dry run, one adapter call, the run closed — `pnpm verify` in an instance |
 | Instance template | written, with one reference adapter |
-| Adapters | one, against an invented API |
+| Adapters | two: an example against an invented API, and a sequencer verified read-only against a live provider (0011) |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
 
 ## Where the work is
@@ -53,9 +53,9 @@ failing closed on freshness as well as on reachability. This is the one that
 carries real consequence: everything else here fails by not working, and this
 one fails by contacting someone it should not have.
 
-**The remaining adapters.** A sequencer and a target list. Their shape depends
-on answers this repository does not have — how a target list is actually
-served, and whether it can say when it was last recomputed.
+**The remaining adapter.** A target list. Its shape depends on answers this
+repository does not have — how a target list is actually served, and whether
+it can say when it was last recomputed.
 
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.

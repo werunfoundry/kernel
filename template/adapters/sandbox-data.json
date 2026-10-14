@@ -1,0 +1,20 @@
+{
+  "companies": [
+    { "domain": "open.example.com", "name": "Open Example", "externalId": "acct-1" },
+    { "domain": "other.example.org", "name": "Other Example", "externalId": "acct-2" },
+    { "domain": "customer.example.net", "name": "Customer Example", "externalId": "acct-3" }
+  ],
+  "protected": [
+    { "domain": "customer.example.net", "externalId": "acct-3", "reason": "customer" }
+  ],
+  "people": [
+    { "domain": "open.example.com", "email": "ada@open.example.com", "name": "Ada Example", "title": "Head of Operations" },
+    { "domain": "open.example.com", "email": "bo@open.example.com", "name": "Bo Example", "title": "Operations Lead" },
+    { "domain": "other.example.org", "email": "cy@other.example.org", "name": "Cy Example", "title": "Director" },
+    { "domain": "customer.example.net", "email": "dee@customer.example.net", "name": "Dee Example", "title": "Buyer" }
+  ],
+  "events": [
+    { "id": "evt-1", "type": "gtm.reply", "occurredAt": "2026-01-02T09:00:00Z", "email": "ada@open.example.com" },
+    { "id": "evt-2", "type": "gtm.meeting_booked", "occurredAt": "2026-01-03T15:30:00Z", "email": "ada@open.example.com" }
+  ]
+}

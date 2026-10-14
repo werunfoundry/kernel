@@ -17,7 +17,10 @@
     "./runtime/resolve": "./runtime/resolve.ts",
     "./runtime/run": "./runtime/run.ts",
     "./runtime/verify": "./runtime/verify.ts",
-    "./identity": "./identity/index.ts"
+    "./identity": "./identity/index.ts",
+    "./db/migrations/*": "./db/migrations/*",
+    "./runtime/connect": "./runtime/connect.ts",
+    "./runtime/migrate": "./runtime/migrate.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -73,11 +76,21 @@
       "./identity": {
         "types": "./dist/identity/index.d.ts",
         "default": "./dist/identity/index.js"
+      },
+      "./db/migrations/*": "./db/migrations/*",
+      "./runtime/connect": {
+        "types": "./dist/runtime/connect.d.ts",
+        "default": "./dist/runtime/connect.js"
+      },
+      "./runtime/migrate": {
+        "types": "./dist/runtime/migrate.d.ts",
+        "default": "./dist/runtime/migrate.js"
       }
     },
     "bin": {
       "kernel-check-instance": "./scripts/check-instance.mjs",
-      "kernel-verify": "./dist/bin/verify.js"
+      "kernel-verify": "./dist/bin/verify.js",
+      "kernel-migrate": "./dist/bin/migrate.js"
     }
   },
   "dependencies": {
@@ -94,7 +107,8 @@
   },
   "bin": {
     "kernel-check-instance": "./scripts/check-instance.mjs",
-    "kernel-verify": "./bin/verify.ts"
+    "kernel-verify": "./bin/verify.ts",
+    "kernel-migrate": "./bin/migrate.ts"
   },
   "files": [
     "dist",

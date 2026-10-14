@@ -52,12 +52,23 @@ const messages = (r: { issues: { at: string; message: string }[] }) =>
   r.issues.map((i) => `${i.at.replace(/^.*manifest\.yaml:/, "")} ${i.message}`);
 
 describe("booting an instance", () => {
-  it("boots the template as it ships", async () => {
-    const r = await boot({ root: join(kernel, "template"), env: { EXAMPLE_CRM_TOKEN: "unused" } });
+  it("boots the template as it ships, every contract bound to a sandbox", async () => {
+    const r = await boot({ root: join(kernel, "template"), env: {} });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (!r.ok) return;
     assert.deepEqual(r.domains.map((d) => d.name), ["relations", "gtm"]);
-    assert.equal(r.registry.require("crm").provider, "example-crm");
+    assert.deepEqual(
+      r.registry.list().map((a) => `${a.contract}:${a.provider}`),
+      [
+        "target_list:sandbox-target-list",
+        "enrichment:sandbox-enrichment",
+        "sequencer:sandbox-sequencer",
+        "inbound:sandbox-inbound",
+        "metrics:sandbox-metrics",
+        "crm:sandbox-crm",
+      ],
+    );
+    assert.ok(r.registry.forChannel("sequencer", "email"));
   });
 
   it("returns the manifest, the domains and the registry", async () => {

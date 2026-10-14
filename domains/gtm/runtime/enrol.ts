@@ -93,6 +93,12 @@ export interface EnrolReport {
   skipped: Skipped[];
   /** Whether capacity bounded the run, or why not. */
   capacity: { checked: true; budget: number } | { checked: false; why: string };
+  /**
+   * Whether the run row was closed with this outcome. False means the
+   * database refused the last write: the row still reads "running", and this
+   * report is the only record of what happened.
+   */
+  recorded: boolean;
 }
 
 export interface EnrolDeps {
@@ -143,6 +149,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     enrolled: [],
     skipped: [],
     capacity: { checked: false, why: "no sender was given" },
+    recorded: false,
   };
 
   try {
@@ -199,7 +206,11 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       for (const sender of request.senders) {
         const c = await sequencer.capacity({ sender, channel: request.channel }, ctx);
         if (!c.ok) throw new Stop(`capacity unknown for ${sender.label ?? sender.externalId}: ${c.error.code}: ${c.error.message}`);
-        budget += c.value.remaining ?? 0;
+        // A source that does not say what is left has not said zero.
+        if (c.value.remaining === undefined) {
+          throw new Stop(`capacity unknown for ${sender.label ?? sender.externalId}: the provider did not say what is left`);
+        }
+        budget += c.value.remaining;
       }
       report.capacity = { checked: true, budget };
     }
@@ -292,15 +303,24 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     }
   } catch (thrown) {
     if (!(thrown instanceof Stop)) {
-      await open.finish({ status: "failed", error: (thrown instanceof Error ? thrown.message : String(thrown)).slice(0, 500) });
+      // A bug, not an outcome: record it if the database lets us, and let it
+      // through either way — a failed close must not hide the cause.
+      await open
+        .finish({ status: "failed", error: (thrown instanceof Error ? thrown.message : String(thrown)).slice(0, 500) })
+        .catch(() => {});
       throw thrown;
     }
     report.stoppedBy = thrown.message;
     report.status = report.enrolled.length === 0 ? "failed" : "partial";
   }
 
-  await open.finish(
-    report.status === "succeeded" ? { status: "succeeded" } : { status: report.status, error: (report.stoppedBy ?? "").slice(0, 500) },
-  );
+  try {
+    await open.finish(
+      report.status === "succeeded" ? { status: "succeeded" } : { status: report.status, error: (report.stoppedBy ?? "").slice(0, 500) },
+    );
+    report.recorded = true;
+  } catch (error) {
+    report.stoppedBy = `${report.stoppedBy ? `${report.stoppedBy}; ` : ""}the run could not be closed: ${(error as Error).message.split("\n")[0]}`;
+  }
   return report;
 }

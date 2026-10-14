@@ -37,27 +37,38 @@ node scripts/new-instance.mjs ../my-instance
 cd ../my-instance && git init && pnpm install
 ```
 
-Then, in order, because each step tells you what the next one needs:
+It runs as it is. Every contract is bound to a sandbox adapter that answers
+from invented data, so before anything is configured:
 
-1. **Fill `manifest.yaml`.** Name the instance, enable the domains you want,
-   and delete the example binding. A domain may only be enabled together with
-   everything it depends on; the engine refuses the rest at startup rather
-   than letting a foreign key point at a schema nobody installed.
-2. **Write the adapters your bindings name.** `adapters/example-crm.ts` is a
+```
+cp .env.example .env          # set DATABASE_URL (and DIRECT_URL, for migrations)
+pnpm migrate                  # installs core, relations, gtm — in that order
+pnpm verify                   # boots, opens a dry run, probes every adapter
+pnpm enrol -- --sequence welcome --channel email --max-age 60
+```
+
+`pnpm enrol` is a dry run until you add `--live`. It reads the protected
+accounts first, whole and fresh, and enrols nobody if it cannot (0019). In the
+sandbox, one of the three invented companies is protected: watch it skipped.
+
+Then make it yours, in order, because each step tells you what the next one
+needs:
+
+1. **Fill `manifest.yaml`.** Name the instance, enable the domains you want.
+   A domain may only be enabled together with everything it depends on.
+2. **Replace the sandbox bindings, one at a time.** A published adapter is a
+   package name; your own goes in `adapters/`. `adapters/example-crm.ts` is a
    complete one against an invented API — copy it and change the four places
-   marked `CHANGE:`. Delete it once you have your own.
-3. **Copy `.env.example` to `.env` and fill it.** Every variable a binding
-   declares must exist; the engine says which is missing.
-4. **Run the migrations**, in dependency order — core, then each domain. The
-   engine's `db:migrate` does the ordering.
-5. **Write your truths.** Start with one, with a real owner and a real date.
+   marked `CHANGE:`. Delete the sandboxes, their data and their state file
+   when nothing binds them any more.
+3. **Fill `.env`.** Every variable a binding declares must exist; the engine
+   says which is missing.
+4. **Write your truths.** Start with one, with a real owner and a real date.
    An ICP nobody has confirmed in three months is reported as stale, which is
    the only thing that keeps it honest.
-6. **Run `pnpm verify`.** It boots the instance, opens a dry run in its
-   database, makes one read through each adapter it knows how to probe, and
-   closes the run with what happened. Every step before this one can be
-   plausible and wrong; this is the one that finds out. Not `pnpm doctor`,
-   which is a pnpm command of its own and never reaches this script.
+5. **Run `pnpm verify` again.** Every step before this one can be plausible
+   and wrong; this is the one that finds out. Not `pnpm doctor`, which is a
+   pnpm command of its own and never reaches the engine.
 
 ## The two checks
 

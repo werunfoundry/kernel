@@ -164,6 +164,42 @@ describe("rule 1 — a provider is named only inside its adapter", () => {
   it("allows one in prose explaining why it must not appear", () => {
     accepts(repo({ "core/x.ts": "// never write hubspot here\nexport const x = 1;\n" }));
   });
+
+  it("refuses one in a decision, where a provider is most likely to be named", () => {
+    refuses(repo({ "decisions/0099-x.md": "# 0099 — x\n\nWe chose lemlist because it was there.\n" }), 1, "lemlist");
+  });
+
+  it("refuses one in the README", () => {
+    refuses(repo({ "README.md": "# kernel\n\nWorks well with pipedrive.\n" }), 1, "pipedrive");
+  });
+
+  it("refuses one in the template outside its adapters", () => {
+    refuses(repo({ "template/README.md": "Bind your attio workspace here.\n" }), 1, "attio");
+  });
+
+  it("refuses one in a Markdown heading or list item, which are not comments", () => {
+    refuses(repo({ "decisions/0099-x.md": "# 0099 — Why smartlead\n" }), 1, "smartlead");
+    refuses(repo({ "decisions/0099-x.md": "* hubspot was considered\n" }), 1, "hubspot");
+  });
+
+  it("allows a YAML comment explaining why, as it allows a code comment", () => {
+    accepts(repo({ "template/manifest.yaml": "# not apollo: it is a target list, bound elsewhere\ninstance: x\n" }));
+  });
+
+  it("exempts the two files that hold the list, by exact path and nothing else", () => {
+    const named = 'export const p = "hubspot";\n';
+    accepts(repo({ "scripts/check.mjs": named, "scripts/check.test.mjs": named }));
+    for (const near of [
+      "scripts/check2.mjs",
+      "scripts/check.mjs.md",
+      "scripts/check-instance.mjs",
+      "tools/scripts/check.mjs",
+      "scripts/sub/check.mjs",
+      "Scripts/check.mjs",
+    ]) {
+      refuses(repo({ [near]: named }), 1, "hubspot");
+    }
+  });
 });
 
 describe("rule 2 — dependencies point down, never sideways", () => {

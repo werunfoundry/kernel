@@ -40,6 +40,11 @@ Then, in order, because each step tells you what the next one needs:
 5. **Write your truths.** Start with one, with a real owner and a real date.
    An ICP nobody has confirmed in three months is reported as stale, which is
    the only thing that keeps it honest.
+6. **Run `pnpm verify`.** It boots the instance, opens a dry run in its
+   database, makes one read through each adapter it knows how to probe, and
+   closes the run with what happened. Every step before this one can be
+   plausible and wrong; this is the one that finds out. Not `pnpm doctor`,
+   which is a pnpm command of its own and never reaches this script.
 
 ## The two checks
 

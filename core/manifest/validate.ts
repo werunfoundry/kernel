@@ -23,7 +23,7 @@ import type {
   TruthDoc,
   ValidationIssue,
   ValidationResult,
-} from "./types.ts";
+} from "./types.js";
 
 /* -------------------------------------------------------------------------- */
 /* Primitives                                                                  */

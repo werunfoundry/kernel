@@ -69,6 +69,40 @@ export interface Contract {
 }
 
 /* -------------------------------------------------------------------------- */
+/* How an adapter comes into existence                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Environment variables, by name. An adapter receives the ones its binding
+ * declared and nothing else, so a misconfigured instance fails at startup
+ * rather than at the first call — and so that reading an adapter tells you
+ * exactly which credentials it can reach.
+ */
+export type AdapterEnv = Readonly<Record<string, string | undefined>>;
+
+export interface AdapterInit {
+  /** The binding's `options`, passed through untouched. */
+  options: Readonly<Record<string, string | number | boolean>>;
+  /** Only the variables the binding named in `env`. */
+  env: AdapterEnv;
+}
+
+/**
+ * Every adapter module's default export.
+ *
+ * A factory and not a class, and not an already-built object: the engine must
+ * be able to construct an adapter from a manifest it reads at startup, and a
+ * module that builds itself at import time cannot be given configuration — it
+ * reads `process.env` instead, which is how credentials end up somewhere no
+ * manifest declares them.
+ *
+ * It is synchronous. An adapter that needs to reach the network before it can
+ * exist is an adapter that fails at import, where no `CallResult` can carry
+ * the reason; connect lazily on the first call instead.
+ */
+export type AdapterFactory<T extends Contract> = (init: AdapterInit) => T;
+
+/* -------------------------------------------------------------------------- */
 /* Metrics — read on demand, never stored as a series (doctrine 3)             */
 /* -------------------------------------------------------------------------- */
 

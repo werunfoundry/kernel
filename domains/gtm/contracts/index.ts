@@ -1,2 +1,2 @@
-export type * from "./sequencer.ts";
-export type * from "./target-list.ts";
+export type * from "./sequencer.js";
+export type * from "./target-list.js";

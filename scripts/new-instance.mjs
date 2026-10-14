@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+/**
+ * Copies `template/` into a new directory and makes it standalone.
+ *
+ * The template is a workspace package here, so that it is typechecked in CI
+ * against the real contracts rather than being a folder of hopeful examples.
+ * That means its dependencies read `workspace:*`, which means exactly nothing
+ * outside this repository — so the copy rewrites them to the engine's current
+ * version, which is the one the template was last verified against.
+ *
+ *   node scripts/new-instance.mjs ../my-instance
+ */
+
+import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const target = process.argv[2];
+
+if (!target) {
+  console.error("usage: node scripts/new-instance.mjs <directory>");
+  process.exit(2);
+}
+
+const to = resolve(target);
+if (existsSync(to)) {
+  console.error(`${target} already exists — pick a directory that does not.`);
+  process.exit(1);
+}
+
+const version = JSON.parse(readFileSync(join(root, "core/package.json"), "utf8")).version;
+
+// Everything except the workspace links, which mean nothing outside it.
+cpSync(join(root, "template"), to, {
+  recursive: true,
+  filter: (src) => !/(^|\/)node_modules(\/|$)/.test(src),
+});
+
+const pkgPath = join(to, "package.json");
+const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+for (const [name, spec] of Object.entries(pkg.dependencies ?? {})) {
+  if (spec === "workspace:*") pkg.dependencies[name] = `^${version}`;
+}
+pkg.name = target.split("/").filter(Boolean).pop();
+writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+
+// Outside the workspace there is no ../tsconfig.base.json to extend.
+const tsconfig = join(to, "tsconfig.json");
+writeFileSync(
+  tsconfig,
+  `${JSON.stringify(
+    {
+      compilerOptions: {
+        target: "ES2023",
+        lib: ["ES2023"],
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        strict: true,
+        noUncheckedIndexedAccess: true,
+        verbatimModuleSyntax: true,
+        skipLibCheck: true,
+        esModuleInterop: true,
+        resolveJsonModule: true,
+        noEmit: true,
+        allowImportingTsExtensions: true,
+        types: ["node"],
+      },
+      include: ["**/*.ts"],
+      exclude: ["node_modules"],
+    },
+    null,
+    2,
+  )}\n`,
+);
+
+console.log(`
+instance created at ${target}, pinned to engine ${version}
+
+  cd ${target}
+  git init && pnpm install
+  cp .env.example .env
+
+Then fill manifest.yaml and delete the example binding and adapter.
+`);

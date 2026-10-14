@@ -24,7 +24,7 @@ domains/
     db/ contracts/    its tables; the sequencer and the target list
 decisions/            boundary decisions, numbered
     manifest/         the shapes of its own truths
-template/             what an instance is generated from (not written yet)
+template/             what an instance is generated from
 scripts/              checks that make the doctrine enforceable
 ```
 
@@ -36,8 +36,8 @@ scripts/              checks that make the doctrine enforceable
 | Schema | written, unmigrated |
 | Contracts | written |
 | Manifest | written, validated |
-| Adapters | not started |
-| Instance template | next |
+| Adapters | one reference adapter |
+| Instance template | written |
 | Template | not started |
 
 ## Contributing

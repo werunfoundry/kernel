@@ -1,1 +1,1 @@
-export type * from "./crm.ts";
+export type * from "./crm.js";

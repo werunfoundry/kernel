@@ -151,6 +151,10 @@ describe("rule 1 — a provider is named only inside its adapter", () => {
     accepts(repo({ "domains/alpha/adapters/crm.ts": 'export const p = "salesforce";\n' }));
   });
 
+  it("allows one in the template's adapters, which an instance inherits", () => {
+    accepts(repo({ "template/adapters/crm.ts": 'export const p = "salesforce";\n' }));
+  });
+
   it("allows one in prose explaining why it must not appear", () => {
     accepts(repo({ "core/x.ts": "// never write hubspot here\nexport const x = 1;\n" }));
   });
@@ -242,6 +246,10 @@ describe("rule 2 — dependencies point down, never sideways", () => {
 describe("rule 6 — a rule can only hold where it can see", () => {
   it("refuses an adapter in the core, which would switch rule 1 off there", () => {
     refuses(repo({ "core/adapters/crm.ts": "export const x = 1;\n" }), 6, "adapter lives in");
+  });
+
+  it("refuses one at the root of this repository, which is not an instance", () => {
+    refuses(repo({ "adapters/crm.ts": "export const x = 1;\n" }), 6, "adapter lives in");
   });
 
   it("refuses JSON no machine can read", () => {

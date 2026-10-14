@@ -1,0 +1,38 @@
+# What this instance is, and what satisfies each contract it needs.
+#
+# The engine owns the shapes in this file; this file owns their values. That
+# split is why a second company is a folder of configuration rather than a
+# second copy of the engine.
+
+# Appears in logs and run records. Not a tenant key — one deployment is one
+# tenant, and the engine has no column for a second.
+instance: example
+
+# A domain may only be enabled with everything it depends on. `gtm` depends on
+# `relations`, and leaving `relations` out is refused here rather than
+# discovered when a foreign key points at a schema nobody installed.
+enabledDomains:
+  - relations
+  - gtm
+
+# Each binding names a contract, the adapter that satisfies it, and the
+# environment variables that adapter may read — by name. A relative path is an
+# adapter in this instance; a bare specifier is a published package.
+providers:
+  - contract: crm
+    adapter: ./adapters/example-crm.ts
+    env:
+      - EXAMPLE_CRM_TOKEN
+    options:
+      baseUrl: https://api.example.invalid/v1
+
+  # - contract: sequencer
+  #   adapter: "@werunfoundry/adapter-something"
+  #   env: [SOMETHING_API_KEY]
+  #
+  # - contract: targetList
+  #   adapter: ./adapters/our-warehouse.ts
+  #   env: [WAREHOUSE_CREDENTIALS_JSON]
+
+# Where the truth documents live, relative to this file.
+truthsDir: truths

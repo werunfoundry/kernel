@@ -1,8 +1,5 @@
 /**
- * Is this instance's configuration real, or only plausible?
- *
- *   pnpm verify        (not `pnpm doctor`: that is a pnpm command of its own,
- *                       which runs instead of this and exits 0)
+ * core/runtime — is an instance's configuration real, or only plausible?
  *
  * A manifest can validate, every variable can be set, every adapter can load,
  * and the first real run can still fail — because the token is revoked, the
@@ -16,42 +13,66 @@
  *
  * Dry run all the way: a probe is a read, and the context says no write may
  * happen even if an adapter were careless. The run row is the one thing it
- * writes, on purpose — a doctor nobody can see in the run log is a doctor
+ * writes, on purpose — a check nobody can see in the run log is a check
  * whose last result nobody can check.
  *
- * Exits 0 only when every step answered.
- *
- * It runs on plain Node, against the published packages (decision 0008).
- * Inside the kernel's workspace those packages are TypeScript source and this
- * cannot run as it is; `pnpm try-instance` at the kernel root runs it the way
- * an instance would.
+ * It ships from the kernel, as `kernel-verify`, for the reason decision 0005
+ * gives for the instance check: a lesson learned in one instance reaches the
+ * others through a version bump, not through a paste nobody repeats.
  */
 
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import type { AdapterEnv } from "../contracts/types.js";
+import { boot } from "./boot.js";
+import { resolvePackage } from "./resolve.js";
+import type { Database, OpenRun } from "./run.js";
+import { openRun } from "./run.js";
 
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Client } from "pg";
+export interface VerifyOptions {
+  /** The instance root: where its manifest lives and its packages are installed. */
+  root: string;
+  /** Usually `process.env`, after the instance's `.env` was loaded. */
+  env: AdapterEnv;
+  /** Where the report goes, one line at a time. */
+  say?: (line: string) => void;
+}
 
-import { boot } from "@werunfoundry/core/runtime/boot";
-import type { Database, OpenRun } from "@werunfoundry/core/runtime/run";
-import { openRun } from "@werunfoundry/core/runtime/run";
+interface Connection {
+  db: Database;
+  end(): Promise<void>;
+}
 
-const root = join(import.meta.dirname, "..");
+/**
+ * The instance's driver, not one the kernel picks (see `run.ts`): `pg` and
+ * `drizzle-orm` are resolved from the instance root, as decision 0007 resolves
+ * every name the instance chose. The kernel declares neither.
+ */
+async function connect(url: string, root: string): Promise<Connection> {
+  let pg: { Client: new (config: { connectionString: string }) => { connect(): Promise<void>; end(): Promise<void> } };
+  let drizzle: (client: unknown) => unknown;
+  try {
+    pg = ((await import(resolvePackage("pg", root))) as { default: typeof pg }).default;
+    ({ drizzle } = (await import(resolvePackage("drizzle-orm/node-postgres", root))) as { drizzle: typeof drizzle });
+  } catch (error) {
+    throw new Error(
+      `verify connects with this instance's own pg and drizzle-orm, and could not load them — ` +
+        `add both to its dependencies (${(error as Error).message.split("\n")[0]})`,
+    );
+  }
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  return { db: drizzle(client) as Database, end: () => client.end() };
+}
 
-const say = (line = "") => console.log(line);
-
-async function main(): Promise<number> {
-  // The same file `.env.example` tells the instance to fill. Absent is fine:
-  // the variables may come from the environment the process was started in.
-  const envFile = join(root, ".env");
-  if (existsSync(envFile)) process.loadEnvFile(envFile);
+/** Returns the exit code: 0 only when every step answered. */
+export async function verify(options: VerifyOptions): Promise<number> {
+  const say = options.say ?? ((line: string) => console.log(line));
+  const shorten = (at: string) => at.replace(`${options.root.replace(/\/$/, "")}/`, "");
 
   /* 1. boot ------------------------------------------------------------- */
 
-  const booted = await boot({ root, env: process.env });
+  const booted = await boot({ root: options.root, env: options.env });
   for (const issue of booted.issues) {
-    say(`  ${issue.severity === "error" ? "✖" : "!"} ${issue.at.replace(`${root}/`, "")}\n      ${issue.message}`);
+    say(`  ${issue.severity === "error" ? "✖" : "!"} ${shorten(issue.at)}\n      ${issue.message}`);
   }
   if (!booted.ok) {
     say(`\nboot: refused, ${booted.issues.length} issue(s). Nothing was opened or called.`);
@@ -62,15 +83,15 @@ async function main(): Promise<number> {
 
   /* 2. open a run ------------------------------------------------------- */
 
-  const url = process.env.DATABASE_URL;
+  const url = options.env.DATABASE_URL;
   if (!url) {
     say("\nrun: DATABASE_URL is not set — boot is fine, but there is nowhere to record a run.");
     return 1;
   }
 
-  const client = new Client({ connectionString: url });
+  let connection: Connection;
   try {
-    await client.connect();
+    connection = await connect(url, options.root);
   } catch (error) {
     say(`\nrun: cannot reach the database — ${(error as Error).message}`);
     return 1;
@@ -78,26 +99,25 @@ async function main(): Promise<number> {
 
   let open: OpenRun;
   try {
-    open = await openRun(drizzle(client) as unknown as Database, {
-      processKey: "instance.doctor",
+    open = await openRun(connection.db, {
+      processKey: "instance.verify",
       trigger: "cli",
-      actor: { type: "system", id: "doctor" },
+      actor: { type: "system", id: "verify" },
       dryRun: true,
     });
   } catch (error) {
-    // The usual cause on a new instance, said in terms of what to do.
     // The driver's reason, not the query wrapper's: "relation does not exist"
     // is the useful line, and the ORM puts it in `cause`.
     const cause = (error as Error).cause;
     const why = cause instanceof Error ? cause.message : (error as Error).message.split("\n")[0];
     say(`\nrun: cannot open one — ${why}`);
     say("     have the engine's migrations been applied to this database?");
-    await client.end();
+    await connection.end();
     return 1;
   }
   say(`\nrun: ${open.id} opened, dry run`);
 
-  /* 3. call ------------------------------------------------------------- */
+  /* 3. probe ------------------------------------------------------------ */
 
   const failures: string[] = [];
   const unprobed: string[] = [];
@@ -132,7 +152,7 @@ async function main(): Promise<number> {
 
   const status = failures.length === 0 ? "succeeded" : "failed";
   await open.finish(failures.length === 0 ? { status } : { status, error: failures.join("; ") });
-  await client.end();
+  await connection.end();
 
   say(`run: ${open.id} closed, ${status}`);
   if (failures.length > 0) say("\nThis configuration is plausible, not real.");
@@ -140,5 +160,3 @@ async function main(): Promise<number> {
   else say("\nThis configuration is real.");
   return failures.length === 0 ? 0 : 1;
 }
-
-process.exitCode = await main();

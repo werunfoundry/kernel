@@ -9,7 +9,7 @@
   },
   "scripts": {
     "check": "kernel-check-instance",
-    "verify": "node scripts/doctor.ts",
+    "verify": "kernel-verify",
     "typecheck": "tsc --noEmit",
     "db:migrate": "echo 'runs the kernel migrations in dependency order — see README'"
   },

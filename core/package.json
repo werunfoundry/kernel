@@ -15,7 +15,8 @@
     "./contracts/types": "./contracts/types.ts",
     "./runtime/boot": "./runtime/boot.ts",
     "./runtime/resolve": "./runtime/resolve.ts",
-    "./runtime/run": "./runtime/run.ts"
+    "./runtime/run": "./runtime/run.ts",
+    "./runtime/verify": "./runtime/verify.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -63,7 +64,15 @@
       "./runtime/run": {
         "types": "./dist/runtime/run.d.ts",
         "default": "./dist/runtime/run.js"
+      },
+      "./runtime/verify": {
+        "types": "./dist/runtime/verify.d.ts",
+        "default": "./dist/runtime/verify.js"
       }
+    },
+    "bin": {
+      "kernel-check-instance": "./scripts/check-instance.mjs",
+      "kernel-verify": "./dist/bin/verify.js"
     }
   },
   "dependencies": {
@@ -79,7 +88,8 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "bin": {
-    "kernel-check-instance": "./scripts/check-instance.mjs"
+    "kernel-check-instance": "./scripts/check-instance.mjs",
+    "kernel-verify": "./bin/verify.ts"
   },
   "files": [
     "dist",

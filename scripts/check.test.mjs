@@ -304,6 +304,30 @@ describe("rule 6 — a rule can only hold where it can see", () => {
     );
   });
 
+  it("refuses a command the workspace has and the published package would run as TypeScript", () => {
+    refuses(
+      repo({
+        "core/package.json":
+          '{ "name": "@werunfoundry/core", "exports": {}, "bin": { "x": "./bin/x.ts" }, ' +
+          '"publishConfig": { "exports": {}, "bin": { "x": "./bin/x.ts" } } }\n',
+      }),
+      6,
+      "as TypeScript source",
+    );
+  });
+
+  it("refuses a command missing from the published package", () => {
+    refuses(
+      repo({
+        "core/package.json":
+          '{ "name": "@werunfoundry/core", "exports": {}, "bin": { "x": "./x.mjs", "y": "./bin/y.ts" }, ' +
+          '"publishConfig": { "exports": {}, "bin": { "x": "./x.mjs" } } }\n',
+      }),
+      6,
+      "different commands",
+    );
+  });
+
   it("refuses a domain with no package.json", () => {
     refuses(repo({ "domains/alpha/package.json": undefined }), 6, "without a readable package.json");
   });

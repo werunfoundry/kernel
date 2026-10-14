@@ -129,7 +129,7 @@ try {
   // Asynchronous, and not for style: the provider above answers from this
   // process, and a synchronous spawn would stop it answering — the script
   // under test would wait on a server that is waiting on it.
-  const run = await spawnAsync(process.execPath, ["scripts/doctor.ts"], {
+  const run = await spawnAsync(join(root, "node_modules/.bin/kernel-verify"), [], {
     cwd: root,
     // Nothing inherited that could load a loader behind this script's back.
     env: { PATH: process.env.PATH, USER: process.env.USER ?? "", DATABASE_URL: url, EXAMPLE_CRM_TOKEN: "try-instance" },

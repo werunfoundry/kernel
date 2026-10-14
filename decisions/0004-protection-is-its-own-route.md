@@ -1,5 +1,7 @@
 # 0004 — Accounts that must not be contacted are their own route
 
+> Completed by [0019](0019-the-enrolment-path.md): the enrolment path checks it, fail-closed, and the kernel decides when it is stale.
+
 > Completed by [0012](0012-one-provider-workspace-per-instance.md): a provider blocklist is defence in depth, not protection.
 
 ## Decided

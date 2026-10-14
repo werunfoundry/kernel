@@ -103,6 +103,46 @@ export function resolvePackage(specifier: string, root: string): string {
   return pathToFileURL(require.resolve(specifier)).href;
 }
 
+/** `@scope/name/sub/path` → `@scope/name`; `name/sub` → `name`. */
+function packageOf(specifier: string): string {
+  const parts = specifier.split("/");
+  return (specifier.startsWith("@") ? parts.slice(0, 2) : parts.slice(0, 1)).join("/");
+}
+
+/**
+ * Node's resolution failures, said in terms of what the instance should do.
+ *
+ * Shared by boot, for domains, and by the resolver, for adapters: the same
+ * failure deserves the same sentence wherever it happens. Node's own wording —
+ * `No "exports" main defined` — blames the package, when the cause is how this
+ * engine resolves (decision 0007), and the remedy is written in a decision
+ * nobody is reading at the moment the error appears. So the remedy is here.
+ *
+ * Only failures of resolving a package name are translated. Anything else —
+ * a relative file that is missing, a module that throws while loading — keeps
+ * Node's first line, which is already the right one.
+ */
+export function explainResolution(thrown: unknown, specifier: string): string {
+  const code = (thrown as { code?: unknown })?.code;
+  const message = (thrown instanceof Error ? thrown.message : String(thrown)).split("\n")[0] ?? "";
+  const bare = !specifier.startsWith(".") && !isAbsolute(specifier) && !specifier.startsWith("file:");
+  if (!bare) return message;
+
+  const pkg = packageOf(specifier);
+  if (code === "MODULE_NOT_FOUND") {
+    return `${pkg} is not installed in this instance — add it to its package.json dependencies`;
+  }
+  if (code === "ERR_PACKAGE_PATH_NOT_EXPORTED") {
+    const what = specifier === pkg ? "its main entry" : `"./${specifier.slice(pkg.length + 1)}"`;
+    return (
+      `${pkg} is installed, but exports nothing for ${what} under the "require" or "default" condition, ` +
+      `which is how the engine resolves a package from the instance (decision 0007). ` +
+      `If it exports that path only under "import", add a "default" key beside "import" in its exports`
+    );
+  }
+  return `${pkg} cannot be resolved: ${message}`;
+}
+
 /**
  * The variables this binding declared, and only those.
  *
@@ -145,9 +185,7 @@ async function build(
   try {
     module = await importModule(locate(binding.adapter, options.root));
   } catch (error) {
-    // Node appends a require stack to a miss; the first line is the reason.
-    const why = (error instanceof Error ? error.message : String(error)).split("\n")[0];
-    return { issues: [issue(`${at}.adapter`, `cannot be loaded: ${why}`)] };
+    return { issues: [issue(`${at}.adapter`, `cannot be loaded: ${explainResolution(error, binding.adapter)}`)] };
   }
 
   const factory = (module as { default?: unknown })?.default;

@@ -117,7 +117,7 @@ describe("booting an instance", () => {
     }, []);
     const r = await boot({ root, env: {} });
     assert.equal(r.ok, false);
-    assert.match(messages(r).join("\n"), /does not export \.\/domain\.yaml/);
+    assert.match(messages(r).join("\n"), /exports nothing for "\.\/domain\.yaml"/);
   });
 
   it("refuses a package whose domain.yaml names another domain", async () => {
@@ -148,6 +148,28 @@ describe("booting an instance", () => {
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (!r.ok) return;
     assert.equal(r.registry.require("crm").provider, "fixture");
+  });
+
+  it("explains an adapter published for import only, and says what to change", async () => {
+    // The ordinary shape of a modern package, and the one decision 0007 says
+    // cannot resolve. The message must say why and what to do, not blame the
+    // package with Node's own words.
+    const root = instance({
+      "manifest.yaml": manifest([
+        "enabledDomains: [relations]",
+        "providers:",
+        "  - { contract: crm, adapter: '@fixture/esm-only', env: [] }",
+      ]),
+      "node_modules/@fixture/esm-only/package.json":
+        '{ "name": "@fixture/esm-only", "type": "module", "exports": { "import": "./index.js" } }\n',
+      "node_modules/@fixture/esm-only/index.js": ADAPTER,
+    }, ["relations"]);
+    const r = await boot({ root, env: {} });
+    assert.equal(r.ok, false);
+    const said = messages(r).join("\n");
+    assert.match(said, /providers\.0\.adapter cannot be loaded: @fixture\/esm-only is installed, but exports nothing for its main entry under the "require" or "default" condition/);
+    assert.match(said, /add a "default" key beside "import"/);
+    assert.doesNotMatch(said, /No "exports" main defined/);
   });
 
   it("reports a manifest that is not YAML, and does not throw", async () => {

@@ -31,7 +31,7 @@ import type {
 } from "../manifest/types.js";
 import { instanceManifestSchema } from "../manifest/validate.js";
 import type { Registry, ResolveOptions } from "./resolve.js";
-import { resolveAdapters, resolvePackage } from "./resolve.js";
+import { explainResolution, resolveAdapters, resolvePackage } from "./resolve.js";
 
 export interface BootOptions {
   /**
@@ -66,19 +66,6 @@ const IDENTIFIER = /^[a-z][a-z0-9_]*$/;
 const error = (at: string, message: string, rule?: number): ValidationIssue =>
   rule === undefined ? { severity: "error", at, message } : { severity: "error", at, message, rule };
 
-/** Node's resolution failures, said in terms of what the instance should do. */
-function explain(thrown: unknown, pkg: string): string {
-  const code = (thrown as { code?: unknown })?.code;
-  if (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") {
-    return `${pkg} is not installed in this instance — add it to its package.json dependencies`;
-  }
-  if (code === "ERR_PACKAGE_PATH_NOT_EXPORTED") {
-    return `${pkg} is installed but does not export ./domain.yaml, so it is not a domain this engine can load`;
-  }
-  const message = thrown instanceof Error ? thrown.message : String(thrown);
-  return `${pkg} cannot be resolved: ${message.split("\n")[0]}`;
-}
-
 /**
  * Each enabled name, as the instance installed it.
  *
@@ -105,7 +92,7 @@ function loadEnabled(
     try {
       path = fileURLToPath(resolvePackage(`${pkg}/domain.yaml`, root));
     } catch (thrown) {
-      issues.push(error(at, explain(thrown, pkg)));
+      issues.push(error(at, explainResolution(thrown, `${pkg}/domain.yaml`)));
       failed.add(at);
       continue;
     }

@@ -32,13 +32,48 @@ scripts/              checks that make the doctrine enforceable
 
 | Piece | State |
 | --- | --- |
-| Doctrine | written |
-| Schema | written, unmigrated |
-| Contracts | written |
+| Doctrine | written, and checked by `scripts/check.mjs` |
+| Schema | written; migrations generated and applied in CI |
+| Contracts | written; one of them implemented |
 | Manifest | written, validated |
-| Adapters | one reference adapter |
-| Instance template | written |
-| Template | not started |
+| Binding resolver | written |
+| Run recorder | written |
+| Instance template | written, with one reference adapter |
+| Adapters | one, against an invented API |
+| Published build | decided (0006), not wired |
+
+## Where the work is
+
+In this order, because each one is what the next needs.
+
+**The entry point.** Load a manifest, resolve its bindings, open a run, call an
+adapter in dry run, close the run. The resolver and the recorder both exist
+and nothing joins them, so nothing has ever run end to end. Until that is
+true, every piece below is being designed against a guess.
+
+**Audiences and suppression.** The protected-accounts path from decision 0004,
+failing closed on freshness as well as on reachability. This is the one that
+carries real consequence: everything else here fails by not working, and this
+one fails by contacting someone it should not have.
+
+**The remaining adapters.** A sequencer and a target list. Their shape depends
+on answers this repository does not have — how a target list is actually
+served, and whether it can say when it was last recomputed.
+
+**The build.** Decision 0006 settled what gets published; wiring it waits
+until something has to be consumed from outside this repository.
+
+**A first instance.** Generated from `template/`, in its own repository. It is
+last on purpose: an instance built before the engine runs would be built
+against intentions.
+
+### Known unknowns
+
+- Whether the sources behind a target list can report their own staleness. If
+  they cannot, fail-closed on freshness is not implementable, and `TargetList`
+  needs a different shape.
+- What a contract change costs once an adapter outside this repository
+  implements one. The answer is cheap today and will not stay cheap; see 0005.
 
 ## Contributing
 

@@ -70,7 +70,34 @@ If you remember nothing else from the doctrine:
 - Attribution is three columns — `actorType`, `actorId`, `runId` — not an
   identity system.
 
-## 4. Decisions
+## 4. Branches, commits and pull requests
+
+A commit is one change, small enough to read and to revert on its own. A pull
+request is **one reversible decision** — everything you would want to undo
+together, and nothing you would not.
+
+That is not a size rule, and it cuts both ways. Two pieces of a single
+capability belong in one pull request even when they are large; two unrelated
+changes belong in two even when both are tiny. The tell is the commit message:
+if it needs the word "also", it is two.
+
+There is no second reviewer here. The gate is CI, so a pull request that is
+green and coherent is ready — the ceremony is for the history, not for an
+approval that is not coming.
+
+## 5. Verify by running, never by reading
+
+Every claim in this repository was wrong at least once when it was only read.
+A malformed `package.json` passed three local gates. A check reported "ok (0
+files)" while checking nothing. Assertions written to catch drift shipped in a
+form that threw at import.
+
+So: run the thing. Plant the violation and watch the check refuse it. Apply
+the migration to a real database. Execute the script rather than reasoning
+about what it would do. When a test cannot run here, say so and say what was
+verified instead — never let "it should work" stand as a result.
+
+## 6. Decisions
 
 A decision that changes a boundary gets a file in `decisions/`, numbered, with
 what was decided, what it rules out, and what would reverse it. One page. A

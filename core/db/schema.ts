@@ -142,7 +142,7 @@ export const experiment = core.table(
     /**
      * Contributed by a domain, so text rather than an enum: a Postgres enum
      * cannot be extended by a domain without that domain migrating a type it
-     * does not own. Validated against the manifest.
+     * does not own. Validated against the manifest once a write path exists.
      */
     type: text("type").notNull(),
 

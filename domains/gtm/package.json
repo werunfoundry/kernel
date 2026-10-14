@@ -14,6 +14,7 @@
     "./contracts/sequencer": "./contracts/sequencer.ts",
     "./contracts/target-list": "./contracts/target-list.ts",
     "./contracts/inbound": "./contracts/inbound.ts",
+    "./runtime/enrol": "./runtime/enrol.ts",
     "./adapters/*": "./adapters/*/index.ts"
   },
   "publishConfig": {
@@ -51,6 +52,10 @@
       "./contracts/inbound": {
         "types": "./dist/contracts/inbound.d.ts",
         "default": "./dist/contracts/inbound.js"
+      },
+      "./runtime/enrol": {
+        "types": "./dist/runtime/enrol.d.ts",
+        "default": "./dist/runtime/enrol.js"
       },
       "./adapters/*": {
         "types": "./dist/adapters/*/index.d.ts",

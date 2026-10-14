@@ -48,10 +48,12 @@ scripts/              checks that make the doctrine enforceable
 
 In this order, because each one is what the next needs.
 
-**Audiences and suppression.** The protected-accounts path from decision 0004,
-failing closed on freshness as well as on reachability. This is the one that
-carries real consequence: everything else here fails by not working, and this
-one fails by contacting someone it should not have.
+**Audiences and suppression.** The protected-accounts path from decision 0004
+now runs inside the enrolment path (0019): read whole and fresh before anyone
+is enrolled, failing closed on age as well as on reachability. What remains is
+withdrawing someone already enrolled when their account becomes protected
+later — `suppress` exists on the sequencer (0014), and nothing calls it on a
+newly protected account yet.
 
 **The remaining adapter.** A target list. Its shape depends on answers this
 repository does not have — how a target list is actually served, and whether

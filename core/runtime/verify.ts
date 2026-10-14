@@ -51,7 +51,13 @@ interface Connection {
  * every name the instance chose. The kernel declares neither.
  */
 async function connect(url: string, root: string): Promise<Connection> {
-  let pg: { Client: new (config: { connectionString: string }) => { connect(): Promise<void>; end(): Promise<void> } };
+  let pg: {
+    Client: new (config: { connectionString: string }) => {
+      connect(): Promise<void>;
+      end(): Promise<void>;
+      on(event: "error", listener: (error: Error) => void): void;
+    };
+  };
   let drizzle: (client: unknown) => unknown;
   try {
     pg = ((await import(resolvePackage("pg", root))) as { default: typeof pg }).default;
@@ -63,6 +69,11 @@ async function connect(url: string, root: string): Promise<Connection> {
     );
   }
   const client = new pg.Client({ connectionString: url });
+  // A connection the server drops emits "error" outside any await. Without a
+  // listener that is an uncaught exception, and the process dies with a stack
+  // trace instead of a report. The failure itself surfaces where it matters:
+  // in the query that needed the connection.
+  client.on("error", () => {});
   await client.connect();
   return { db: drizzle(client) as Database, end: () => client.end() };
 }
@@ -115,66 +126,91 @@ export async function verify(options: VerifyOptions): Promise<number> {
     return 1;
   }
 
-  let open: OpenRun;
-  try {
-    open = await openRun(connection.db, {
-      processKey: "instance.verify",
-      trigger: "cli",
-      actor: { type: "system", id: "verify" },
-      dryRun: true,
-    });
-  } catch (error) {
-    // The driver's reason, not the query wrapper's: "relation does not exist"
-    // is the useful line, and the ORM puts it in `cause`.
-    const cause = (error as Error).cause;
-    const why = cause instanceof Error ? cause.message : (error as Error).message.split("\n")[0];
-    say(`\nrun: cannot open one — ${why}`);
-    say("     have the engine's migrations been applied to this database?");
-    await connection.end();
-    return 1;
-  }
-  say(`\nrun: ${open.id} opened, dry run`);
-
-  /* 4. probe ------------------------------------------------------------ */
-
+  // From here a connection is open, and from the moment a run is opened, a
+  // row says "running". Whatever happens below, the run is closed if it can
+  // be and the connection is closed regardless — a run left "running" is
+  // what openRun's own documentation warns about, and a stack trace is not a
+  // report.
+  let open: OpenRun | undefined;
   const failures: string[] = truthErrors ? [`truths: ${truthErrors} refused`] : [];
   const unprobed: string[] = [];
+  let closed = false;
   try {
-    for (const resolved of booted.registry.list()) {
-      // Optional on the contract. Absent is reported as absent, never as
-      // healthy: an adapter that was not asked has not answered.
-      if (!resolved.adapter.probe) {
-        say(`  ${resolved.contract}: ${resolved.provider} built, offers no probe`);
-        unprobed.push(resolved.contract);
-        continue;
+    try {
+      open = await openRun(connection.db, {
+        processKey: "instance.verify",
+        trigger: "cli",
+        actor: { type: "system", id: "verify" },
+        dryRun: true,
+      });
+    } catch (error) {
+      say(`\nrun: cannot open one — ${reason(error)}`);
+      say("     have the engine's migrations been applied to this database?");
+      return 1;
+    }
+    say(`\nrun: ${open.id} opened, dry run`);
+
+    /* 4. probe ---------------------------------------------------------- */
+
+    try {
+      for (const resolved of booted.registry.list()) {
+        // Optional on the contract. Absent is reported as absent, never as
+        // healthy: an adapter that was not asked has not answered.
+        if (!resolved.adapter.probe) {
+          say(`  ${resolved.contract}: ${resolved.provider} built, offers no probe`);
+          unprobed.push(resolved.contract);
+          continue;
+        }
+        const started = Date.now();
+        const result = await resolved.adapter.probe(open.context);
+        const ms = Date.now() - started;
+        if (result.ok) {
+          say(`  ${resolved.contract}: ${resolved.provider} answered in ${ms} ms`);
+        } else {
+          const e = result.error;
+          say(`  ${resolved.contract}: ${resolved.provider} — ${e.code}${e.retryable ? " (retryable)" : ""}: ${e.message}`);
+          failures.push(`${resolved.contract}: ${e.code}`);
+        }
       }
-      const started = Date.now();
-      const result = await resolved.adapter.probe(open.context);
-      const ms = Date.now() - started;
-      if (result.ok) {
-        say(`  ${resolved.contract}: ${resolved.provider} answered in ${ms} ms`);
-      } else {
-        const e = result.error;
-        say(`  ${resolved.contract}: ${resolved.provider} — ${e.code}${e.retryable ? " (retryable)" : ""}: ${e.message}`);
-        failures.push(`${resolved.contract}: ${e.code}`);
+    } catch (thrown) {
+      // An adapter that throws broke the contract: results are returned, not
+      // thrown. Recorded as such, and the run is still closed below.
+      failures.push(`an adapter threw: ${thrown instanceof Error ? thrown.message : String(thrown)}`);
+      say(`  ✖ ${failures.at(-1)}`);
+    }
+  } finally {
+    /* 5. close ---------------------------------------------------------- */
+
+    if (open) {
+      const status = failures.length === 0 ? "succeeded" : "failed";
+      try {
+        await open.finish(failures.length === 0 ? { status } : { status, error: failures.join("; ") });
+        say(`run: ${open.id} closed, ${status}`);
+        closed = true;
+      } catch (error) {
+        say(`run: ${open.id} could not be closed — ${reason(error)}`);
+        say(`     its row still reads "running"; the outcome above is the only record of it`);
       }
     }
-  } catch (thrown) {
-    // An adapter that throws broke the contract: results are returned, not
-    // thrown. Recorded as such, and the run is still closed below.
-    failures.push(`an adapter threw: ${thrown instanceof Error ? thrown.message : String(thrown)}`);
-    say(`  ✖ ${failures.at(-1)}`);
+    await connection.end().catch(() => {});
   }
 
-  /* 5. close ------------------------------------------------------------ */
-
-  const status = failures.length === 0 ? "succeeded" : "failed";
-  await open.finish(failures.length === 0 ? { status } : { status, error: failures.join("; ") });
-  await connection.end();
-
-  say(`run: ${open.id} closed, ${status}`);
+  if (!closed) {
+    say("\nThis configuration could not be verified: its run was not recorded.");
+    return 1;
+  }
   if (failures.length > 0) say("\nThis configuration is plausible, not real.");
   else if (unprobed.length > 0) say(`\nReal as far as it was probed. Not probed: ${unprobed.join(", ")}.`);
   else say("\nThis configuration is real.");
   return failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * The driver's reason, not the query wrapper's: "relation does not exist" is
+ * the useful line, and the ORM puts it in `cause`.
+ */
+function reason(error: unknown): string {
+  const cause = (error as Error)?.cause;
+  if (cause instanceof Error) return cause.message;
+  return (error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "";
 }

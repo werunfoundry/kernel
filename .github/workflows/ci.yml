@@ -17,6 +17,27 @@ jobs:
   doctrine:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    # The run recorder is tested against a real database, because a fake one
+    # would test the fake. It also means the generated migrations are applied
+    # on every pull request rather than the one time someone tried them.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # No password at all, rather than a throwaway one. The doctrine
+          # checks refuse a connection string carrying a password and they are
+          # right to: a rule with an exception for "but this one is fake" is a
+          # rule that fails the day someone is wrong about that.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,6 +60,8 @@ jobs:
 
       - name: test the engine
         run: pnpm test:engine
+        env:
+          TEST_DATABASE_URL: postgresql://postgres@localhost:5432/postgres
 
       # The drift assertions in core/manifest/validate.ts are only true if
       # something compiles them. This is that something.

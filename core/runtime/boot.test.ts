@@ -172,6 +172,22 @@ describe("booting an instance", () => {
     assert.doesNotMatch(said, /No "exports" main defined/);
   });
 
+  it("refuses a contract bound twice, and says it is a limit rather than a design", async () => {
+    const root = instance({
+      "manifest.yaml": manifest([
+        "enabledDomains: [relations]",
+        "providers:",
+        "  - { contract: sequencer, adapter: ./adapters/a.mjs, env: [] }",
+        "  - { contract: sequencer, adapter: ./adapters/b.mjs, env: [] }",
+      ]),
+      "adapters/a.mjs": ADAPTER,
+      "adapters/b.mjs": ADAPTER,
+    }, ["relations"]);
+    const r = await boot({ root, env: {} });
+    assert.equal(r.ok, false);
+    assert.match(messages(r).join("\n"), /providers\.1\.contract contract "sequencer" is bound twice, and the kernel can only hold one adapter per contract today/);
+  });
+
   it("reports a manifest that is not YAML, and does not throw", async () => {
     const root = instance({ "manifest.yaml": "instance: [unclosed\n" }, []);
     const r = await boot({ root, env: {} });

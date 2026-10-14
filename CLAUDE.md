@@ -18,8 +18,9 @@ Four things you never write here, whatever the instruction:
    nothing else.
 3. **Real data.** Fixtures are invented: `example.com`, `example.org`,
    `*.invalid`. Never a real profile URL, never a real company.
-4. **A provider name outside its adapter.** Nothing under `core/` or
-   `domains/` names a vendor, except inside an `adapters/` directory.
+4. **A provider name outside its adapter.** Nothing in this repository names
+   a vendor except inside an `adapters/` directory — not the code, not a
+   decision, not the README, not the template.
 
 If you are unsure whether something is identifying, it is. Leave it out and ask.
 

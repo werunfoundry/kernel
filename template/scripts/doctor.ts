@@ -11,7 +11,7 @@
  *
  *   1. boot — domains, manifest, bindings, credentials, every issue at once;
  *   2. open a run, in dry run, in the database the instance owns;
- *   3. call one read on each adapter it knows how to probe;
+ *   3. probe each adapter that offers a probe (decision 0009);
  *   4. close the run with what happened, and say it.
  *
  * Dry run all the way: a probe is a read, and the context says no write may
@@ -33,23 +33,11 @@ import { join } from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
-import type { CallContext, CallResult, Contract } from "@werunfoundry/core/contracts/types";
 import { boot } from "@werunfoundry/core/runtime/boot";
 import type { Database, OpenRun } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
-import type { Crm } from "@werunfoundry/relations/contracts/crm";
 
 const root = join(import.meta.dirname, "..");
-
-/**
- * One harmless read per contract this instance binds. A contract with no
- * entry is reported as built and not probed, which is true and not a failure.
- * The domains below are invented on purpose: a probe asks whether the provider
- * answers, not what it holds.
- */
-const PROBES: Record<string, (adapter: Contract, ctx: CallContext) => Promise<CallResult<unknown>>> = {
-  crm: (adapter, ctx) => (adapter as Crm).findCompanyByDomain("example.com", ctx),
-};
 
 const say = (line = "") => console.log(line);
 
@@ -112,15 +100,18 @@ async function main(): Promise<number> {
   /* 3. call ------------------------------------------------------------- */
 
   const failures: string[] = [];
+  const unprobed: string[] = [];
   try {
     for (const resolved of booted.registry.list()) {
-      const probe = PROBES[resolved.contract];
-      if (!probe) {
-        say(`  ${resolved.contract}: built, no probe known for this contract`);
+      // Optional on the contract. Absent is reported as absent, never as
+      // healthy: an adapter that was not asked has not answered.
+      if (!resolved.adapter.probe) {
+        say(`  ${resolved.contract}: ${resolved.provider} built, offers no probe`);
+        unprobed.push(resolved.contract);
         continue;
       }
       const started = Date.now();
-      const result = await probe(resolved.adapter, open.context);
+      const result = await resolved.adapter.probe(open.context);
       const ms = Date.now() - started;
       if (result.ok) {
         say(`  ${resolved.contract}: ${resolved.provider} answered in ${ms} ms`);
@@ -144,7 +135,9 @@ async function main(): Promise<number> {
   await client.end();
 
   say(`run: ${open.id} closed, ${status}`);
-  say(failures.length === 0 ? "\nThis configuration is real." : "\nThis configuration is plausible, not real.");
+  if (failures.length > 0) say("\nThis configuration is plausible, not real.");
+  else if (unprobed.length > 0) say(`\nReal as far as it was probed. Not probed: ${unprobed.join(", ")}.`);
+  else say("\nThis configuration is real.");
   return failures.length === 0 ? 0 : 1;
 }
 

@@ -32,6 +32,12 @@ const factory: AdapterFactory<Crm> = ({ options, env }) => ({ /* … */ });
 export default factory;
 ```
 
+Offer a `probe` if the provider has a cheap authenticated read: `pnpm verify`
+calls it to tell a working configuration from a plausible one (decision
+0009). It is optional. Leave it out rather than write one that returns
+success without asking the provider — absent is reported as absent, and a
+probe that always succeeds is reported as health.
+
 Build nothing in the factory that can fail. Connect on the first call, where a
 failure can be returned as a `CallError` instead of thrown where no run can
 report it.

@@ -66,6 +66,22 @@ export type CallResult<T> =
 /** Every adapter names itself, once, for logs and for the run record. */
 export interface Contract {
   readonly provider: string;
+
+  /**
+   * Can the provider be reached, and does it accept these credentials? The
+   * cheapest call that answers both, and nothing more (decision 0009).
+   *
+   * Optional, on purpose: requiring it would make every adapter write a
+   * health check, and an adapter that has no honest one would write a
+   * dishonest one. Absent means "not probed", which a caller reports as such —
+   * never as healthy.
+   *
+   * Always a read, whatever `ctx.dryRun` says. A probe that writes is not a
+   * probe. Success carries nothing: what the provider holds is not the
+   * question, and an answer like "authenticated as …" is a detail a log
+   * should not be handed.
+   */
+  probe?(ctx: CallContext): Promise<CallResult<void>>;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -19,6 +19,7 @@ import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, it } from "node:test";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
+import type { Identity } from "@werunfoundry/core/identity";
 
 import type { Sequencer } from "../../contracts/sequencer.js";
 import factory from "./index.js";
@@ -143,10 +144,15 @@ const adapter = (token: string | null = "test-key"): Sequencer =>
 const ctx = (dryRun: boolean): CallContext => ({ runId: "run-1", actor: { type: "system" }, dryRun });
 const writes = () => seen.filter((s) => s.method === "DELETE" || (s.method === "POST" && s.path !== "/api/v2/leads/list"));
 
+/** A person reachable by email, as the engine hands one over (decision 0013). */
+const ada = (email = "ada@example.com"): Identity => ({ subject: "person", keys: [{ kind: "email", value: email }] });
+
 const enrolment = (over: Record<string, unknown> = {}) => ({
   idempotencyKey: "k1",
   sequenceKey: "welcome",
-  person: { email: "ada@example.com", fullName: "Ada King Lovelace" },
+  channel: "email",
+  person: ada(),
+  display: { fullName: "Ada King Lovelace" },
   attribution: { runId: "run-1", experimentSlug: "exp", variant: "a" },
   ...over,
 });
@@ -237,6 +243,23 @@ describe("enrol", () => {
     assert.deepEqual(writes(), []);
   });
 
+  it("refuses a channel it does not serve, before calling anyone", async () => {
+    const r = await adapter().enrol(enrolment({ channel: "social_message" }), ctx(false));
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error.message, /channel "email" only/);
+    assert.equal(seen.length, 0);
+  });
+
+  it("refuses a person it has no address for, rather than enrolling a guess", async () => {
+    const r = await adapter().enrol(
+      enrolment({ person: { subject: "person", keys: [{ kind: "social_profile_id", network: "net_a", value: "p-1" }] } }),
+      ctx(false),
+    );
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.error.code, "invalid");
+    assert.equal(seen.length, 0);
+  });
+
   it("refuses a sequence with no campaign mapped", async () => {
     const r = await adapter().enrol(enrolment({ sequenceKey: "nowhere" }), ctx(false));
     assert.equal(r.ok, false);
@@ -247,7 +270,7 @@ describe("enrol", () => {
 describe("withdraw", () => {
   const request = (over: Record<string, unknown> = {}) => ({
     idempotencyKey: "w1",
-    person: { email: "ada@example.com" },
+    person: ada(),
     sequenceKey: "welcome",
     reason: "experiment ended",
     ...over,
@@ -278,23 +301,46 @@ describe("withdraw", () => {
 });
 
 describe("suppress", () => {
-  const request = (target: { email: string } | { domain: string }) => ({ idempotencyKey: "s1", target, reason: "protected" });
+  const request = (target: Identity) => ({ idempotencyKey: "s1", target, reason: "protected" });
+  const company = (...keys: Identity["keys"]): Identity => ({ subject: "company", keys });
 
-  it("blocklists a whole domain, in Instantly's format", async () => {
-    const r = await adapter().suppress(request({ domain: "@Example.ORG" }), ctx(false));
-    assert.equal(r.ok, true);
+  it("blocklists a whole domain, in Instantly's format, and says what it applied", async () => {
+    const r = await adapter().suppress(request(company({ kind: "domain", value: "@Example.ORG" })), ctx(false));
+    assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual(state.blocklist, ["example.org"]);
+    if (r.ok) assert.deepEqual(r.value.applied, [{ kind: "domain", value: "@Example.ORG" }]);
   });
 
-  it("writes nothing for a target already blocked", async () => {
+  it("applies what it can and names what it cannot — every channel's key reaches the same person", async () => {
+    const target = company({ kind: "domain", value: "example.org" }, { kind: "social_company_id", network: "net_a", value: "c-1" });
+    const r = await adapter().suppress(request(target), ctx(false));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    if (r.ok) {
+      assert.deepEqual(r.value.applied.map((k) => k.kind), ["domain"]);
+      assert.deepEqual(r.value.notApplicable.map((k) => k.kind), ["social_company_id"]);
+    }
+  });
+
+  it("refuses an identity it cannot act on at all, rather than reporting a suppression that suppressed nothing", async () => {
+    const r = await adapter().suppress(
+      request({ subject: "person", keys: [{ kind: "social_profile_id", network: "net_a", value: "p-1" }] }),
+      ctx(false),
+    );
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.error.code, "invalid");
+    assert.deepEqual(writes(), []);
+  });
+
+  it("writes nothing for a target already blocked, and still reports it applied", async () => {
     state.blocklist.push("ada@example.com");
-    const r = await adapter().suppress(request({ email: "ada@example.com" }), ctx(false));
+    const r = await adapter().suppress(request(ada()), ctx(false));
     assert.equal(r.ok, true);
+    if (r.ok) assert.equal(r.value.applied.length, 1);
     assert.deepEqual(writes(), []);
   });
 
   it("in dry run, writes nothing", async () => {
-    const r = await adapter().suppress(request({ domain: "example.org" }), ctx(true));
+    const r = await adapter().suppress(request(company({ kind: "domain", value: "example.org" })), ctx(true));
     assert.equal(r.ok, true);
     if (r.ok) assert.equal(r.simulated, true);
     assert.deepEqual(writes(), []);
@@ -305,34 +351,43 @@ describe("suppress", () => {
 describe("status", () => {
   it("reads an opt-out as unsubscribed, not as stopped", async () => {
     state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: -2 });
-    const r = await adapter().status({ person: { email: "ada@example.com" }, sequenceKey: "welcome" }, ctx(true));
+    const r = await adapter().status({ person: ada(), sequenceKey: "welcome" }, ctx(true));
     assert.equal(r.ok, true);
     if (r.ok) assert.equal(r.value.state, "unsubscribed");
   });
 
   it("reads no enrolment as unknown, not as an error", async () => {
-    const r = await adapter().status({ person: { email: "nobody@example.com" }, sequenceKey: "welcome" }, ctx(true));
+    const r = await adapter().status({ person: ada("nobody@example.com"), sequenceKey: "welcome" }, ctx(true));
     assert.equal(r.ok, true);
     if (r.ok) assert.equal(r.value.state, "unknown");
   });
 });
 
 describe("capacity", () => {
+  it("is per channel, and refuses one the adapter does not serve", async () => {
+    const r = await adapter().capacity({ sender: { externalId: "sender@example.com" }, channel: "social_invite" }, ctx(true));
+    assert.equal(r.ok, false);
+    assert.equal(seen.length, 0);
+  });
+
   it("is the daily limit less what the account sent today", async () => {
-    const r = await adapter().capacity({ externalId: "sender@example.com" }, ctx(true));
+    const r = await adapter().capacity({ sender: { externalId: "sender@example.com" }, channel: "email" }, ctx(true));
     assert.equal(r.ok, true, JSON.stringify(r));
-    if (r.ok) assert.deepEqual([r.value.dailyLimit, r.value.usedToday, r.value.remainingToday], [40, 15, 25]);
+    if (r.ok) {
+      assert.deepEqual([r.value.limit, r.value.used, r.value.remaining], [40, 15, 25]);
+      assert.deepEqual([r.value.channel, r.value.unit, r.value.window], ["email", "messages", "day"]);
+    }
   });
 
   it("is nothing left for an account that is not active", async () => {
     state.accounts["sender@example.com"] = { daily_limit: 40, status: 2 };
-    const r = await adapter().capacity({ externalId: "sender@example.com" }, ctx(true));
-    if (r.ok) assert.equal(r.value.remainingToday, 0);
+    const r = await adapter().capacity({ sender: { externalId: "sender@example.com" }, channel: "email" }, ctx(true));
+    if (r.ok) assert.equal(r.value.remaining, 0);
   });
 
   it("maps the workspace rate limit to a retryable error", async () => {
     state.forceStatus = 429;
-    const r = await adapter().capacity({ externalId: "sender@example.com" }, ctx(true));
+    const r = await adapter().capacity({ sender: { externalId: "sender@example.com" }, channel: "email" }, ctx(true));
     assert.equal(r.ok, false);
     if (!r.ok) assert.deepEqual([r.error.code, r.error.retryable], ["rate_limited", true]);
   });

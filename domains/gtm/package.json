@@ -13,6 +13,7 @@
     "./contracts": "./contracts/index.ts",
     "./contracts/sequencer": "./contracts/sequencer.ts",
     "./contracts/target-list": "./contracts/target-list.ts",
+    "./contracts/inbound": "./contracts/inbound.ts",
     "./adapters/*": "./adapters/*/index.ts"
   },
   "publishConfig": {
@@ -46,6 +47,10 @@
       "./contracts/target-list": {
         "types": "./dist/contracts/target-list.d.ts",
         "default": "./dist/contracts/target-list.js"
+      },
+      "./contracts/inbound": {
+        "types": "./dist/contracts/inbound.d.ts",
+        "default": "./dist/contracts/inbound.js"
       },
       "./adapters/*": {
         "types": "./dist/adapters/*/index.d.ts",

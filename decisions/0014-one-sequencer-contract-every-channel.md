@@ -1,5 +1,7 @@
 # 0014 — One sequencer contract, every channel
 
+> Superseded in part by [0020](0020-capacity-carries-every-limit.md): capacity carries every limit, and the tightest applies.
+
 Supersedes in part [0011](0011-the-sequencer-after-a-real-provider.md): what
 `suppress` takes, and what `capacity` is.
 

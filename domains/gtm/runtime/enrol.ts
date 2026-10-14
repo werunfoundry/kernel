@@ -37,6 +37,7 @@ import { openRun } from "@werunfoundry/core/runtime/run";
 import type { Enrichment } from "@werunfoundry/relations/contracts/enrichment";
 
 import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequencer.js";
+import { remainingOf } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
@@ -206,11 +207,11 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       for (const sender of request.senders) {
         const c = await sequencer.capacity({ sender, channel: request.channel }, ctx);
         if (!c.ok) throw new Stop(`capacity unknown for ${sender.label ?? sender.externalId}: ${c.error.code}: ${c.error.message}`);
-        // A source that does not say what is left has not said zero.
-        if (c.value.remaining === undefined) {
-          throw new Stop(`capacity unknown for ${sender.label ?? sender.externalId}: the provider did not say what is left`);
-        }
-        budget += c.value.remaining;
+        // The tightest of the sender's limits (0020). A limit that does not
+        // say what is left has not said zero, and is not ignored either.
+        const left = remainingOf(c.value);
+        if ("unknown" in left) throw new Stop(`capacity unknown for ${sender.label ?? sender.externalId}: ${left.unknown}`);
+        budget += left.remaining;
       }
       report.capacity = { checked: true, budget };
     }

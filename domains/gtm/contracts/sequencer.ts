@@ -115,21 +115,60 @@ export interface EnrolmentStatus {
 }
 
 /**
- * What a sender has left on one channel, in that channel's own unit — an
- * email channel counts messages a day, an invitation channel may count
- * invitations a week. Two channels' numbers are never added together.
+ * One limit on one action, in that action's own unit — an email channel
+ * counts messages, an invitation channel invitations — over one period.
+ */
+export interface CapacityLimit {
+  /** What is counted, e.g. `messages`, `invitations`. */
+  unit: string;
+  /**
+   * The period the limit is counted over (decision 0020). Closed, because the
+   * engine plans against it and cannot plan against a word it does not know.
+   */
+  window: "hour" | "day" | "week" | "month";
+  /**
+   * When the count starts again, when the provider says. Absent for a
+   * rolling window, which has no single reset, and when the provider does
+   * not say.
+   */
+  resetsAt?: string;
+  limit?: number;
+  used?: number;
+  remaining?: number;
+}
+
+/**
+ * Everything that limits a sender on one channel, at once (decision 0020).
+ * An account commonly carries several limits on the same action — a weekly
+ * ceiling and a daily pace — and an adapter reports every one it knows of
+ * rather than choosing. Two channels' numbers are never added together.
  */
 export interface Capacity {
   sender: SenderRef;
   channel: string;
-  /** What is counted, e.g. `messages`, `invitations`. */
-  unit: string;
-  /** The period the limit resets over. */
-  window: "day" | "week";
-  limit?: number;
-  used?: number;
-  remaining?: number;
+  /** Never empty. All of them count the same action, in the same unit. */
+  limits: CapacityLimit[];
   asOf: string;
+}
+
+/**
+ * What a sender can still do on a channel: the tightest of its limits.
+ *
+ * Unknown — never the loosest of the others — if any limit does not say
+ * what is left: a limit nobody can read may be the one that binds. Unknown
+ * too if there is no limit, or if limits count different things, because
+ * the smallest of two numbers in two units means nothing.
+ */
+export function remainingOf(capacity: Capacity): { remaining: number; binding: CapacityLimit } | { unknown: string } {
+  const limits = capacity.limits;
+  if (limits.length === 0) return { unknown: "the provider reported no limit" };
+  if (new Set(limits.map((l) => l.unit)).size > 1) {
+    return { unknown: `the limits count different things (${[...new Set(limits.map((l) => l.unit))].join(", ")})` };
+  }
+  const silent = limits.find((l) => l.remaining === undefined);
+  if (silent) return { unknown: `the provider did not say what is left of its ${silent.window} limit` };
+  const binding = limits.reduce((a, b) => ((b.remaining as number) < (a.remaining as number) ? b : a));
+  return { remaining: binding.remaining as number, binding };
 }
 
 /** What a suppression reached. */

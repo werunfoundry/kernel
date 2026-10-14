@@ -95,7 +95,12 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
       const used = Object.values(state.value.enrolments).flatMap((s) => Object.values(s)).filter((x) => x.at.startsWith(today)).length;
       return {
         ok: true,
-        value: { sender, channel, unit: "messages", window: "day", limit: dailyLimit, used, remaining: Math.max(0, dailyLimit - used), asOf: new Date().toISOString() },
+        value: {
+          sender,
+          channel,
+          limits: [{ unit: "messages", window: "day", limit: dailyLimit, used, remaining: Math.max(0, dailyLimit - used) }],
+          asOf: new Date().toISOString(),
+        },
       };
     },
   };

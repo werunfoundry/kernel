@@ -39,6 +39,7 @@ scripts/              checks that make the doctrine enforceable
 | Binding resolver | written |
 | Run recorder | written |
 | Boot | written; resolves every name from the instance (0007) |
+| End to end | once: boot, a dry run, one adapter call, the run closed — `pnpm verify` in an instance |
 | Instance template | written, with one reference adapter |
 | Adapters | one, against an invented API |
 | Published build | decided (0006), not wired |
@@ -46,11 +47,6 @@ scripts/              checks that make the doctrine enforceable
 ## Where the work is
 
 In this order, because each one is what the next needs.
-
-**The entry point.** Load a manifest, resolve its bindings, open a run, call an
-adapter in dry run, close the run. The resolver and the recorder both exist
-and nothing joins them, so nothing has ever run end to end. Until that is
-true, every piece below is being designed against a guess.
 
 **Audiences and suppression.** The protected-accounts path from decision 0004,
 failing closed on freshness as well as on reachability. This is the one that

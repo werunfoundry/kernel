@@ -46,10 +46,11 @@ const BASELINE = {
     'import { pgSchema } from "drizzle-orm/pg-core";\nexport const core = pgSchema("core");\n',
   "domains/alpha/domain.yaml":
     "name: alpha\nversion: 0.0.0\ndescription: x\nschema: alpha\ndependsOn: []\n",
+  "core/package.json": '{ "name": "@werunfoundry/core", "exports": {}, "publishConfig": { "exports": {} } }\n',
   "domains/alpha/package.json":
-    '{ "name": "@werunfoundry/alpha", "exports": { "./domain.yaml": "./domain.yaml" } }\n',
+    '{ "name": "@werunfoundry/alpha", "exports": { "./domain.yaml": "./domain.yaml" }, "publishConfig": { "exports": { "./domain.yaml": "./domain.yaml" } } }\n',
   "domains/beta/package.json":
-    '{ "name": "@werunfoundry/beta", "exports": { "./domain.yaml": "./domain.yaml" } }\n',
+    '{ "name": "@werunfoundry/beta", "exports": { "./domain.yaml": "./domain.yaml" }, "publishConfig": { "exports": { "./domain.yaml": "./domain.yaml" } } }\n',
   "domains/alpha/db/schema.ts":
     'import { pgSchema } from "drizzle-orm/pg-core";\nexport const alpha = pgSchema("alpha");\n',
   "domains/beta/domain.yaml":
@@ -259,7 +260,10 @@ describe("rule 6 — a rule can only hold where it can see", () => {
 
   it("refuses a domain that does not export its domain.yaml, which no instance could boot", () => {
     refuses(
-      repo({ "domains/alpha/package.json": '{ "name": "@werunfoundry/alpha", "exports": {} }\n' }),
+      repo({
+        "domains/alpha/package.json":
+          '{ "name": "@werunfoundry/alpha", "exports": {}, "publishConfig": { "exports": {} } }\n',
+      }),
       6,
       "does not export",
     );
@@ -269,10 +273,34 @@ describe("rule 6 — a rule can only hold where it can see", () => {
     refuses(
       repo({
         "domains/alpha/package.json":
-          '{ "name": "@werunfoundry/a", "exports": { "./domain.yaml": "./domain.yaml" } }\n',
+          '{ "name": "@werunfoundry/a", "exports": { "./domain.yaml": "./domain.yaml" }, ' +
+          '"publishConfig": { "exports": { "./domain.yaml": "./domain.yaml" } } }\n',
       }),
       6,
       "looks for this domain",
+    );
+  });
+
+  it("refuses an export the workspace has and the published package would not", () => {
+    refuses(
+      repo({
+        "core/package.json":
+          '{ "name": "@werunfoundry/core", "exports": { "./x": "./x.ts" }, "publishConfig": { "exports": {} } }\n',
+      }),
+      6,
+      "list different paths",
+    );
+  });
+
+  it("refuses publishing TypeScript source", () => {
+    refuses(
+      repo({
+        "core/package.json":
+          '{ "name": "@werunfoundry/core", "exports": { "./x": "./x.ts" }, ' +
+          '"publishConfig": { "exports": { "./x": { "types": "./dist/x.d.ts", "default": "./x.ts" } } } }\n',
+      }),
+      6,
+      "as TypeScript source",
     );
   });
 

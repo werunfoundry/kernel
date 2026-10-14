@@ -1,5 +1,8 @@
 # 0006 — What gets published is JavaScript
 
+> Completed by [0008](0008-the-build-now-and-no-loader-anywhere.md): when the
+> build lands, and how the instance side runs.
+
 ## Decided
 
 The engine's packages publish compiled JavaScript and `.d.ts` declarations.

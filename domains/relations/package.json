@@ -1,7 +1,6 @@
 {
   "name": "@werunfoundry/relations",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "People, companies, audiences, interactions and signals.",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,13 +11,43 @@
     "./contracts": "./contracts/index.ts",
     "./contracts/crm": "./contracts/crm.ts"
   },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./domain.yaml": "./domain.yaml",
+      "./db/schema": {
+        "types": "./dist/db/schema.d.ts",
+        "default": "./dist/db/schema.js"
+      },
+      "./contracts": {
+        "types": "./dist/contracts/index.d.ts",
+        "default": "./dist/contracts/index.js"
+      },
+      "./contracts/crm": {
+        "types": "./dist/contracts/crm.d.ts",
+        "default": "./dist/contracts/crm.js"
+      }
+    }
+  },
   "dependencies": {
     "@werunfoundry/core": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "prepack": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && pnpm build",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
-  }
+  },
+  "files": [
+    "dist",
+    "domain.yaml",
+    "db/migrations",
+    "!dist/*.tsbuildinfo"
+  ]
 }

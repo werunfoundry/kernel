@@ -265,16 +265,35 @@ for (const file of allFiles) {
  * and cannot be enabled by anyone — which is learned at the first boot of the
  * first instance that tries, in someone else's repository.
  */
+/*
+ * The workspace reads `exports`; what is published reads `publishConfig.exports`
+ * (decision 0006). Two lists of the same paths drift the first time someone
+ * adds an export and forgets the second list — and the workspace, which never
+ * reads the published one, stays green while every instance breaks.
+ */
 for (const name of layers.keys()) {
-  if (name === "core") continue;
-  const file = `domains/${name}/package.json`;
+  const file = name === "core" ? "core/package.json" : `domains/${name}/package.json`;
   let pkg;
   try {
     pkg = JSON.parse(readFileSync(file, "utf8"));
   } catch {
-    fail(6, file, 0, "a domain is a package; without a readable package.json no instance can install it");
+    fail(6, file, 0, "a layer is a package; without a readable package.json no instance can install it");
     continue;
   }
+
+  const here = Object.keys(pkg.exports ?? {}).sort().join(", ");
+  const published = Object.keys(pkg.publishConfig?.exports ?? {}).sort().join(", ");
+  if (here !== published) {
+    fail(6, file, 0, `exports and publishConfig.exports list different paths — published: [${published}], here: [${here}]`);
+  }
+  for (const [path, target] of Object.entries(pkg.publishConfig?.exports ?? {})) {
+    const targets = typeof target === "string" ? [target] : Object.values(target ?? {});
+    if (targets.some((t) => typeof t === "string" && t.endsWith(".ts") && !t.endsWith(".d.ts"))) {
+      fail(6, file, 0, `publishes "${path}" as TypeScript source, which Node refuses under node_modules (decision 0006)`);
+    }
+  }
+
+  if (name === "core") continue;
   if (pkg.name !== `${PKG}/${name}`) {
     fail(6, file, 0, `is named "${pkg.name}"; an instance looks for this domain as "${PKG}/${name}"`);
   }

@@ -1,7 +1,6 @@
 {
   "name": "@werunfoundry/gtm",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Acquisition.",
   "license": "Apache-2.0",
   "type": "module",
@@ -15,14 +14,56 @@
     "./contracts/sequencer": "./contracts/sequencer.ts",
     "./contracts/target-list": "./contracts/target-list.ts"
   },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./domain.yaml": "./domain.yaml",
+      "./db/schema": {
+        "types": "./dist/db/schema.d.ts",
+        "default": "./dist/db/schema.js"
+      },
+      "./manifest/types": {
+        "types": "./dist/manifest/types.d.ts",
+        "default": "./dist/manifest/types.js"
+      },
+      "./manifest": {
+        "types": "./dist/manifest/index.d.ts",
+        "default": "./dist/manifest/index.js"
+      },
+      "./contracts": {
+        "types": "./dist/contracts/index.d.ts",
+        "default": "./dist/contracts/index.js"
+      },
+      "./contracts/sequencer": {
+        "types": "./dist/contracts/sequencer.d.ts",
+        "default": "./dist/contracts/sequencer.js"
+      },
+      "./contracts/target-list": {
+        "types": "./dist/contracts/target-list.d.ts",
+        "default": "./dist/contracts/target-list.js"
+      }
+    }
+  },
   "dependencies": {
     "@werunfoundry/core": "workspace:*",
     "@werunfoundry/relations": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "prepack": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && pnpm build",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
-  }
+  },
+  "files": [
+    "dist",
+    "domain.yaml",
+    "db/migrations",
+    "!dist/*.tsbuildinfo"
+  ]
 }

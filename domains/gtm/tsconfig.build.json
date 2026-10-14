@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "declaration": true,
+    "sourceMap": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "inlineSources": true
+  },
+  "references": [
+    {
+      "path": "../../core/tsconfig.build.json"
+    },
+    {
+      "path": "../relations/tsconfig.build.json"
+    }
+  ],
+  "include": [
+    "**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "drizzle.config.ts"
+  ]
+}

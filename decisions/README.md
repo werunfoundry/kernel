@@ -4,6 +4,12 @@ A decision that moves a boundary gets a file here: what was decided, what it
 rules out, and what would reverse it. One page, numbered, never edited once
 merged — a later decision supersedes an earlier one and says so.
 
+One edit is permitted, and only one: a superseded decision gains a pointer
+forward on its first line. Without it the convention has a hole — a reader
+lands on the old decision, believes it, and never learns a later one replaced
+it. The pointer is a cross-reference, not a revision: the reasoning underneath
+stays exactly as it was written, including the parts that turned out wrong.
+
 The rule behind the folder: a decision taken only in a conversation does not
 exist. Six months later the code shows *what* was built and nobody remembers
 what was considered and dropped, so the question gets reopened from scratch and

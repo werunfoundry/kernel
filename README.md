@@ -37,6 +37,7 @@ scripts/              checks that make the doctrine enforceable
 | Contracts | written |
 | Manifest | written, validated |
 | Adapters | not started |
+| Instance template | next |
 | Template | not started |
 
 ## Contributing

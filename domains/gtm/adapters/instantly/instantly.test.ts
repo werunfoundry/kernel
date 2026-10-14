@@ -386,12 +386,20 @@ describe("the endpoint surface", () => {
     // And nothing reaches the network except through `call`.
     assert.equal((source.match(/\bfetch\(/g) ?? []).length, 1, "fetch is called outside `call`");
   });
+});
 
-  it("is never left by any request the suite made", () => {
-    const shape = (path: string) =>
-      path.replace(/^\/api\/v2\/(campaigns|leads|accounts)\/(?!list$|add$|analytics\/daily$)[^/]+$/, "/api/v2/$1/{}");
-    const outside = everyRequest.map((r) => `${r.method} ${shape(r.path)}`).filter((e) => !ALLOWED.includes(e));
-    assert.ok(everyRequest.length > 0, "no request was recorded; this test would pass by seeing nothing");
-    assert.deepEqual([...new Set(outside)], []);
-  });
+/**
+ * Every request the suite made stayed on the pinned list.
+ *
+ * A file-level `after`, not a test: a test sees only the requests made before
+ * it runs, so as a test this held only while it happened to be last in the
+ * file, and nothing kept it last. This runs once the whole file is done,
+ * wherever it is written, and a failure here fails the run.
+ */
+after(() => {
+  const shape = (path: string) =>
+    path.replace(/^\/api\/v2\/(campaigns|leads|accounts)\/(?!list$|add$|analytics\/daily$)[^/]+$/, "/api/v2/$1/{}");
+  const outside = everyRequest.map((r) => `${r.method} ${shape(r.path)}`).filter((e) => !ALLOWED.includes(e));
+  assert.ok(everyRequest.length > 0, "no request was recorded; this check would pass by seeing nothing");
+  assert.deepEqual([...new Set(outside)], [], "a request left the pinned endpoint surface");
 });

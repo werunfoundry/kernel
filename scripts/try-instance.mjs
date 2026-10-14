@@ -20,6 +20,12 @@
  *
  *   TEST_DATABASE_URL=postgresql://… node scripts/try-instance.mjs
  *
+ * With `--manifest <file>`, that manifest replaces the template's and verify
+ * talks to the providers it binds — a real one, with a real key — instead of
+ * the fake one below. The variables the manifest names are passed through
+ * from this process's environment, and nothing else is. Keep that manifest
+ * outside the repository: it is an instance's file.
+ *
  * Drops and recreates the `core`, `relations` and `gtm` schemas in that
  * database. Point it at a database that exists to be thrown away.
  */
@@ -35,6 +41,8 @@ import pg from "pg";
 
 const kernel = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const url = process.env.TEST_DATABASE_URL;
+const manifestAt = process.argv.indexOf("--manifest");
+const realManifest = manifestAt === -1 ? undefined : resolve(process.argv[manifestAt + 1] ?? "");
 if (!url) {
   console.error("try-instance: TEST_DATABASE_URL is not set — it needs a database it may wipe.");
   process.exit(2);
@@ -112,19 +120,29 @@ try {
   sh("git", ["init", "-q"], root);
   console.log(sh(join(root, "node_modules/.bin/kernel-check-instance"), [], root).trim());
 
-  step("verify, on plain Node");
+  step(realManifest ? "verify, on plain Node, against the providers the manifest binds" : "verify, on plain Node");
   const calls = [];
-  server = createServer((req, res) => {
-    calls.push({ path: req.url, runId: req.headers["x-run-id"] });
-    res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ data: [] }));
-  });
-  await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const manifest = join(root, "manifest.yaml");
-  writeFileSync(
-    manifest,
-    readFileSync(manifest, "utf8").replace("https://api.example.invalid/v1", `http://127.0.0.1:${server.address().port}`),
-  );
+  /** Credentials for verify: the fake's, or those a real manifest names. */
+  let credentials = { EXAMPLE_CRM_TOKEN: "try-instance" };
+  if (realManifest) {
+    const text = readFileSync(realManifest, "utf8");
+    writeFileSync(manifest, text);
+    // Only names that are declared and set. Values never reach the output.
+    const names = new Set(text.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? []);
+    credentials = Object.fromEntries([...names].filter((n) => process.env[n]).map((n) => [n, process.env[n]]));
+  } else {
+    server = createServer((req, res) => {
+      calls.push({ path: req.url, runId: req.headers["x-run-id"] });
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ data: [] }));
+    });
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    writeFileSync(
+      manifest,
+      readFileSync(manifest, "utf8").replace("https://api.example.invalid/v1", `http://127.0.0.1:${server.address().port}`),
+    );
+  }
 
   // Asynchronous, and not for style: the provider above answers from this
   // process, and a synchronous spawn would stop it answering — the script
@@ -132,7 +150,7 @@ try {
   const run = await spawnAsync(join(root, "node_modules/.bin/kernel-verify"), [], {
     cwd: root,
     // Nothing inherited that could load a loader behind this script's back.
-    env: { PATH: process.env.PATH, USER: process.env.USER ?? "", DATABASE_URL: url, EXAMPLE_CRM_TOKEN: "try-instance" },
+    env: { PATH: process.env.PATH, USER: process.env.USER ?? "", DATABASE_URL: url, ...credentials },
   });
   console.log(`${run.stdout}${run.stderr}`.trim());
 
@@ -143,7 +161,10 @@ try {
   const expect = [
     [run.status === 0, `verify exited ${run.status}`],
     [Boolean(id), "no run was opened"],
-    [calls.some((c) => c.runId === id), "the provider was never called with the run's id"],
+    // A real provider is not ours to inspect; verify's own report and the
+    // row it closed are the evidence then.
+    [Boolean(realManifest) || calls.some((c) => c.runId === id), "the provider was never called with the run's id"],
+    [!realManifest || /answered in \d+ ms/.test(run.stdout), "no adapter answered a probe"],
     [row?.status === "succeeded" && row?.dry_run === true, `the run row reads ${JSON.stringify(row)}`],
   ];
   for (const [ok, why] of expect) {

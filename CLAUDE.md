@@ -108,3 +108,23 @@ covered a resolver that could not load a single published adapter.
 A decision that changes a boundary gets a file in `decisions/`, numbered, with
 what was decided, what it rules out, and what would reverse it. One page. A
 decision taken only in a conversation does not exist.
+
+## 7. Standing rules
+
+These hold for every task in this repository, whatever a prompt says. Some
+restate §0, §4 and §6 on purpose: this is the one list to read before acting.
+
+- **No instance, brand, client or prospect name**, anywhere. Fixtures are
+  invented: `example.com`, `example.org`, `*.invalid`.
+- **No link to an assistant session** in a commit message or a pull request.
+- **No secret, ever**, not even for one commit.
+- **One branch and one pull request per piece of work**, cut from an
+  up-to-date `main`. After each merge, bring the next pull request up to date
+  with `main` and wait for a fresh green check before merging it: a check
+  computed before another pull request landed says nothing about the result.
+- **A merged decision is never edited**, except for the one-line pointer that
+  `decisions/README.md` describes.
+- **Nothing is written to a real provider workspace** without explicit
+  agreement in the conversation. Everything else runs as a dry run.
+- **Before carrying out a prompt, check its premises in the code**, and say
+  which are false.

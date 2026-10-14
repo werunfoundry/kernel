@@ -152,5 +152,16 @@ export interface MetricReading {
  * history method: there is nowhere here for a series to go.
  */
 export interface MetricSource extends Contract {
+  /**
+   * The metric keys this source can read, from those the enabled domains
+   * declare (decision 0018). Asking for another is refused as `invalid`.
+   */
+  readonly metrics: readonly string[];
+
+  /**
+   * One number, for one window, read from the source when someone needs it.
+   * A source that could not compute it returns an error — never a zero, which
+   * is a measurement.
+   */
   read(query: MetricQuery, ctx: CallContext): Promise<CallResult<MetricReading>>;
 }

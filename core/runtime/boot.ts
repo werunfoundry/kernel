@@ -150,6 +150,18 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     : undefined;
   if (resolved) issues.push(...resolved.issues.map((i) => ({ ...i, at: `${file}:${i.at}` })));
 
+  // So is a metric a source says it can read (decision 0018).
+  const metricKeys = new Set(loaded.domains.flatMap((d) => (d.metrics ?? []).map((m) => m.key)));
+  for (const r of resolved?.registry?.list() ?? []) {
+    const reads = (r.adapter as { metrics?: unknown }).metrics;
+    if (!Array.isArray(reads)) continue;
+    for (const key of reads) {
+      if (!metricKeys.has(key)) {
+        issues.push(error(`${file}:providers.${r.index}`, `this source reads "${String(key)}", which no enabled domain declares`, 1));
+      }
+    }
+  }
+
   // A channel an adapter declares for itself is vocabulary like any other:
   // one no enabled domain declares is refused (decision 0015).
   const channels = new Set(loaded.domains.flatMap((d) => d.channels ?? []));

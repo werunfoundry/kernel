@@ -51,8 +51,20 @@ before(async () => {
   }
   await db.end();
 
-  server = createServer((req, res) => {
+  server = createServer(async (req, res) => {
     calls.push({ path: req.url ?? "", runId: req.headers["x-run-id"] as string | undefined });
+    if (req.url?.startsWith("/sever")) {
+      // The database drops verify's connection mid-run, from its own side —
+      // the way a pooler or a restart does — so closing the run cannot work.
+      await admin.query(
+        "select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()",
+        [database],
+      );
+      // Long enough for the termination to reach verify's client while it is
+      // idle, waiting on this very response. That is the case that kills a
+      // process: an idle client with no "error" listener throws from an event.
+      await new Promise((r) => setTimeout(r, 200));
+    }
     res.statusCode = req.url?.startsWith("/down") ? 503 : 200;
     res.setHeader("content-type", "application/json");
     res.end("{}");
@@ -163,6 +175,15 @@ describe("verify", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () =
     assert.equal(r.status, "failed");
     assert.match(r.error, /crm: unavailable/);
     assert.match(said, /plausible, not real/);
+  });
+
+  it("reports a run it could not close, closes its connection, and does not throw", async () => {
+    const { code, said } = await run(instance(probing("/sever")));
+    assert.equal(code, 1);
+    assert.match(said, /could not be closed/);
+    // Honest about the row: the database is the one that went away, so the
+    // outcome could not be written and it still reads `running`.
+    assert.equal((await row(said)).status, "running");
   });
 
   it("does not report an adapter without a probe as healthy", async () => {

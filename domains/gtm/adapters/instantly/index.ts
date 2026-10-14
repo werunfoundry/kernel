@@ -411,11 +411,17 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         value: {
           sender,
           channel,
-          unit: "messages",
-          window: "day",
-          ...(limit !== undefined ? { limit } : {}),
-          used: sent,
-          ...(limit !== undefined ? { remaining: sending ? Math.max(0, limit - sent) : 0 } : {}),
+          // One limit is all the API states for a sending account. Its day
+          // boundary is not documented, so no `resetsAt` is claimed.
+          limits: [
+            {
+              unit: "messages",
+              window: "day",
+              ...(limit !== undefined ? { limit } : {}),
+              used: sent,
+              ...(limit !== undefined ? { remaining: sending ? Math.max(0, limit - sent) : 0 } : {}),
+            },
+          ],
           asOf: new Date().toISOString(),
         },
       };

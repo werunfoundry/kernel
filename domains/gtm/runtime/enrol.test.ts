@@ -27,7 +27,7 @@ import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import type { Enrichment } from "@werunfoundry/relations/contracts/enrichment";
 
-import type { Sequencer } from "../contracts/sequencer.js";
+import type { CapacityLimit, Sequencer } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
 import type { EnrolRequest } from "./enrol.js";
 import { enrol } from "./enrol.js";
@@ -82,6 +82,8 @@ const world = {
   enrolled: new Map<string, string>(),
   enrolCalls: 0,
   remaining: 100,
+  /** What the sequencer reports as its limits; by default one, from `remaining`. */
+  limits: (): CapacityLimit[] => [{ unit: "messages", window: "day", remaining: world.remaining }],
 };
 
 const ok = <T>(value: T): CallResult<T> => ({ ok: true, value });
@@ -144,7 +146,7 @@ const sequencer: Sequencer = {
   async capacity({ sender, channel }) {
     return world.failing.has("capacity")
       ? down("capacity")
-      : ok({ sender, channel, unit: "messages", window: "day" as const, remaining: world.remaining, asOf: NOW.toISOString() });
+      : ok({ sender, channel, limits: world.limits(), asOf: NOW.toISOString() });
   },
 };
 
@@ -211,6 +213,7 @@ beforeEach(() => {
   world.enrolled = new Map();
   world.enrolCalls = 0;
   world.remaining = 100;
+  world.limits = () => [{ unit: "messages", window: "day", remaining: world.remaining }];
 });
 
 /* -------------------------------------------------------------------------- */
@@ -308,7 +311,8 @@ describe("the enrolment path", { skip: base ? false : "TEST_DATABASE_URL is not 
 
   it("stops, rather than calling it zero, when a provider does not say what capacity is left", async () => {
     const original = sequencer.capacity;
-    sequencer.capacity = async ({ sender, channel }) => ok({ sender, channel, unit: "messages", window: "day" as const, asOf: NOW.toISOString() });
+    sequencer.capacity = async ({ sender, channel }) =>
+      ok({ sender, channel, limits: [{ unit: "messages", window: "day" as const }], asOf: NOW.toISOString() });
     try {
       const r = await run({ senders: [{ externalId: "sender@example.com" }] });
       assert.equal(r.status, "failed");
@@ -317,6 +321,29 @@ describe("the enrolment path", { skip: base ? false : "TEST_DATABASE_URL is not 
     } finally {
       sequencer.capacity = original;
     }
+  });
+
+  it("plans against the tightest limit when a sender carries several", async () => {
+    // A generous daily pace, and a weekly ceiling with one left.
+    world.limits = () => [
+      { unit: "invitations", window: "day", remaining: 20 },
+      { unit: "invitations", window: "week", remaining: 1 },
+    ];
+    const r = await run({ senders: [{ externalId: "sender@example.com" }] });
+    assert.deepEqual(r.capacity, { checked: true, budget: 1 });
+    assert.equal(r.enrolled.length, 1);
+    assert.equal(r.skipped.filter((s) => s.reason === "capacity").length, 1);
+  });
+
+  it("treats a limit that does not say what is left as unknown, even beside one that does", async () => {
+    world.limits = () => [
+      { unit: "messages", window: "day", remaining: 50 },
+      { unit: "messages", window: "week" },
+    ];
+    const r = await run({ senders: [{ externalId: "sender@example.com" }] });
+    assert.equal(r.status, "failed");
+    assert.match(r.stoppedBy ?? "", /did not say what is left of its week limit/);
+    assert.equal(world.enrolCalls, 0);
   });
 
   it("records every run it opens, and says so", async () => {

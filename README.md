@@ -57,6 +57,37 @@ one fails by contacting someone it should not have.
 on answers this repository does not have — how a target list is actually
 served, and whether it can say when it was last recomputed.
 
+**Lifecycle stages are a closed enum, and must not be.** A known defect, not
+an open question: what to do is settled, and it gets expensive on a date.
+
+`gtm.lifecycle_stage` is a Postgres enum — `unknown`, `targeted`, `engaged`,
+`opportunity`, `customer`, `lost` — carried by `gtm.person_state` and
+`gtm.company_state`. Two neighbouring fields were given the opposite
+treatment, and the reasoning is written beside them. `core.experiment.type`
+is text because "a Postgres enum cannot be extended by a domain without that
+domain migrating a type it does not own". `relations.touch.channel` is text
+because an acquisition domain and a marketing domain "do not share a closed
+channel list". The vocabulary a domain declares in its `domain.yaml` —
+`channels`, `experimentTypes`, `eventTypes` — exists for exactly this.
+`lifecycle_stage` does not use it.
+
+It is the same case. A lifecycle stage is not a structural fact of the engine;
+it is a company's vocabulary for its own funnel. A product-led motion has
+"signed up", "activated", "expanded"; a sales-led one has "SQL", "SAL". The six
+values in the enum are one company's funnel, cut into a Postgres type no other
+domain owns. Compare `gtm.draft_state`, which is an enum and should stay one:
+it is the engine's own state machine, and the engine owns it.
+
+The fix is about ten lines today: text, a vocabulary declared in `domain.yaml`
+beside `channels`, checked against the union of the enabled domains. Note what
+"like `channels`" means today: the manifest validator reads the declaration,
+but no write path checks a channel value yet, because no write path exists. The
+check lands with the first one, for both. Once an instance has rows in these
+tables, the same change is a data migration on a Postgres type. The build and
+the publication make that first instance close, so this lands before it does.
+Adding a vocabulary key to `domain.yaml` changes how a domain contributes its
+vocabulary, which is a decision record when the change is made.
+
 **Publication.** The packs are built, checked and run as an instance in CI
 (0008). Putting them on the registry needs the `@werunfoundry` scope to exist
 there, which is an account, not code.

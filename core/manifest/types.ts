@@ -74,6 +74,14 @@ export interface MetricDeclaration {
   key: string;
   /** What is counted, e.g. `people`, `replies`. */
   unit: string;
+  /**
+   * The channels on which this metric means something; absent means every
+   * channel. Elsewhere it is not applicable — never zero. A bounce on a
+   * channel that cannot bounce is not a measurement, and a guardrail that
+   * reads zero by construction guards nothing (the rule 0009 set for probes:
+   * absent is reported as absent, never as health).
+   */
+  channels?: string[];
 }
 
 /** One kind of identity key, as a domain declares it. */

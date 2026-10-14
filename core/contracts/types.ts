@@ -133,18 +133,38 @@ export type AdapterFactory<T extends Contract> = (init: AdapterInit) => T;
 export interface MetricQuery {
   /** Declared in the manifest, not invented at the call site. */
   key: string;
+  /** The channel the number is about, when it is about one. */
+  channel?: string;
   params?: Record<string, string | number | boolean>;
   window?: { from: string; to: string };
 }
 
-export interface MetricReading {
-  key: string;
-  value: number;
-  unit?: string;
-  /** When the source computed it, not when we asked. */
-  asOf: string;
-  source: string;
-}
+/**
+ * A number, or the statement that there is none to have.
+ *
+ * "Not applicable" is its own answer and carries no value, so that it cannot
+ * be read as zero: a bounce count on a channel that cannot bounce is not a
+ * clean result, it is no result. The rule is 0009's for probes — what was not
+ * asked has not answered, and is reported as absent, never as health.
+ */
+export type MetricReading =
+  | {
+      key: string;
+      applicable: true;
+      value: number;
+      unit?: string;
+      /** When the source computed it, not when we asked. */
+      asOf: string;
+      source: string;
+    }
+  | {
+      key: string;
+      applicable: false;
+      /** Why there is no number — e.g. the metric does not exist on this channel. */
+      why: string;
+      asOf: string;
+      source: string;
+    };
 
 /**
  * A source of numbers. The engine keeps none of them except inside a
@@ -160,7 +180,8 @@ export interface MetricSource extends Contract {
 
   /**
    * One number, for one window, read from the source when someone needs it.
-   * A source that could not compute it returns an error — never a zero, which
+   * A source that could not compute it returns an error, and one asked about
+   * a channel where the metric does not apply says so — never a zero, which
    * is a measurement.
    */
   read(query: MetricQuery, ctx: CallContext): Promise<CallResult<MetricReading>>;

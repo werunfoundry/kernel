@@ -76,8 +76,20 @@ export async function verify(options: VerifyOptions): Promise<number> {
     const ok = judged.filter((j) => j.measurable).map((j) => j.experimentType);
     say(`experiments: ${ok.length} of ${judged.length} measurable${ok.length ? ` (${ok.join(", ")})` : ""}`);
     for (const j of judged.filter((x) => !x.measurable)) {
-      say(`  ${j.experimentType}: ${j.metrics.length === 0 ? "judged on no metric" : `no source reads ${j.missing.join(", ")}`}`);
+      const why = j.metrics.length === 0
+        ? "judged on no metric"
+        : j.missing.length > 0
+          ? `no source reads ${j.missing.join(", ")}`
+          : "none of its metrics applies on any channel";
+      say(`  ${j.experimentType}: ${why}`);
     }
+    // Said once, so that nobody reads a guardrail's silence on a channel as
+    // a clean result: there is no number there to be clean.
+    const notApplicable = new Map<string, Set<string>>();
+    for (const j of judged) {
+      for (const c of j.channels) for (const m of c.notApplicable) if (c.channel) notApplicable.set(m, (notApplicable.get(m) ?? new Set()).add(c.channel));
+    }
+    for (const [metric, on] of notApplicable) say(`  ${metric}: not applicable on ${[...on].join(", ")}`);
   }
 
   /* 2. truths ----------------------------------------------------------- */

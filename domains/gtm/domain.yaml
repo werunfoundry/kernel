@@ -37,10 +37,13 @@ metrics:
     unit: people
   - key: gtm.replied
     unit: people
+  # Email only: elsewhere they are not applicable, never zero.
   - key: gtm.bounced
     unit: people
+    channels: [email]
   - key: gtm.unsubscribed
     unit: people
+    channels: [email]
   - key: gtm.meetings_booked
     unit: meetings
 #

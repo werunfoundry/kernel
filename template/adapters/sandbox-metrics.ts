@@ -26,8 +26,16 @@ const factory: AdapterFactory<MetricSource> = ({ options }) => ({
     const asOf = new Date().toISOString();
     const reading = (value: number, unit: string): CallResult<MetricReading> => ({
       ok: true,
-      value: { key: query.key, value, unit, asOf, source: "sandbox-metrics" },
+      value: { key: query.key, applicable: true, value, unit, asOf, source: "sandbox-metrics" },
     });
+    // Bounces and unsubscribes exist on email only. Asked about another
+    // channel, the answer is that there is no number — never a zero.
+    if ((query.key === "gtm.bounced" || query.key === "gtm.unsubscribed") && query.channel && query.channel !== "email") {
+      return {
+        ok: true,
+        value: { key: query.key, applicable: false, why: `no ${query.key} on ${query.channel}`, asOf, source: "sandbox-metrics" },
+      };
+    }
     const events = (type: string) => new Set(data.value.events.filter((e) => e.type === type).map((e) => e.email)).size;
     if (query.key === "gtm.enrolled") {
       return reading(Object.values(state.value.enrolments).reduce((n, s) => n + Object.keys(s).length, 0), "people");

@@ -22,8 +22,8 @@ domains/
     db/ contracts/    its tables; the CRM it needs
   gtm/                acquisition
     db/ contracts/    its tables; the sequencer and the target list
-decisions/            boundary decisions, numbered
     manifest/         the shapes of its own truths
+decisions/            boundary decisions, numbered
 template/             what an instance is generated from
 scripts/              checks that make the doctrine enforceable
 ```

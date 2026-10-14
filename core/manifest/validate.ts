@@ -184,7 +184,12 @@ export function validateInstance(
   for (const [i, binding] of m.providers.entries()) {
     if (seen.has(binding.contract)) {
       issues.push(
-        issue("error", `providers.${i}.contract`, `contract "${binding.contract}" is bound twice`),
+        issue(
+          "error",
+          `providers.${i}.contract`,
+          `contract "${binding.contract}" is bound twice, and the kernel can only hold one adapter per contract today — ` +
+            `two providers for one capability is a known limit, not a design (README, "Where the work is")`,
+        ),
       );
     }
     seen.add(binding.contract);

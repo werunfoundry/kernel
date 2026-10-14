@@ -1,0 +1,11 @@
+#!/bin/sh
+# Enable with: git config core.hooksPath .githooks
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$branch" = "main" ]; then
+  echo "refusing to commit directly on main — branch first."
+  echo "  git switch -c <type>/<short-name>"
+  exit 1
+fi
+
+node scripts/check.mjs --staged || exit 1

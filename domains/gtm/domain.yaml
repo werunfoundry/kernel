@@ -1,0 +1,32 @@
+name: gtm
+version: 0.0.0
+description: Acquisition — producing outbound and handling what comes back.
+schema: gtm
+dependsOn:
+  - relations
+# Contributed to the shared vocabulary. A channel may only be used by a touch
+# once a enabled domain declares it here.
+channels:
+  - email
+  - social_message
+  - social_invite
+  - social_comment
+  - profile_visit
+experimentTypes:
+  - campaign
+  - audience_test
+  - message_test
+  - channel_test
+  - signal_play
+  - offer_test
+# Kinds of truth this domain understands. The shapes live in
+# manifest/types.ts; without the declaration here, no instance may hold one.
+truthKinds:
+  - icp
+  - persona
+eventTypes:
+  - gtm.signup
+  - gtm.reply
+  - gtm.bounce
+  - gtm.unsubscribe
+  - gtm.meeting_booked

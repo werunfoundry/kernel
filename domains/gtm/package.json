@@ -1,0 +1,27 @@
+{
+  "name": "@werunfoundry/gtm",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Acquisition.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./db/schema": "./db/schema.ts",
+    "./manifest/types": "./manifest/types.ts",
+    "./manifest": "./manifest/index.ts",
+    "./contracts": "./contracts/index.ts",
+    "./contracts/sequencer": "./contracts/sequencer.ts",
+    "./contracts/target-list": "./contracts/target-list.ts"
+  },
+  "dependencies": {
+    "@werunfoundry/core": "workspace:*",
+    "@werunfoundry/relations": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  }
+}\n

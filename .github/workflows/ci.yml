@@ -1,0 +1,60 @@
+name: CI
+
+# The doctrine, run by the machine instead of by memory. Needs no secrets.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  doctrine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # First, and before anything is installed: it needs no dependencies and
+      # it catches the worst thing that can happen to a public repository.
+      - name: doctrine checks
+        run: node scripts/check.mjs
+
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      # The drift assertions in core/manifest/validate.ts are only true if
+      # something compiles them. This is that something.
+      - name: typecheck
+        run: pnpm typecheck
+
+      - name: migrations match the schemas
+        # Regenerating an unchanged schema writes nothing. Anything appearing
+        # here means a schema was edited and the migration was not generated —
+        # which is only discovered, otherwise, against a real database.
+        run: |
+          pnpm db:generate
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "A schema changed without its migration:"
+            git status --short
+            exit 1
+          fi
+        env:
+          DIRECT_URL: postgresql://unused
+
+      - name: advisories in what we ship
+        # `--prod` and `--audit-level high` on purpose. A moderate in a local
+        # build tool is not worth blocking a pull request on, and a gate that
+        # cries wolf gets bypassed; a high in a dependency that ends up in an
+        # instance is worth stopping for. This can fail on a day nothing
+        # changed here, because an advisory was published elsewhere — that is
+        # the point of it, not a flake.
+        run: pnpm audit --prod --audit-level high

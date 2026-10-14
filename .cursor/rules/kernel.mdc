@@ -1,0 +1,27 @@
+---
+description: Public repository guardrails and architecture boundaries
+alwaysApply: true
+---
+
+This repository is PUBLIC. Git history is permanent and crawled.
+
+Never write, in any file, commit message or comment:
+- a brand, company, client or customer name
+- a secret, token, key, password or connection string
+- real data of any kind; fixtures use example.com, example.org or *.invalid
+- a provider name inside core/ or domains/*/db or domains/*/domain
+  (adapters may name their own provider)
+
+Architecture boundaries, from DOCTRINE.md:
+- the core contains no business word
+- dependencies point down; a foreign key never goes sideways or upward
+- a sideways read goes through a published view, never a foreign key
+- when two domains need the same concept, it moves down, not sideways
+- uniqueness keys live in the DDL, not in the caller
+- delete policy by meaning: cascade = ownership, set null = attribution,
+  restrict = guards what was already sent
+- every index names, in a comment, the query it serves
+- always qualify table names; never rely on search_path
+
+Before any commit: run `node scripts/check.mjs`. Never commit on main.
+Ask before adding a dependency, a core object, or a dependency between domains.

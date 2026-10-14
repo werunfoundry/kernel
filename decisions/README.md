@@ -1,0 +1,14 @@
+# Decisions
+
+A decision that moves a boundary gets a file here: what was decided, what it
+rules out, and what would reverse it. One page, numbered, never edited once
+merged — a later decision supersedes an earlier one and says so.
+
+The rule behind the folder: a decision taken only in a conversation does not
+exist. Six months later the code shows *what* was built and nobody remembers
+what was considered and dropped, so the question gets reopened from scratch and
+answered differently. These files are the memory of the alternatives.
+
+Not every choice belongs here. A boundary is: a new object in the core, a
+dependency between domains, a new package, a change to what an instance owns,
+or a rule in `DOCTRINE.md`.

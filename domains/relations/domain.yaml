@@ -1,0 +1,9 @@
+name: relations
+version: 0.0.0
+description: The shared record — people, companies, audiences, interactions, signals.
+schema: relations
+dependsOn: []
+channels: []
+eventTypes:
+  - relations.person.merged
+  - relations.person.opted_out

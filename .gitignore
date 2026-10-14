@@ -1,0 +1,27 @@
+# Secrets — never commit, in any variant
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# Local data. Nothing operational belongs in this repository.
+data/
+out/
+*.csv
+*.pdf
+
+# Tooling
+.DS_Store
+.idea/
+.vscode/
+coverage/
+*.log
+
+# pnpm probe files, occasionally left behind
+_tmp_*

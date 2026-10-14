@@ -132,10 +132,24 @@ const REAL_PROFILE = /(linkedin\.com|twitter\.com|x\.com)\/(in|company)\//i;
 
 const PROVIDERS =
   /\b(instantly|lemlist|attio|pipedrive|hubspot|salesforce|customer\.?io|apollo|clay|smartlead)\b/i;
-// Everything in the engine, except an adapter. Naming the directories that
-// are covered would leave every directory added later uncovered.
-const PROVIDER_FREE = /^(core|domains)\//;
+// Every file in the repository, except an adapter. Covering only the engine's
+// code left decisions/, the README and the template open, and a decision is
+// exactly where a provider gets named while explaining it.
 const IS_ADAPTER = /(^|\/)adapters?\//;
+// The two files that hold the list above. By exact path: a pattern here would
+// be a second way to switch the check off, and the tests pin that it is not.
+const PROVIDER_LIST_HOMES = new Set(["scripts/check.mjs", "scripts/check.test.mjs"]);
+/**
+ * Where a line can be prose explaining why a provider must not be named, and
+ * how such a line starts. Only comments in code and configuration: in
+ * Markdown, `#` is a heading and `*` a list item, and exempting them would let
+ * a decision title name a provider.
+ */
+function commentIn(file) {
+  if (/\.(ts|tsx|js|mjs|cjs)$/i.test(file)) return /^\s*(\*|\/\/)/;
+  if (/\.(ya?ml|sh)$/i.test(file)) return /^\s*#/;
+  return null;
+}
 
 /* -- Rule 8: an instance holds no engine code --------------------------- */
 
@@ -169,7 +183,8 @@ for (const file of files) {
 
   const lines = body.split("\n");
   const fixture = IS_FIXTURE.test(file);
-  const providerFree = PROVIDER_FREE.test(file) && !IS_ADAPTER.test(file);
+  const providerFree = !IS_ADAPTER.test(file) && !PROVIDER_LIST_HOMES.has(file);
+  const comment = commentIn(file);
 
   lines.forEach((text, i) => {
     const n = i + 1;
@@ -192,7 +207,7 @@ for (const file of files) {
     if (providerFree) {
       const hit = text.match(PROVIDERS);
       // A provider may be named in prose that explains why it must not be.
-      if (hit && !/^\s*(\*|\/\/|#)/.test(text)) {
+      if (hit && !(comment && comment.test(text))) {
         fail(1, file, n, `provider named outside an adapter: ${hit[0]}`);
       }
     }

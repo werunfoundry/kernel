@@ -1,7 +1,8 @@
 /**
- * Metric source, sandbox. Reads the three metrics every gtm experiment type
- * is judged on, from the sandbox's own data and state. A key it does not
- * read is refused, never answered with zero.
+ * Metric source, sandbox. Reads every metric a gtm experiment type is judged
+ * on, guardrails included, from the sandbox's own data and state. A key it
+ * does not read is refused, never answered with zero; a zero it does answer
+ * is a count of invented events that happens to be zero.
  */
 
 import type { AdapterFactory, CallResult, MetricReading, MetricSource } from "@werunfoundry/core/contracts/types";
@@ -10,7 +11,7 @@ import { loadData, loadState, stateFile } from "./sandbox-store.ts";
 
 const factory: AdapterFactory<MetricSource> = ({ options }) => ({
   provider: "sandbox-metrics",
-  metrics: ["gtm.enrolled", "gtm.replied", "gtm.meetings_booked"],
+  metrics: ["gtm.enrolled", "gtm.replied", "gtm.meetings_booked", "gtm.bounced", "gtm.unsubscribed"],
 
   async probe(): Promise<CallResult<void>> {
     const data = loadData(options.dataFile);
@@ -33,6 +34,8 @@ const factory: AdapterFactory<MetricSource> = ({ options }) => ({
     }
     if (query.key === "gtm.replied") return reading(events("gtm.reply"), "people");
     if (query.key === "gtm.meetings_booked") return reading(data.value.events.filter((e) => e.type === "gtm.meeting_booked").length, "meetings");
+    if (query.key === "gtm.bounced") return reading(events("gtm.bounce"), "people");
+    if (query.key === "gtm.unsubscribed") return reading(events("gtm.unsubscribe"), "people");
     return { ok: false, error: { code: "invalid", message: `the sandbox does not read "${query.key}"`, retryable: false } };
   },
 });

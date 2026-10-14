@@ -191,7 +191,16 @@ describe("booting an instance", () => {
     });
     const r = await boot({ root: good, env: {} });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
-    if (r.ok) assert.deepEqual(r.domains.find((d) => d.name === "gtm")?.experimentMetrics?.message_test, ["gtm.enrolled", "gtm.replied"]);
+    if (r.ok) {
+      const judged = r.domains.find((d) => d.name === "gtm")?.experimentMetrics ?? {};
+      // The guardrails are in every type, and offer_test reads replies.
+      for (const [type, keys] of Object.entries(judged)) {
+        assert.ok(keys.includes("gtm.bounced") && keys.includes("gtm.unsubscribed"), `${type} has no deliverability guardrail`);
+      }
+      assert.ok(judged.offer_test?.includes("gtm.replied"), "offer_test cannot tell nobody bit from replied without booking");
+      // Reply rates do not compare across channels; meetings per person enrolled do.
+      assert.ok(judged.channel_test?.includes("gtm.meetings_booked") && !judged.channel_test.includes("gtm.replied"));
+    }
 
     const bad = instance({
       "manifest.yaml": manifest(["enabledDomains: [relations, gtm]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),

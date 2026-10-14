@@ -1,5 +1,7 @@
 # 0004 — Accounts that must not be contacted are their own route
 
+> Completed by [0012](0012-one-provider-workspace-per-instance.md): a provider blocklist is defence in depth, not protection.
+
 ## Decided
 
 A target list exposes two independent reads: candidates, and protected

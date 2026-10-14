@@ -286,6 +286,16 @@ for (const name of layers.keys()) {
   if (here !== published) {
     fail(6, file, 0, `exports and publishConfig.exports list different paths — published: [${published}], here: [${here}]`);
   }
+  const bins = Object.keys(pkg.bin ?? {}).sort().join(", ");
+  const publishedBins = Object.keys(pkg.publishConfig?.bin ?? pkg.bin ?? {}).sort().join(", ");
+  if (bins !== publishedBins) {
+    fail(6, file, 0, `bin and publishConfig.bin list different commands — published: [${publishedBins}], here: [${bins}]`);
+  }
+  for (const [command, target] of Object.entries(pkg.publishConfig?.bin ?? {})) {
+    if (typeof target === "string" && target.endsWith(".ts")) {
+      fail(6, file, 0, `publishes the command "${command}" as TypeScript source, which Node refuses under node_modules (decision 0006)`);
+    }
+  }
   for (const [path, target] of Object.entries(pkg.publishConfig?.exports ?? {})) {
     const targets = typeof target === "string" ? [target] : Object.values(target ?? {});
     if (targets.some((t) => typeof t === "string" && t.endsWith(".ts") && !t.endsWith(".d.ts"))) {

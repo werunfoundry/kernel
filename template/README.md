@@ -66,6 +66,11 @@ Then, in order, because each step tells you what the next one needs:
 environment behind the manifest's back. It ships from the engine, so it
 improves when you bump the engine.
 
+`pnpm verify` asks whether the configuration is real: it boots, opens a dry
+run in the database, probes every adapter that offers a probe, and closes the
+run with what happened. It ships from the engine too, as `kernel-verify`, for
+the same reason.
+
 The engine validates the manifest itself at startup — domains, dependencies,
 contracts, truths — where it is parsed anyway.
 

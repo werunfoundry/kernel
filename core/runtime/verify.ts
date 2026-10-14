@@ -7,9 +7,10 @@
  * tells those apart, so this makes one, the smallest there is:
  *
  *   1. boot — domains, manifest, bindings, credentials, every issue at once;
- *   2. open a run, in dry run, in the database the instance owns;
- *   3. probe each adapter that offers a probe (decision 0009);
- *   4. close the run with what happened, and say it.
+ *   2. load the truths, which boot deliberately does not;
+ *   3. open a run, in dry run, in the database the instance owns;
+ *   4. probe each adapter that offers a probe (decision 0009);
+ *   5. close the run with what happened, and say it.
  *
  * Dry run all the way: a probe is a read, and the context says no write may
  * happen even if an adapter were careless. The run row is the one thing it
@@ -21,7 +22,10 @@
  * others through a version bump, not through a paste nobody repeats.
  */
 
+import { join } from "node:path";
+
 import type { AdapterEnv } from "../contracts/types.js";
+import { loadTruths } from "../manifest/load.js";
 import { boot } from "./boot.js";
 import { resolvePackage } from "./resolve.js";
 import type { Database, OpenRun } from "./run.js";
@@ -81,7 +85,21 @@ export async function verify(options: VerifyOptions): Promise<number> {
   say(`boot: ${booted.manifest.instance} — domains ${booted.domains.map((d) => d.name).join(", ")}`);
   for (const a of booted.registry.list()) say(`  ${a.contract} → ${a.provider} (${a.specifier})`);
 
-  /* 2. open a run ------------------------------------------------------- */
+  /* 2. truths ----------------------------------------------------------- */
+
+  // Not in boot, which answers "can this system run" — a truth nobody has
+  // confirmed lately must not stop a run from being recorded. Here they are
+  // part of the question: an invalid truth is configuration that is not
+  // real. A stale one is a warning, as the validator says.
+  const kinds = [...new Set(booted.domains.flatMap((d) => d.truthKinds ?? []))];
+  const truths = loadTruths(join(options.root, booted.manifest.truthsDir), { knownKinds: kinds });
+  for (const issue of truths.issues) {
+    say(`  ${issue.severity === "error" ? "✖" : "!"} ${shorten(issue.at)}\n      ${issue.message}`);
+  }
+  const truthErrors = truths.issues.filter((i) => i.severity === "error").length;
+  say(`truths: ${truths.truths.length} loaded${truthErrors ? `, ${truthErrors} refused` : ""}`);
+
+  /* 3. open a run ------------------------------------------------------- */
 
   const url = options.env.DATABASE_URL;
   if (!url) {
@@ -117,9 +135,9 @@ export async function verify(options: VerifyOptions): Promise<number> {
   }
   say(`\nrun: ${open.id} opened, dry run`);
 
-  /* 3. probe ------------------------------------------------------------ */
+  /* 4. probe ------------------------------------------------------------ */
 
-  const failures: string[] = [];
+  const failures: string[] = truthErrors ? [`truths: ${truthErrors} refused`] : [];
   const unprobed: string[] = [];
   try {
     for (const resolved of booted.registry.list()) {
@@ -148,7 +166,7 @@ export async function verify(options: VerifyOptions): Promise<number> {
     say(`  ✖ ${failures.at(-1)}`);
   }
 
-  /* 4. close ------------------------------------------------------------ */
+  /* 5. close ------------------------------------------------------------ */
 
   const status = failures.length === 0 ? "succeeded" : "failed";
   await open.finish(failures.length === 0 ? { status } : { status, error: failures.join("; ") });

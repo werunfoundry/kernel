@@ -8,6 +8,11 @@
  * instance was started to do, and a configuration that cannot boot never gets
  * as far as writing a row about itself.
  *
+ * It does not load truths. Boot answers one question — can this system run —
+ * and a truth nobody has confirmed lately must not stop a run from being
+ * recorded. Truths are loaded by `verify`, and by each process where it uses
+ * them.
+ *
  * Every issue comes back at once. An instance being set up has, typically, a
  * missing credential and a domain it forgot to install and a typo in a path;
  * learning them one restart at a time is how a first afternoon is lost.

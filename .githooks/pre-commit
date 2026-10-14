@@ -9,3 +9,14 @@ if [ "$branch" = "main" ]; then
 fi
 
 node scripts/check.mjs --staged || exit 1
+
+# Only when the checks themselves are being changed. They take under two
+# seconds, but a hook that runs them on every unrelated commit is a hook
+# people start passing --no-verify to, which disables all of the above.
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '^scripts/'; then
+  node --test "scripts/**/*.test.mjs" >/dev/null 2>&1 || {
+    echo "the doctrine checks no longer pass their own tests:"
+    node --test "scripts/**/*.test.mjs" 2>&1 | grep -E "^not ok|^    not ok|^# fail"
+    exit 1
+  }
+fi

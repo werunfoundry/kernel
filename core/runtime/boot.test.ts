@@ -198,6 +198,8 @@ describe("booting an instance", () => {
         assert.ok(keys.includes("gtm.bounced") && keys.includes("gtm.unsubscribed"), `${type} has no deliverability guardrail`);
       }
       assert.ok(judged.offer_test?.includes("gtm.replied"), "offer_test cannot tell nobody bit from replied without booking");
+      // Reply rates do not compare across channels; meetings per person enrolled do.
+      assert.ok(judged.channel_test?.includes("gtm.meetings_booked") && !judged.channel_test.includes("gtm.replied"));
     }
 
     const bad = instance({

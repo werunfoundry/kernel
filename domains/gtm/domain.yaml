@@ -48,11 +48,14 @@ metrics:
 # tied to a channel, so any of them can carry email, and an experiment can
 # win on replies while it damages deliverability. offer_test reads
 # gtm.replied too, to tell "nobody bit" from "people replied and did not
-# book".
+# book". channel_test is judged on meetings booked per person enrolled — an
+# outcome that means the same on every channel — and not on replies, whose
+# rate does not compare across channels at equal volume; replies stay
+# readable per channel, as a diagnostic.
 experimentMetrics:
   campaign: [gtm.enrolled, gtm.replied, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]
   audience_test: [gtm.enrolled, gtm.replied, gtm.bounced, gtm.unsubscribed]
   message_test: [gtm.enrolled, gtm.replied, gtm.bounced, gtm.unsubscribed]
-  channel_test: [gtm.enrolled, gtm.replied, gtm.bounced, gtm.unsubscribed]
+  channel_test: [gtm.enrolled, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]
   signal_play: [gtm.enrolled, gtm.replied, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]
   offer_test: [gtm.enrolled, gtm.replied, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]

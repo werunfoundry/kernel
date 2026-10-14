@@ -1,0 +1,8 @@
+# This file matters more here than in the engine: an instance is where the
+# secrets actually are.
+.env
+.env.*
+!.env.example
+
+node_modules/
+*.log

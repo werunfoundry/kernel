@@ -21,8 +21,8 @@ import type {
   TruthDoc,
   ValidationIssue,
   ValidationResult,
-} from "./types.ts";
-import { validateDomain, validateInstance, validateTruth } from "./validate.ts";
+} from "./types.js";
+import { validateDomain, validateInstance, validateTruth } from "./validate.js";
 
 const failed = (at: string, message: string): ValidationResult => ({
   ok: false,

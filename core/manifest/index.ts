@@ -1,3 +1,3 @@
-export type * from "./types.ts";
-export * from "./validate.ts";
-export * from "./load.ts";
+export type * from "./types.js";
+export * from "./validate.js";
+export * from "./load.js";

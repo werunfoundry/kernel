@@ -324,14 +324,18 @@ function lineAt(body, index) {
  */
 
 const ADAPTER_SEGMENT = /(^|\/)adapters?\//;
-const ADAPTER_HOME = /^domains\/[^/]+\/adapters\//;
+// Two homes, for two different repositories. A domain's adapters are the ones
+// this package ships; `template/adapters/` is the skeleton an instance is
+// generated from, where an instance keeps its own (decision 0005). Anywhere
+// else, the exemption below would be a way to switch the provider check off.
+const ADAPTER_HOME = /^(domains\/[^/]+|template)\/adapters\//;
 const SCHEMA_HOME = /^(core|domains\/[^/]+)\/db\/schema\.ts$/;
 
 const domainFolders = new Set();
 
 for (const file of allFiles) {
   if (ADAPTER_SEGMENT.test(file) && !ADAPTER_HOME.test(file)) {
-    fail(6, file, 0, "an adapter lives in domains/<name>/adapters/ and nowhere else");
+    fail(6, file, 0, "an adapter lives in domains/<name>/adapters/ or template/adapters/, nowhere else");
   }
 
   const inDomain = file.match(/^domains\/([^/]+)\//);

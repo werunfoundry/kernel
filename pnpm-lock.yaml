@@ -51,6 +51,18 @@ importers:
         specifier: ^0.45.2
         version: 0.45.4
 
+  template:
+    dependencies:
+      '@werunfoundry/core':
+        specifier: workspace:*
+        version: link:../core
+      '@werunfoundry/gtm':
+        specifier: workspace:*
+        version: link:../domains/gtm
+      '@werunfoundry/relations':
+        specifier: workspace:*
+        version: link:../domains/relations
+
 packages:
 
   '@drizzle-team/brocli@0.10.2':

@@ -1,3 +1,3 @@
-export * from "./db/schema.ts";
-export * from "./manifest/index.ts";
-export type * from "./contracts/types.ts";
+export * from "./db/schema.js";
+export * from "./manifest/index.js";
+export type * from "./contracts/types.js";

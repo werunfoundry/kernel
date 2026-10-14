@@ -1,0 +1,31 @@
+# A truth is something this instance holds to be true, with someone
+# accountable for it and a date it was last confirmed.
+#
+# It has two halves, kept apart on purpose. Everything below `spec` is the
+# machine half: filterable, validatable, and what a sourcing pass actually
+# runs on. The prose half lives in the markdown files listed under `notes`,
+# because what makes copy good does not survive being forced into a schema —
+# and a schema nobody can fill is worse than no schema.
+
+key: example-icp
+kind: icp
+owner: ops
+validatedAt: "2026-01-15"
+
+spec:
+  priority: 1
+  firmographics:
+    headcount:
+      min: 50
+      max: 500
+    countries: [FR, BE, CH]
+  signals:
+    - kind: hiring
+      maxAgeDays: 30
+  # An exclusion wins over everything else here, including a perfect
+  # firmographic match. That is the point of it.
+  excludeAudiences:
+    - protected-accounts
+
+notes:
+  positioning: example-icp/positioning.md

@@ -24,5 +24,15 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
-  }
+  },
+  "bin": {
+    "kernel-check-instance": "./scripts/check-instance.mjs"
+  },
+  "files": [
+    "index.ts",
+    "db",
+    "manifest",
+    "contracts",
+    "scripts"
+  ]
 }

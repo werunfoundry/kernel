@@ -16,8 +16,10 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
+  jsonb,
   pgSchema,
   text,
   timestamp,
@@ -39,6 +41,20 @@ export const draftState = gtm.enum("draft_state", [
   "sent",
   "failed",
 ]);
+
+/**
+ * The registry's own states for an enrolment — the engine's state machine,
+ * so an enum (like `draft_state`), not the provider's view of the person,
+ * which is read from the provider (doctrine 3).
+ */
+export const enrolmentState = gtm.enum("enrolment_state", [
+  "pending", // written, the provider not yet heard back from: reconciled on the next run
+  "enrolled", // the provider confirmed it
+  "refused", // the provider refused it — invalid, or held under another key
+]);
+
+/** Why someone was not enrolled. Four, and never folded into one (0019). */
+export const skipReason = gtm.enum("skip_reason", ["protected", "capacity", "duplicate", "unreachable"]);
 
 export const lifecycleStage = gtm.enum("lifecycle_stage", [
   "unknown",
@@ -104,6 +120,13 @@ export const message = gtm.table(
  *
  * It replaces the arrangement where a spreadsheet *was* the state, and where
  * a reviewer's judgement survived only in a file of dropped rows.
+ *
+ * Its gate is in the schema (decision 0027), not only in `runtime/draft.ts`:
+ * a trigger allows only the moves forward — drafting to review or approved,
+ * review to approved or dropped, approved to queued or dropped, queued to
+ * sent or failed — and refuses any change to the rendered text once it is
+ * approved, so what goes out is what was approved. The checks below make
+ * every decision carry who took it, and every drop its reason.
  */
 export const draft = gtm.table(
   "draft",
@@ -162,6 +185,14 @@ export const draft = gtm.table(
 
     /** `listDraftsAwaitingReview`, oldest first. */
     index("draft_state_created_at_idx").on(t.state, t.createdAt),
+
+    /** Past review, a draft says who decided and when — a human, or the lane. */
+    check(
+      "draft_decided",
+      sql`${t.state} in ('drafting', 'awaiting_review') or (${t.decidedBy} is not null and ${t.decidedAt} is not null)`,
+    ),
+    /** A drop without a reason is a judgement nobody can learn from. */
+    check("draft_dropped_has_reason", sql`${t.state} <> 'dropped' or ${t.dropReason} is not null`),
   ],
 );
 
@@ -208,5 +239,122 @@ export const companyState = gtm.table(
 
     /** `listCompaniesUntouchedSince` — account pressure, newest first. */
     index("company_state_last_touched_idx").on(sql`${t.lastTouchedAt} desc nulls last`),
+  ],
+);
+
+/**
+ * The enrolment registry (decision 0026): one row per person per sequence,
+ * answering "is this person enrolled, in which sequence, through which
+ * company" from the database instead of from each provider in turn.
+ *
+ * Written before the provider is called. A run that dies between the two
+ * leaves a `pending` row, and the next run reconciles it — asks the provider
+ * whether the enrolment landed, and either confirms it or makes it, with the
+ * key stored here — instead of enrolling the person a second time under a
+ * new key.
+ *
+ * Which step a person is on is the provider's fact, read from it with this
+ * row's reference; it is not copied here (doctrine 3).
+ */
+export const enrolment = gtm.table(
+  "enrolment",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    /** Restrict: a person with an enrolment on record is not quietly deleted. */
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => person.id, { onDelete: "restrict" }),
+
+    /**
+     * The company the person was enrolled through. What makes "who at this
+     * company is in a sequence" answerable when it becomes protected.
+     * Attribution: losing the company keeps the enrolment.
+     */
+    companyId: uuid("company_id").references(() => company.id, { onDelete: "set null" }),
+
+    /** The sequence as the instance declared it, and the channel it runs on. */
+    sequenceKey: text("sequence_key").notNull(),
+    channel: text("channel").notNull(),
+
+    /**
+     * The key the provider was given. Stored, so that a replay — or a
+     * reconciliation after a crash — repeats it even if the person's keys
+     * have grown in the meantime.
+     */
+    idempotencyKey: text("idempotency_key").notNull(),
+
+    state: enrolmentState("state").notNull().default("pending"),
+    /** The adapter that holds it, as it names itself. */
+    provider: text("provider").notNull(),
+    /** For `refused`: what the provider said. */
+    refusal: text("refusal"),
+    enrolledAt: timestamp("enrolled_at", { withTimezone: true }),
+
+    /** Doctrine 5: the run that last wrote this row. */
+    actorType: actorType("actor_type").notNull(),
+    actorId: text("actor_id"),
+    runId: uuid("run_id").references(() => run.id, { onDelete: "set null" }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * One enrolment per person per sequence — the sameness providers apply
+     * too. It protects the write before the provider call: two runs racing on
+     * one person write one row, and the loser reads it.
+     */
+    uniqueIndex("enrolment_person_sequence_uidx").on(t.personId, t.sequenceKey),
+
+    /** `listEnrolledAt(companyId)` — who to withdraw when a company becomes protected. */
+    index("enrolment_company_idx").on(t.companyId),
+
+    /** `listPendingEnrolments` — what a crashed run left to reconcile. */
+    index("enrolment_pending_idx").on(t.updatedAt).where(sql`${t.state} = 'pending'`),
+  ],
+);
+
+/**
+ * Every candidate a run did not enrol, and why (decision 0026). Before this,
+ * the reasons existed only in the printed report (0019).
+ *
+ * Per run and append-only in use: a skip is an observation of that run, kept
+ * for dry runs too, which is how a dry run can be read back. It names no
+ * relations row — a protected person is not recorded as a person in order to
+ * record that they were not contacted — so the subject is kept as it was
+ * seen: the person's keys, or the company's.
+ */
+export const enrolmentSkip = gtm.table(
+  "enrolment_skip",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    /** Cascade: a skip is part of its run. */
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => run.id, { onDelete: "cascade" }),
+
+    sequenceKey: text("sequence_key").notNull(),
+    channel: text("channel").notNull(),
+    reason: skipReason("reason").notNull(),
+    detail: text("detail").notNull(),
+
+    /** The person's keys, when a person was skipped; absent when a whole company was. */
+    person: jsonb("person"),
+    /** The company as the target list gave it: domain, identifier, name. */
+    company: jsonb("company").notNull(),
+
+    /** What the skip is about, stable within a run: the enrolment key, or the company's. */
+    subject: text("subject").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** A run that writes the same skip twice — a retried write — keeps one. */
+    uniqueIndex("enrolment_skip_run_subject_uidx").on(t.runId, t.subject),
+
+    /** `listSkipsForRun(runId, reason)` — reading a run back. */
+    index("enrolment_skip_run_reason_idx").on(t.runId, t.reason),
   ],
 );

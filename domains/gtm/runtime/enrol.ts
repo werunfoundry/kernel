@@ -24,9 +24,21 @@
  * Every candidate not enrolled is skipped for one stated reason, and the
  * reasons are kept apart: protected, capacity, duplicate, unreachable. A
  * report that only counted "not enrolled" would hide the one that matters.
+ *
+ * The registry (decision 0026) is read before the provider and written before
+ * the provider is called. A person the registry has enrolled in the sequence
+ * is a duplicate without asking anyone. Otherwise a `pending` row is written,
+ * then the provider is called with the key on record, then the row is
+ * settled — `enrolled`, or `refused` with what the provider said. A run that
+ * dies in between leaves the row `pending`, and the next run asks the
+ * provider: enrolled there means confirmed here, not enrolled twice. Every
+ * skip is kept with its reason, for a dry run too; a dry run writes its run
+ * and its skips, and nothing else — no registry row, no person, no company.
  */
 
 import { createHash } from "node:crypto";
+
+import { and, eq } from "drizzle-orm";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
@@ -35,10 +47,12 @@ import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
 import type { Enrichment } from "@werunfoundry/relations/contracts/enrichment";
+import { findPerson, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequencer.js";
 import { remainingOf } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
+import { enrolment, enrolmentSkip } from "../db/schema.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", enrichment: "enrichment", sequencer: "sequencer" } as const;
@@ -91,6 +105,11 @@ export interface EnrolReport {
   stoppedBy?: string;
   protectedAccounts: number;
   enrolled: Enrolled[];
+  /**
+   * People a previous run wrote to the registry and died before confirming,
+   * found enrolled at the provider and confirmed now — not enrolled again.
+   */
+  reconciled: Enrolled[];
   skipped: Skipped[];
   /** Whether capacity bounded the run, or why not. */
   capacity: { checked: true; budget: number } | { checked: false; why: string };
@@ -148,10 +167,56 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     status: "succeeded",
     protectedAccounts: 0,
     enrolled: [],
+    reconciled: [],
     skipped: [],
     capacity: { checked: false, why: "no sender was given" },
     recorded: false,
   };
+
+  /**
+   * A skip is reported and kept (decision 0026), dry run or not: it is an
+   * observation of this run, and touches nothing the registry answers from.
+   */
+  const skip = async (s: Skipped) => {
+    report.skipped.push(s);
+    const subject = s.person
+      ? `person:${idempotencyKey(s.person, request.sequenceKey, request.channel)}`
+      : `company:${s.company.domain ?? s.company.externalId ?? s.company.name ?? JSON.stringify(s.company)}`;
+    await deps.db
+      .insert(enrolmentSkip)
+      .values({
+        runId: open.id,
+        sequenceKey: request.sequenceKey,
+        channel: request.channel,
+        reason: s.reason,
+        detail: s.detail.slice(0, 500),
+        ...(s.person ? { person: s.person } : {}),
+        company: { ...(s.company.domain ? { domain: s.company.domain } : {}), ...(s.company.externalId ? { externalId: s.company.externalId } : {}), ...(s.company.name ? { name: s.company.name } : {}) },
+        subject,
+      })
+      .onConflictDoNothing({ target: [enrolmentSkip.runId, enrolmentSkip.subject] });
+  };
+
+  const registryRow = async (personId: string) =>
+    (
+      await deps.db
+        .select({ id: enrolment.id, state: enrolment.state, idempotencyKey: enrolment.idempotencyKey })
+        .from(enrolment)
+        .where(and(eq(enrolment.personId, personId), eq(enrolment.sequenceKey, request.sequenceKey)))
+    )[0];
+
+  /** Moves a registry row, attributed to this run. */
+  const settleRow = (id: string, change: { state: "pending" | "enrolled" | "refused"; enrolledAt?: Date; refusal?: string | null }) =>
+    deps.db
+      .update(enrolment)
+      .set({
+        ...change,
+        actorType: request.actor.type,
+        actorId: request.actor.id ?? null,
+        runId: open.id,
+        updatedAt: now(),
+      })
+      .where(eq(enrolment.id, id));
 
   try {
     /* 1. Protection, before anything else ------------------------------ */
@@ -224,11 +289,11 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     const seenPeople = new Set<string>();
     for (const company of candidates.value.items) {
       if (companyProtected(company)) {
-        report.skipped.push({ reason: "protected", company, detail: "the account is protected" });
+        await skip({ reason: "protected", company, detail: "the account is protected" });
         continue;
       }
       if (!company.domain) {
-        report.skipped.push({ reason: "unreachable", company, detail: "no domain to find its people by" });
+        await skip({ reason: "unreachable", company, detail: "no domain to find its people by" });
         continue;
       }
       const people = await enrichment.peopleAt(
@@ -236,40 +301,115 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         ctx,
       );
       if (!people.ok) {
-        report.skipped.push({ reason: "unreachable", company, detail: `its people could not be looked up: ${people.error.code}` });
+        await skip({ reason: "unreachable", company, detail: `its people could not be looked up: ${people.error.code}` });
         continue;
       }
 
+      /** The company's row, recorded once per run, the first time someone at it is about to be enrolled. */
+      let companyRow: { id: string } | { conflict: string } | undefined;
+      const recordedCompany = async () =>
+        (companyRow ??= await recordCompany(
+          deps.db,
+          company.identity ?? { subject: "company", keys: [{ kind: "domain", value: company.domain! }] },
+          company.name ? { name: company.name } : {},
+        ));
+
       for (const found of people.value.items.slice(0, request.peoplePerCompany ?? 5)) {
         const person = normalizeIdentity(found.identity, deps.identity);
-        const id = idempotencyKey(person, request.sequenceKey, request.channel);
+        const computed = idempotencyKey(person, request.sequenceKey, request.channel);
         if (personProtected(person)) {
-          report.skipped.push({ reason: "protected", person, company, detail: "an address is on a protected domain" });
+          await skip({ reason: "protected", person, company, detail: "an address is on a protected domain" });
           continue;
         }
-        if (seenPeople.has(id)) {
-          report.skipped.push({ reason: "duplicate", person, company, detail: "already met in this run" });
+        if (seenPeople.has(computed)) {
+          await skip({ reason: "duplicate", person, company, detail: "already met in this run" });
           continue;
         }
-        seenPeople.add(id);
+        seenPeople.add(computed);
+
+        // The registry first: what this engine already did for this person in
+        // this sequence. Reads only, so a dry run asks it too.
+        const known = await findPerson(deps.db, person);
+        if ("conflict" in known) {
+          await skip({ reason: "unreachable", person, company, detail: `the registry cannot tell who this is: ${known.conflict}` });
+          continue;
+        }
+        let row = "id" in known ? await registryRow(known.id) : undefined;
+        if (row?.state === "enrolled") {
+          await skip({ reason: "duplicate", person, company, detail: "already enrolled in this sequence, by the registry" });
+          continue;
+        }
+        // A replay repeats the key the provider was given, whatever the
+        // person's keys have become since.
+        const key = row?.idempotencyKey ?? computed;
 
         const current = await sequencer.status({ person, sequenceKey: request.sequenceKey }, ctx);
         if (!current.ok) {
-          report.skipped.push({ reason: "unreachable", person, company, detail: `status unreadable: ${current.error.code}` });
+          await skip({ reason: "unreachable", person, company, detail: `status unreadable: ${current.error.code}` });
+          continue;
+        }
+        if (row?.state === "pending" && current.value.state !== "unknown") {
+          // A run died after writing the registry: the enrolment landed, and
+          // is confirmed rather than made twice. It consumed its capacity then.
+          if (!request.dryRun) await settleRow(row.id, { state: "enrolled", enrolledAt: now() });
+          report.reconciled.push({ person, company, state: current.value.state });
           continue;
         }
         if (current.value.state !== "unknown") {
-          report.skipped.push({ reason: "duplicate", person, company, detail: `already in the sequence (${current.value.state})` });
+          await skip({ reason: "duplicate", person, company, detail: `already in the sequence (${current.value.state})` });
           continue;
         }
         if (budget <= 0) {
-          report.skipped.push({ reason: "capacity", person, company, detail: "no capacity left on the given senders" });
+          await skip({ reason: "capacity", person, company, detail: "no capacity left on the given senders" });
           continue;
+        }
+
+        // Written before the provider is called, so that a run dying in
+        // between leaves something the next one can reconcile.
+        if (!request.dryRun) {
+          const companyId = await recordedCompany();
+          if ("conflict" in companyId) {
+            await skip({ reason: "unreachable", person, company, detail: `the recorded companies disagree about this one: ${companyId.conflict}` });
+            continue;
+          }
+          const recorded = await recordPerson(deps.db, person, {
+            ...(found.display?.fullName ? { fullName: found.display.fullName } : {}),
+            companyId: companyId.id,
+          });
+          if ("conflict" in recorded) {
+            await skip({ reason: "unreachable", person, company, detail: `the registry cannot tell who this is: ${recorded.conflict}` });
+            continue;
+          }
+          if (row) {
+            await settleRow(row.id, { state: "pending", refusal: null });
+          } else {
+            await deps.db
+              .insert(enrolment)
+              .values({
+                personId: recorded.id,
+                companyId: companyId.id,
+                sequenceKey: request.sequenceKey,
+                channel: request.channel,
+                idempotencyKey: key,
+                provider: sequencer.provider,
+                actorType: request.actor.type,
+                ...(request.actor.id ? { actorId: request.actor.id } : {}),
+                runId: open.id,
+              })
+              .onConflictDoNothing({ target: [enrolment.personId, enrolment.sequenceKey] });
+            row = await registryRow(recorded.id);
+            if (!row) throw new Error("an enrolment was written and cannot be read back");
+            // Another run got there first and finished: not ours to make again.
+            if (row.state === "enrolled") {
+              await skip({ reason: "duplicate", person, company, detail: "enrolled by another run while this one ran" });
+              continue;
+            }
+          }
         }
 
         const done = await sequencer.enrol(
           {
-            idempotencyKey: id,
+            idempotencyKey: row?.idempotencyKey ?? key,
             sequenceKey: request.sequenceKey,
             channel: request.channel,
             person,
@@ -280,19 +420,17 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         );
         if (!done.ok) {
           const e = done.error;
-          if (e.code === "conflict") {
-            report.skipped.push({ reason: "duplicate", person, company, detail: e.message });
-            continue;
-          }
-          if (e.code === "invalid" || e.code === "not_found") {
-            report.skipped.push({ reason: "unreachable", person, company, detail: e.message });
+          if (e.code === "conflict" || e.code === "invalid" || e.code === "not_found") {
+            if (row && !request.dryRun) await settleRow(row.id, { state: "refused", refusal: `${e.code}: ${e.message}`.slice(0, 500) });
+            await skip({ reason: e.code === "conflict" ? "duplicate" : "unreachable", person, company, detail: e.message });
             continue;
           }
           // Anything else — the provider is down, rate-limited, refused the
-          // key — stops the run where it is. Enrolling the rest later is a
-          // replay, and replays are safe.
+          // key — stops the run where it is, the registry row left pending:
+          // the next run asks the provider whether it landed.
           throw new Stop(`enrolment interrupted: ${e.code}: ${e.message}`);
         }
+        if (row && !request.dryRun) await settleRow(row.id, { state: "enrolled", enrolledAt: now() });
         budget -= 1;
         report.enrolled.push({
           person,

@@ -1,5 +1,8 @@
 # 0008 — The build now, and no loader anywhere
 
+> Completed by [0025](0025-an-instance-consumes-what-is-published.md): an
+> instance consumes a published version or a packed tarball, never a folder.
+
 Completes [0006](0006-the-published-artifact-is-javascript.md), which decided
 *what* is published — compiled JavaScript and declarations — and stands
 entirely. This decides *when*, and how the instance side runs.

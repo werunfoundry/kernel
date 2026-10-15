@@ -16,6 +16,7 @@
     "./runtime/boot": "./runtime/boot.ts",
     "./runtime/resolve": "./runtime/resolve.ts",
     "./runtime/run": "./runtime/run.ts",
+    "./runtime/experiment": "./runtime/experiment.ts",
     "./runtime/verify": "./runtime/verify.ts",
     "./identity": "./identity/index.ts",
     "./db/migrations/*": "./db/migrations/*",
@@ -68,6 +69,10 @@
       "./runtime/run": {
         "types": "./dist/runtime/run.d.ts",
         "default": "./dist/runtime/run.js"
+      },
+      "./runtime/experiment": {
+        "types": "./dist/runtime/experiment.d.ts",
+        "default": "./dist/runtime/experiment.js"
       },
       "./runtime/verify": {
         "types": "./dist/runtime/verify.d.ts",

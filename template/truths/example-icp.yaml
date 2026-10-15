@@ -10,6 +10,8 @@
 key: example-icp
 kind: icp
 owner: ops
+# Set to the day the instance was generated, by the generator: nobody has
+# confirmed this example. Replace the owner and the date when someone does.
 validatedAt: "2026-01-15"
 
 spec:

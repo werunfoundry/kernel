@@ -20,6 +20,12 @@ identityKeys:
     subject: person
     immutable: true
     networked: true
+  # The handle a network's profile URLs are built from. Mutable — a person can
+  # change it — so it is evidence, never the key two identities are matched on.
+  - kind: social_profile_handle
+    subject: person
+    immutable: false
+    networked: true
   - kind: domain
     subject: company
     immutable: false

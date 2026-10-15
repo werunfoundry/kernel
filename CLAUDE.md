@@ -108,6 +108,13 @@ better than one that was never run: `gh pr edit` failed on every call while
 its error line was filtered away as noise, and four pull request bodies stayed
 wrong until someone read one back.
 
+A test of a guard is counter-checked by removing that guard, and its fixture
+isolates the guard's rule. Otherwise another check produces the same refusal
+and the test passes while proving nothing: it happened three times here — a
+protected company also caught by its person's address, an organiser also on an
+internal domain, a domain-only company also refused as a malformed id — and
+each time the counter-check found it, never the reading.
+
 ## 6. Decisions
 
 A decision that changes a boundary gets a file in `decisions/`, numbered, with

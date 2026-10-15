@@ -149,7 +149,12 @@ function errorFor(status: number, body: string): CallError {
   return { code: "unknown", message: `unexpected ${status}`, retryable: false, providerCode: String(status) };
 }
 
-function errorForThrown(thrown: unknown): CallError {
+function errorForThrown(thrown: unknown, timeoutMs: number): CallError {
+  // The request's own deadline: the provider did not answer in time. Retryable,
+  // and said in words — a run must not wait for ever on a silent provider.
+  if (thrown instanceof Error && thrown.name === "TimeoutError") {
+    return { code: "unavailable", message: `no answer within ${timeoutMs} ms`, retryable: true, retryAfterMs: 5_000 };
+  }
   if (thrown instanceof Error && thrown.name === "AbortError") {
     return { code: "unavailable", message: "cancelled", retryable: false };
   }
@@ -168,6 +173,9 @@ const today = () => new Date().toISOString().slice(0, 10);
 const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
   const token = env.INSTANTLY_API_KEY;
   const baseUrl = String(options.baseUrl ?? "https://api.instantly.ai").replace(/\/$/, "");
+  // Every request has a deadline, overridable per binding: a provider that
+  // stops answering becomes an error, not a run that never ends.
+  const timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : 30_000;
 
   /** `campaign.<sequenceKey>` in the binding's options. */
   const campaignFor = (sequenceKey: string): string | undefined => {
@@ -187,7 +195,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     try {
       const response = await fetch(`${baseUrl}${path}`, {
         method,
-        ...(ctx.signal ? { signal: ctx.signal } : {}),
+        signal: ctx.signal ? AbortSignal.any([ctx.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
         headers: {
           authorization: `Bearer ${token}`,
           ...(body === undefined ? {} : { "content-type": "application/json" }),
@@ -198,7 +206,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       if (!response.ok) return { ok: false, error: errorFor(response.status, text) };
       return { ok: true, value: (text ? JSON.parse(text) : undefined) as T };
     } catch (thrown) {
-      return { ok: false, error: errorForThrown(thrown) };
+      return { ok: false, error: errorForThrown(thrown, timeoutMs) };
     }
   }
 

@@ -62,6 +62,19 @@ export async function verify(options: VerifyOptions): Promise<number> {
     const on = a.channels.length > 0 ? ` [${a.channels.join(", ")}]` : "";
     say(`  ${a.contract}${on} → ${a.provider} (${a.specifier})`);
   }
+  // A sequence, per kind, in the order its sources are asked (decision 0030):
+  // reordering `providers` changes who is asked first, and who pays, so the
+  // order is said rather than left to be read off the manifest. Only for a
+  // contract bound more than once: what an adapter declares it finds means
+  // nothing under a contract that never asks it for keys.
+  const contracts = [...new Set(booted.registry.list().map((a) => a.contract))];
+  for (const contract of contracts) {
+    const sequence = booted.registry.sequence(contract);
+    if (sequence.length < 2 || sequence.every((s) => s.finds.length === 0)) continue;
+    const kinds = [...new Set(sequence.flatMap((s) => s.finds))];
+    const order = kinds.map((k) => `${k}: ${sequence.filter((s) => s.finds.includes(k)).map((s) => s.provider).join(" → ")}`);
+    say(`  ${contract} in sequence — ${order.join("; ")}`);
+  }
 
   // Which experiment types the bound sources can judge (decision 0018). Not
   // a failure when they cannot: an instance need not run experiments. Said,

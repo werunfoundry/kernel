@@ -1,5 +1,6 @@
 /**
- * Enrichment, sandbox. The people at a company, by domain, from invented
+ * People source and enrichment, sandbox — one module, bound once under each
+ * contract (0030). The people at a company, by domain, from invented
  * data. A company it has no record of is a search that found nobody — not an
  * error. Data it cannot read is an error — not nobody.
  *
@@ -14,10 +15,11 @@
 
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Enrichment } from "@werunfoundry/relations/contracts/enrichment";
+import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
 
 import { loadData } from "./sandbox-store.ts";
 
-const factory: AdapterFactory<Enrichment> = ({ options }) => {
+const factory: AdapterFactory<PeopleSource & Enrichment> = ({ options }) => {
   const network = String(options.network ?? "sandbox");
   const keysOf = (p: { email: string; profileId: string }) => [
     { kind: "email", value: p.email },
@@ -26,6 +28,7 @@ const factory: AdapterFactory<Enrichment> = ({ options }) => {
 
   return {
     provider: "sandbox-enrichment",
+    finds: ["email"],
 
     async probe(): Promise<CallResult<void>> {
       const data = loadData(options.dataFile);

@@ -7,10 +7,12 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
+import type { CallContext, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 import { identityVocabulary } from "@werunfoundry/core/identity";
 
-import { acceptCompletion } from "./enrichment.js";
+import type { Completion, Enrichment, EnrichmentSource } from "./enrichment.js";
+import { acceptCompletion, completeInSequence } from "./enrichment.js";
 
 const vocabulary = identityVocabulary(
   [
@@ -89,5 +91,111 @@ describe("accepting a completion", () => {
 
   it("reports not found as not found", () => {
     assert.deepEqual(acceptCompletion(asked, { found: false, asOf }, vocabulary), { rejected: "not found" });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* A sequence of sources (decision 0030)                                       */
+/* -------------------------------------------------------------------------- */
+
+describe("completing through a sequence of sources", () => {
+  const ctx: CallContext = { runId: "r-1", actor: { type: "system" }, dryRun: true };
+  const id = { kind: "social_profile_id", network: "net_a", value: "p-1" };
+  const email = { kind: "email", value: "ada@example.com" };
+  const handle = { kind: "social_profile_handle", network: "net_a", value: "ada" };
+
+  /** A source that answers `answer` and records what it was asked for. */
+  function source(provider: string, finds: string[], answer: CallResult<Completion>) {
+    const asked: string[][] = [];
+    const adapter: Enrichment = {
+      provider,
+      finds,
+      async complete({ want }) {
+        asked.push([...(want ?? [])]);
+        return answer;
+      },
+    };
+    return { asked, entry: { adapter, provider, finds } satisfies EnrichmentSource };
+  }
+  const found = (...keys: object[]): CallResult<Completion> => ({ ok: true, value: { found: true, asOf, attested: { subject: "person", keys: keys as Identity["keys"] } } });
+  const absent: CallResult<Completion> = { ok: true, value: { found: false, asOf } };
+
+  it("stops asking once every wanted kind is found: the second source is not called", async () => {
+    const a = source("a", ["email"], found(id, email));
+    const b = source("b", ["email"], found(id, email));
+    const r = await completeInSequence([a.entry, b.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.deepEqual(r.missing, []);
+    assert.deepEqual(r.identity.keys, [id, email]);
+    assert.deepEqual(b.asked, []);
+    assert.deepEqual(r.steps, [{ provider: "a", asked: ["email"], outcome: "added", added: ["email"] }]);
+  });
+
+  it("asks the next source when the previous one did not find the subject", async () => {
+    const a = source("a", ["email"], absent);
+    const b = source("b", ["email"], found(id, email));
+    const r = await completeInSequence([a.entry, b.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.deepEqual(r.identity.keys, [id, email]);
+    assert.deepEqual(r.steps.map((s) => `${s.provider}:${s.outcome}`), ["a:not found", "b:added"]);
+  });
+
+  it("asks the next source when the previous one found the subject without the wanted kind", async () => {
+    const a = source("a", ["email", "social_profile_handle"], found(id, handle));
+    const b = source("b", ["email"], found(id, email));
+    const r = await completeInSequence([a.entry, b.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.deepEqual(b.asked, [["email"]]);
+    assert.deepEqual(r.identity.keys, [id, handle, email]);
+  });
+
+  it("asks the next source when the contract rejects the previous answer, and records why", async () => {
+    const a = source("a", ["email"], found(email));
+    const b = source("b", ["email"], found(id, { kind: "email", value: "ada@example.org" }));
+    const r = await completeInSequence([a.entry, b.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.deepEqual(r.identity.keys, [id, { kind: "email", value: "ada@example.org" }]);
+    assert.deepEqual(r.steps[0], { provider: "a", asked: ["email"], outcome: "rejected", rejected: UNTIED.rejected });
+  });
+
+  it("stops on an error: the source after it is not asked, and the failure names its source", async () => {
+    const a = source("a", ["email"], { ok: false, error: { code: "unavailable", message: "down", retryable: true } });
+    const b = source("b", ["email"], found(id, email));
+    const r = await completeInSequence([a.entry, b.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.equal(r.provider, "a");
+    assert.equal(r.error.code, "unavailable");
+    assert.deepEqual(b.asked, []);
+  });
+
+  it("asks a source only for kinds it declares and that are still missing", async () => {
+    const a = source("a", ["email"], found(id, email));
+    const b = source("b", ["email", "social_profile_handle"], found(id, handle));
+    const r = await completeInSequence([a.entry, b.entry], { identity: asked, want: ["email", "social_profile_handle"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    assert.deepEqual(a.asked, [["email"]]);
+    assert.deepEqual(b.asked, [["social_profile_handle"]]);
+  });
+
+  it("does not call a source that finds none of the missing kinds", async () => {
+    const a = source("a", ["social_profile_handle"], found(id, handle));
+    const r = await completeInSequence([a.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.deepEqual(a.asked, []);
+    assert.deepEqual(r.missing, ["email"]);
+    assert.deepEqual(r.steps, []);
+  });
+
+  it("asks nobody for a kind the subject already has", async () => {
+    const a = source("a", ["email"], found(id, email));
+    const r = await completeInSequence([a.entry], { identity: { subject: "person", keys: [id, email] }, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    assert.deepEqual(a.asked, []);
   });
 });

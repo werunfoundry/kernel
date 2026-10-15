@@ -26,7 +26,7 @@ import { identityVocabulary } from "@werunfoundry/core/identity";
 import { loadDomain } from "@werunfoundry/core/manifest/load";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
-import type { Enrichment } from "@werunfoundry/relations/contracts/enrichment";
+import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
 
 import type { CapacityLimit, Sequencer } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
@@ -87,7 +87,7 @@ const world = {
   enrolled: new Map<string, string>(),
   enrolCalls: 0,
   statusCalls: 0,
-  /** Every company enrichment was asked about, as it was asked. */
+  /** Every company the people source was asked about, as it was asked. */
   lookedUp: [] as Identity[],
   /** The idempotency key of every enrol call, in order. */
   keysSent: [] as string[],
@@ -123,8 +123,8 @@ const targetList: TargetList = {
   },
 };
 
-const enrichment: Enrichment = {
-  provider: "memory-enrichment",
+const people: PeopleSource = {
+  provider: "memory-people",
   async peopleAt({ company }) {
     world.lookedUp.push(company);
     const domain = company.keys.find((k) => k.kind === "domain")?.value ?? "";
@@ -133,9 +133,6 @@ const enrichment: Enrichment = {
       asOf: minutesAgo(60),
       items: people.map((p) => ({ identity: { subject: "person", keys: [{ kind: "email", value: p.email }] }, display: { fullName: p.name } })),
     });
-  },
-  async complete() {
-    return ok({ found: false as const, asOf: minutesAgo(60) });
   },
 };
 
@@ -178,12 +175,13 @@ const sequencer: Sequencer = {
 };
 
 const registry: Registry = {
-  get: (c) => ({ target_list: targetList, enrichment } as Record<string, Contract>)[c],
+  get: (c) => ({ target_list: targetList, people_source: people } as Record<string, Contract>)[c],
   require: () => {
     throw new Error("not used");
   },
   forChannel: <T extends Contract>(c: string, ch: string) => (c === "sequencer" && ch === "email" ? (sequencer as unknown as T) : undefined),
   all: <T extends Contract>(c: string) => (c === "sequencer" ? [sequencer as unknown as T] : []),
+  sequence: () => [],
   list: () => [],
 };
 
@@ -479,8 +477,8 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     await run();
     const [pending] = await registered();
     // The same person, now known by a second key: the computed key changes, the recorded one does not.
-    const withHandle = enrichment.peopleAt;
-    enrichment.peopleAt = async (q, ctx) => {
+    const withHandle = people.peopleAt;
+    people.peopleAt = async (q, ctx) => {
       const r = await withHandle(q, ctx);
       if (!r.ok) return r;
       return ok({ ...r.value, items: r.value.items.map((i) => ({ ...i, identity: { ...i.identity, keys: [...i.identity.keys, { kind: "social_profile_handle", value: "ada", network: "net_a" }] } })) });
@@ -488,7 +486,7 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     try {
       await run();
     } finally {
-      enrichment.peopleAt = withHandle;
+      people.peopleAt = withHandle;
     }
     assert.equal(world.keysSent[1], pending!.idempotency_key);
   });
@@ -529,8 +527,8 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
       "insert into relations.person (email, external_id) values ('ada@open.example.com', null), (null, 'net_a:42')",
     );
     world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
-    const withId = enrichment.peopleAt;
-    enrichment.peopleAt = async (q, ctx) => {
+    const withId = people.peopleAt;
+    people.peopleAt = async (q, ctx) => {
       const r = await withId(q, ctx);
       if (!r.ok) return r;
       return ok({ ...r.value, items: r.value.items.map((i) => ({ ...i, identity: { ...i.identity, keys: [...i.identity.keys, { kind: "social_profile_id", value: "42", network: "net_a" }] } })) });
@@ -541,7 +539,7 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
       assert.match(r.skipped.find((s) => s.person)?.detail ?? "", /registry cannot tell who this is: the person.s id and its other key name two recorded people/);
       assert.equal(world.enrolCalls, 0);
     } finally {
-      enrichment.peopleAt = withId;
+      people.peopleAt = withId;
     }
   });
 });
@@ -591,7 +589,7 @@ describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is
 /* Enrichment is asked with the company's keys (decision 0029)                 */
 /* -------------------------------------------------------------------------- */
 
-describe("what enrichment is asked", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+describe("what the people source is asked", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
   const keys = () => world.lookedUp.map((c) => c.keys.map((k) => `${k.kind}${k.network ? `@${k.network}` : ""}=${k.value}`));
 
   it("the company's id on a network, when the target list attests one, beside its domain", async () => {

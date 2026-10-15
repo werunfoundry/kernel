@@ -173,6 +173,17 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     }
   }
 
+  // So is a key kind an adapter says it finds (decision 0030): asking a
+  // source for a kind nobody declared would hand back keys nothing can read.
+  const kinds = new Set(loaded.domains.flatMap((d) => (d.identityKeys ?? []).map((k) => k.kind)));
+  for (const r of resolved?.registry?.list() ?? []) {
+    for (const kind of r.finds) {
+      if (!kinds.has(kind)) {
+        issues.push(error(`${file}:providers.${r.index}.finds`, `no enabled domain declares the identity key "${kind}"`, 1));
+      }
+    }
+  }
+
   if (issues.some((i) => i.severity === "error") || !validated.manifest || !resolved?.registry) {
     // A failure with no error in it would be a bug here, and an empty report
     // is the worst way to show one.

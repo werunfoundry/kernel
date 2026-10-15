@@ -1,14 +1,19 @@
 /**
- * adapters/edges — the relations `Enrichment` contract, against the
- * Edges API.
+ * adapters/edges — the relations `PeopleSource` and `Enrichment` contracts,
+ * against the Edges API. One module, bound once under each name (0030); the
+ * options are the same for both.
  *
- *   - contract: enrichment
+ *   - contract: people_source
  *     adapter: "@werunfoundry/adapters/edges"
  *     env: [EDGES_API_KEY]
  *     options:
  *       network: linkedin            # the instance's name for the network; must be in its `networks`
  *       identityIds: "<uuid>,<uuid>" # Edges identities that run the actions; else identityMode
  *       identityMode: auto           # auto | managed (managed costs extra credits)
+ *   - contract: enrichment           # finds: [email] — an address, where the network shows one
+ *     adapter: "@werunfoundry/adapters/edges"
+ *     env: [EDGES_API_KEY]
+ *     options: { network: linkedin }
  *
  * Read in Edges' published documentation and OpenAPI document, not inferred.
  * Edges runs actions on a social network through identities — accounts
@@ -47,7 +52,8 @@
 import type { AdapterFactory, CallContext, CallError, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityKey } from "@werunfoundry/core/identity";
 
-import type { Completion, Enrichment, FoundPerson, PeoplePage } from "@werunfoundry/relations/contracts/enrichment";
+import type { Completion, Enrichment } from "@werunfoundry/relations/contracts/enrichment";
+import type { FoundPerson, PeoplePage, PeopleSource } from "@werunfoundry/relations/contracts/people-source";
 
 interface Employee {
   linkedin_profile_id?: number;
@@ -115,7 +121,7 @@ function cursorOf(header: string | null): string | undefined {
   return new URL(header).searchParams.get("cursor") ?? undefined;
 }
 
-const factory: AdapterFactory<Enrichment> = ({ options, env }) => {
+const factory: AdapterFactory<PeopleSource & Enrichment> = ({ options, env }) => {
   const token = env.EDGES_API_KEY;
   const base = String(options.baseUrl ?? "https://api.edges.run/v1").replace(/\/$/, "");
   const timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : 30_000;
@@ -157,6 +163,8 @@ const factory: AdapterFactory<Enrichment> = ({ options, env }) => {
 
   return {
     provider: "edges",
+    // What `complete` can attest beyond the profile's own keys (0030).
+    finds: ["email"],
 
     /** `GET /workspaces`: authenticated, and it spends no credit. */
     async probe(ctx): Promise<CallResult<void>> {

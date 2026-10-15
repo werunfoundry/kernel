@@ -1,57 +1,39 @@
 /**
- * relations/contracts — enrichment: finding the people at a company, and
- * completing an identity that is missing a key (decisions 0016, 0022).
+ * relations/contracts — enrichment: completing an identity that is missing a
+ * key (decisions 0016, 0022, 0030). Finding the people at a company is the
+ * other contract, `people_source`, in `people-source.ts`.
  *
  * It lives in `relations` because people and companies are this domain's
  * objects. No provider is named here (doctrine 6).
  *
  * **"Found nothing" and "could not look" are never the same answer.** A
- * search that ran and matched nobody is a success with an empty page, or with
- * `found: false`. A search that did not run — the provider was down, refused
- * the key, ran out of credit, did not understand the input — is an error.
- * Everything downstream that decides who to contact, and who not to, depends
- * on telling them apart; an adapter that turns a failure into an empty
- * result has made an outage look like a market with nobody in it.
+ * lookup that ran and matched nobody is a success with `found: false`. A
+ * lookup that did not run — the provider was down, refused the key, ran out
+ * of credit, did not understand the input — is an error. Everything
+ * downstream that decides who to contact, and who not to, depends on telling
+ * them apart; and a sequence of sources (0030) asks the next one only on the
+ * first answer, never on the second.
  *
- * Four things this contract deliberately does not do, and each will look like
- * an omission:
+ * Three things this contract deliberately does not do, and each will look
+ * like an omission:
  *
- * - **No search without a subject.** There is no "everyone who matches these
- *   criteria". Choosing whom to look at is the target list's job (0004); a
- *   criteria search here would be a second, unaudited target list.
  * - **No invented keys.** An address assembled from a name and a domain is a
  *   guess, not a key. An adapter returns only keys the provider attests; a
  *   provider that only guesses is not an enrichment source.
  * - **No verdict on a key.** Whether an address delivers is not asked here.
- * - **No persistence.** It returns keys and display fields; what is kept, and
- *   that attributes the engine does not own are not copied, is the domain's
- *   decision (doctrine 3).
+ * - **No persistence.** It returns keys; what is kept, and that attributes
+ *   the engine does not own are not copied, is the domain's decision
+ *   (doctrine 3).
  */
 
 import type {
   Contract,
   CallContext,
+  CallError,
   CallResult,
 } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityKey, IdentityVocabulary } from "@werunfoundry/core/identity";
 import { compareIdentities, normalizeIdentity } from "@werunfoundry/core/identity";
-
-/** A person the provider attests works at the company asked about. */
-export interface FoundPerson {
-  /** Subject `person`, with at least one key the provider attests. */
-  identity: Identity;
-  /** For humans and templates. Never used for matching, never a key. */
-  display?: { fullName?: string; title?: string };
-}
-
-export interface PeoplePage {
-  /** Empty means the search ran and found nobody — not that it failed. */
-  items: FoundPerson[];
-  /** Absent means this was the last page. Opaque; never parsed. */
-  nextCursor?: string;
-  /** When the provider's data is from, as it says — not when we asked. */
-  asOf: string;
-}
 
 /**
  * The provider looked. Either it found the subject and says what its answer
@@ -70,23 +52,12 @@ export type Completion =
   | { found: false; asOf: string }
   | { found: true; attested: Identity; asOf: string };
 
+/**
+ * An adapter declares the key kinds it can attest in `finds` (0030): an
+ * enrichment bound more than once is a sequence, and a source is asked only
+ * for kinds it declared.
+ */
 export interface Enrichment extends Contract {
-  /**
-   * The people at one company, a page at a time. `company` is an identity of
-   * subject `company`; an adapter that recognises none of its keys refuses
-   * as `invalid` rather than answering for a company it did not identify.
-   */
-  peopleAt(
-    request: {
-      company: Identity;
-      limit?: number;
-      cursor?: string;
-      /** Values the instance declared, passed through untouched — roles, seniority. */
-      params?: Record<string, string | number | boolean>;
-    },
-    ctx: CallContext,
-  ): Promise<CallResult<PeoplePage>>;
-
   /**
    * More keys for one subject. `want` names the kinds the caller is after; an
    * adapter may return others the provider attests. It returns only what the
@@ -135,4 +106,85 @@ export function acceptCompletion(
     (b) => !given.keys.some((g) => g.kind === b.kind && (g.network ?? "") === (b.network ?? "") && g.value === b.value),
   );
   return { accepted: { subject: given.subject, keys: [...given.keys, ...added] }, added };
+}
+
+/** One source of a sequence, as the registry lists it (0030). */
+export interface EnrichmentSource {
+  adapter: Enrichment;
+  /** For the record of who was asked. Never matched on. */
+  provider: string;
+  /** The kinds this source is asked for; it is never asked for another. */
+  finds: readonly string[];
+}
+
+/** What one source was asked, and what came of it. */
+export interface SequenceStep {
+  provider: string;
+  asked: string[];
+  outcome: "added" | "not found" | "rejected";
+  /** The kinds of the keys it added, when it added some. */
+  added?: string[];
+  /** Why the answer was not taken, when it was not. */
+  rejected?: string;
+}
+
+export type SequenceResult =
+  | {
+      ok: true;
+      /** The subject, with every key an accepted answer added. */
+      identity: Identity;
+      /** Kinds wanted and still missing once every source was asked. */
+      missing: string[];
+      steps: SequenceStep[];
+    }
+  | {
+      ok: false;
+      /** The source that could not look. The ones after it were not asked. */
+      provider: string;
+      error: CallError;
+      steps: SequenceStep[];
+    };
+
+/**
+ * Complete one subject through a sequence of sources (decision 0030).
+ *
+ * Each source is asked, in order, only for the wanted kinds still missing
+ * that it declared it finds. A kind is missing until an answer that
+ * `acceptCompletion` takes carries it. So the next source is asked when the
+ * previous one looked and did not find — `found: false`, an answer without
+ * that kind, or an answer the contract rejects, each recorded as a step.
+ *
+ * An error stops the walk, and the sources after it are not asked. A source
+ * that could not look has not said the key is absent; asking the next one
+ * would pay a second provider for an answer the first may hold, and return
+ * something that looks complete over a failure.
+ */
+export async function completeInSequence(
+  sources: readonly EnrichmentSource[],
+  request: { identity: Identity; want: readonly string[] },
+  vocabulary: IdentityVocabulary,
+  ctx: CallContext,
+): Promise<SequenceResult> {
+  let identity = normalizeIdentity(request.identity, vocabulary);
+  const missing = () => request.want.filter((kind) => !identity.keys.some((k) => k.kind === kind));
+  const steps: SequenceStep[] = [];
+  for (const source of sources) {
+    if (missing().length === 0) break;
+    const asked = missing().filter((kind) => source.finds.includes(kind));
+    if (asked.length === 0) continue;
+    const answer = await source.adapter.complete({ identity, want: asked }, ctx);
+    if (!answer.ok) return { ok: false, provider: source.provider, error: answer.error, steps };
+    if (!answer.value.found) {
+      steps.push({ provider: source.provider, asked, outcome: "not found" });
+      continue;
+    }
+    const taken = acceptCompletion(identity, answer.value, vocabulary);
+    if ("rejected" in taken) {
+      steps.push({ provider: source.provider, asked, outcome: "rejected", rejected: taken.rejected });
+      continue;
+    }
+    identity = taken.accepted;
+    steps.push({ provider: source.provider, asked, outcome: "added", added: [...new Set(taken.added.map((k) => k.kind))] });
+  }
+  return { ok: true, identity, missing: missing(), steps };
 }

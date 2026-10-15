@@ -1,9 +1,9 @@
 /**
  * gtm/runtime — the enrolment path (decision 0019).
  *
- * Candidates from the target list, the people at each from enrichment, a
- * protection check against the target list's protected route, and an
- * enrolment through the sequencer for the channel asked for. Every step runs
+ * Candidates from the target list, the people at each from the people
+ * source (0030), a protection check against the target list's protected
+ * route, and an enrolment through the sequencer for the channel asked for. Every step runs
  * inside one recorded run.
  *
  * Protection is the first thing this file does and the reason it is shaped
@@ -46,7 +46,7 @@ import { checkIdentity, hostOf, normalizeIdentity } from "@werunfoundry/core/ide
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
-import type { Enrichment } from "@werunfoundry/relations/contracts/enrichment";
+import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
 import { findPerson, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequencer.js";
@@ -55,7 +55,7 @@ import type { ProtectedAccount, TargetCompany, TargetList, TargetQuery } from ".
 import { enrolment, enrolmentSkip } from "../db/schema.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
-export const CONTRACTS = { targetList: "target_list", enrichment: "enrichment", sequencer: "sequencer" } as const;
+export const CONTRACTS = { targetList: "target_list", peopleSource: "people_source", sequencer: "sequencer" } as const;
 
 export type SkipReason = "protected" | "capacity" | "duplicate" | "unreachable";
 
@@ -150,12 +150,12 @@ function idempotencyKey(person: Identity, sequenceKey: string, channel: string):
 export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<EnrolReport> {
   const now = deps.now ?? (() => new Date());
   const targets = deps.registry.get(CONTRACTS.targetList) as TargetList | undefined;
-  const enrichment = deps.registry.get(CONTRACTS.enrichment) as Enrichment | undefined;
+  const people = deps.registry.get(CONTRACTS.peopleSource) as PeopleSource | undefined;
   const sequencer = deps.registry.forChannel<Sequencer>(CONTRACTS.sequencer, request.channel);
   // Configuration, checked before a run is opened: a run that could not have
   // done anything is not a run.
   if (!targets) throw new Error(`no adapter is bound to "${CONTRACTS.targetList}"`);
-  if (!enrichment) throw new Error(`no adapter is bound to "${CONTRACTS.enrichment}"`);
+  if (!people) throw new Error(`no adapter is bound to "${CONTRACTS.peopleSource}"`);
   if (!sequencer) throw new Error(`no "${CONTRACTS.sequencer}" adapter takes the channel "${request.channel}"`);
   if (!(request.protectedMaxAgeMinutes > 0)) throw new Error("protectedMaxAgeMinutes must be a positive number of minutes");
 
@@ -306,8 +306,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         continue;
       }
       // The company as the target list attests it (decisions 0024, 0029): its
-      // domain, and its id on a network when the source holds one. An
-      // enrichment source that only searches from an attested id gets one; a
+      // domain, and its id on a network when the source holds one. A
+      // people source that only searches from an attested id gets one; a
       // key the vocabulary refuses is not passed on as if it were good.
       const companyIdentity = normalizeIdentity(
         {
@@ -321,9 +321,9 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         await skip({ reason: "unreachable", company, detail: `the target list's keys for it are not valid: ${malformed.map((i) => i.message).join("; ")}` });
         continue;
       }
-      const people = await enrichment.peopleAt({ company: companyIdentity, limit: request.peoplePerCompany ?? 5 }, ctx);
-      if (!people.ok) {
-        await skip({ reason: "unreachable", company, detail: `its people could not be looked up: ${people.error.code}` });
+      const found = await people.peopleAt({ company: companyIdentity, limit: request.peoplePerCompany ?? 5 }, ctx);
+      if (!found.ok) {
+        await skip({ reason: "unreachable", company, detail: `its people could not be looked up: ${found.error.code}` });
         continue;
       }
 
@@ -336,8 +336,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           company.name ? { name: company.name } : {},
         ));
 
-      for (const found of people.value.items.slice(0, request.peoplePerCompany ?? 5)) {
-        const person = normalizeIdentity(found.identity, deps.identity);
+      for (const one of found.value.items.slice(0, request.peoplePerCompany ?? 5)) {
+        const person = normalizeIdentity(one.identity, deps.identity);
         const computed = idempotencyKey(person, request.sequenceKey, request.channel);
         if (personProtected(person)) {
           await skip({ reason: "protected", person, company, detail: "an address is on a protected domain" });
@@ -395,7 +395,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
             continue;
           }
           const recorded = await recordPerson(deps.db, person, {
-            ...(found.display?.fullName ? { fullName: found.display.fullName } : {}),
+            ...(one.display?.fullName ? { fullName: one.display.fullName } : {}),
             companyId: companyId.id,
           });
           if ("conflict" in recorded) {
@@ -435,7 +435,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
             sequenceKey: request.sequenceKey,
             channel: request.channel,
             person,
-            ...(found.display?.fullName ? { display: { fullName: found.display.fullName } } : {}),
+            ...(one.display?.fullName ? { display: { fullName: one.display.fullName } } : {}),
             attribution: { runId: open.id },
           },
           ctx,

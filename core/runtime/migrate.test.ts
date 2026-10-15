@@ -52,7 +52,11 @@ describe("migrating the template's domains", { skip: base ? false : "TEST_DATABA
   it("installs core, relations and gtm, in that order", async () => {
     const said: string[] = [];
     assert.equal(await migrate({ root, url, say: (l) => said.push(l) }), 0, said.join("\n"));
-    assert.deepEqual(said.filter((l) => l.includes("up to date")).map((l) => l.trim().split(":")[0]), ["core", "relations", "gtm"]);
+    assert.deepEqual(
+      said.filter((l) => /: applied \d+ migration/.test(l)).map((l) => l.trim().split(":")[0]),
+      ["core", "relations", "gtm"],
+      said.join("\n"),
+    );
     const db = new Client({ connectionString: url });
     await db.connect();
     const { rows } = await db.query(
@@ -67,8 +71,15 @@ describe("migrating the template's domains", { skip: base ? false : "TEST_DATABA
     await db.connect();
     const count = async () => (await db.query("select count(*)::int as n from drizzle.__migrations_core")).rows[0].n as number;
     const before = await count();
-    assert.equal(await migrate({ root, url, say: () => {} }), 0);
+    const said: string[] = [];
+    assert.equal(await migrate({ root, url, say: (l) => said.push(l) }), 0);
     assert.equal(await count(), before);
+    // Said, not only true: the second run reports that it applied nothing.
+    assert.deepEqual(
+      said.filter((l) => /: nothing to apply, \d+ already applied/.test(l)).map((l) => l.trim().split(":")[0]),
+      ["core", "relations", "gtm"],
+      said.join("\n"),
+    );
     await db.end();
   });
 });

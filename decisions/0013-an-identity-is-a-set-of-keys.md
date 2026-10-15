@@ -1,5 +1,8 @@
 # 0013 — An identity is a set of keys
 
+> Completed by [0028](0028-a-domain-is-compared-as-a-host.md): a key that
+> names a host is compared as the host.
+
 ## Decided
 
 An identity is one subject and the keys that name it in the systems that name

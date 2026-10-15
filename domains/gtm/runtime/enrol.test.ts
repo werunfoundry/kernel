@@ -547,6 +547,47 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
 });
 
 /* -------------------------------------------------------------------------- */
+/* A domain is compared as the host it names (decision 0028)                   */
+/* -------------------------------------------------------------------------- */
+
+describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  it("protects a candidate whose domain is a URL when the protected set writes it bare", async () => {
+    world.candidates = [{ domain: "http://WWW.Customer.Example.org/about", attributes: {} }];
+    world.people.set("customer.example.org", [{ email: "cy@cy-consulting.example.net", name: "Cy" }]);
+    const r = await run();
+    assert.deepEqual(held(), []);
+    assert.deepEqual(r.skipped.map((s) => s.reason), ["protected"]);
+  });
+
+  it("protects a person on a protected domain the protected set writes as a URL", async () => {
+    world.protected = [{ domain: "https://customer.example.org/", reason: "customer" }];
+    world.people.set("open.example.com", [{ email: "dee@Customer.Example.org", name: "Dee" }, { email: "ada@open.example.com", name: "Ada" }]);
+    await run();
+    assert.deepEqual(held(), ["ada@open.example.com"]);
+  });
+
+  it("looks a URL-spelled candidate's people up by its host", async () => {
+    world.candidates = [{ domain: "https://open.example.com/", attributes: {} }];
+    await run();
+    assert.deepEqual(held(), ["ada@open.example.com", "bo@open.example.com"]);
+  });
+
+  it("stops on a protected account whose domain names no host: it would match nothing", async () => {
+    world.protected = [{ domain: "http://", reason: "customer" }];
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.match(r.stoppedBy ?? "", /neither a domain nor an identifier/);
+    assert.equal(world.enrolCalls, 0);
+  });
+
+  it("calls a candidate whose domain names no host unreachable", async () => {
+    world.candidates = [{ domain: "http://", attributes: {} }];
+    const r = await run();
+    assert.deepEqual(r.skipped.map((s) => [s.reason, s.detail]), [["unreachable", "no domain to find its people by"]]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* Enrichment is asked with the company's keys (decision 0029)                 */
 /* -------------------------------------------------------------------------- */
 

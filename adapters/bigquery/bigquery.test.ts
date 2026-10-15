@@ -522,7 +522,7 @@ describe("jobs", () => {
   });
 
   it("gives up on a job that never completes within the deadline", async () => {
-    state.incomplete = 1_000;
+    state.incomplete = Number.POSITIVE_INFINITY;
     const r = await adapter({ timeoutMs: 300 }).freshness("protected", ctx());
     assert.ok(!r.ok && r.error.code === "unavailable" && /did not complete within 300 ms/.test(r.error.message), JSON.stringify(r));
   });

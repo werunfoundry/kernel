@@ -83,6 +83,7 @@ export const domainManifestSchema = z.object({
         immutable: z.boolean(),
         networked: z.boolean().optional(),
         caseInsensitive: z.boolean().optional(),
+        hostname: z.boolean().optional(),
       }),
     )
     .optional(),

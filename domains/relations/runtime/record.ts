@@ -22,6 +22,7 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import type { Identity } from "@werunfoundry/core/identity";
+import { hostOf } from "@werunfoundry/core/identity";
 import type { ActorKind, Database } from "@werunfoundry/core/runtime/run";
 
 import { company, person, touch } from "../db/schema.js";
@@ -34,6 +35,9 @@ const networked = (identity: Identity, kind: string) => {
   return key ? `${key.network}:${key.value.trim()}` : undefined;
 };
 
+/** A domain as it is recorded and found: its host (decision 0028), or nothing when none is left. */
+const hostOfKey = (value: string | undefined) => (value === undefined ? undefined : hostOf(value) || undefined);
+
 /** The keys a person is recorded by, or why it cannot be. */
 function personKeys(identity: Identity): { email?: string; externalId?: string } | { refused: string } {
   if (identity.subject !== "person") return { refused: `a ${identity.subject} is not a person` };
@@ -45,7 +49,7 @@ function personKeys(identity: Identity): { email?: string; externalId?: string }
 
 function companyKeys(identity: Identity): { domain?: string; externalId?: string } | { refused: string } {
   if (identity.subject !== "company") return { refused: `a ${identity.subject} is not a company` };
-  const domain = first(identity, "domain")?.value.trim().toLowerCase();
+  const domain = hostOfKey(first(identity, "domain")?.value);
   const externalId = networked(identity, "social_company_id");
   if (!domain && !externalId) return { refused: "the identity has neither a domain nor a company id to record a company by" };
   return { ...(domain ? { domain } : {}), ...(externalId ? { externalId } : {}) };

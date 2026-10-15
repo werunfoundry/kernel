@@ -16,8 +16,11 @@
  *   number the caller must give, because there is no default at which an
  *   agent's work is good enough. Earned, a new draft is approved by the lane.
  *   An edit or a drop sets the streak back to zero (core/runtime/experiment).
- * - **reactive** — nothing written says what it allows, so it requires what
- *   `reviewed` requires. A lane nobody defined does not open the gate.
+ * - **reactive** — without a human only in reply to an inbound event from the
+ *   same person, inside a window the caller gives (no default), on a channel
+ *   that person has engaged on. Nothing records inbound events against a
+ *   person yet (0017), so that cannot be verified, and the lane fails closed:
+ *   it requires a human, as `reviewed` does (decision 0027).
  *
  * Whatever the lane, a person who opted out is never queued, and a draft is
  * queued only while its experiment is running.

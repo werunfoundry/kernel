@@ -135,7 +135,7 @@ describe("the lane's gate", { skip: base ? false : "TEST_DATABASE_URL is not set
     assert.ok(after.ok && after.outcome === "awaiting_review", JSON.stringify(after));
   });
 
-  it("reactive: nothing says what it allows, so it requires a human", async () => {
+  it("reactive: with no way yet to verify the person's inbound event, it fails closed and requires a human", async () => {
     await setLane("reactive", 50);
     const p = await propose(db, input(), agent, GATE);
     assert.ok(p.ok && p.outcome === "awaiting_review", JSON.stringify(p));

@@ -13,8 +13,19 @@ is the gate: `propose`, `approve`, `drop`, `queue`. It does not write copy.
   `autonomyAfter` consecutive human approvals with no edit, a number the
   caller gives, with no default. Earned, a new draft is approved by the lane
   when it is proposed, and says so (`decided_by = lane:autonomous`).
-- `reactive` — nothing written defines it, so it requires what `reviewed`
-  requires. A lane nobody defined does not open the gate.
+- `reactive` — a send without human approval **only in reply to an inbound
+  event from the same person**, within a window the caller gives with no
+  default, on a channel where that person has already engaged. It is not an
+  earned streak like `autonomous`: the person's own action licenses the
+  reply. Suppression and protection apply as everywhere else, and an opt-out
+  is never sent.
+
+  **Today it fails closed and waits for a human, as `reviewed` does.** The
+  engine cannot yet verify that such an event exists: inbound is not wired
+  (0017), and nothing records an inbound event against a person. A reply the
+  engine cannot tie to the person's own action is not licensed by it. When
+  inbound lands, the check is: an inbound event from this person, on this
+  channel, inside the caller's window — and without one, still a human.
 
 **Only a human approves.** An approval attributed to an agent or the system
 is refused: the lane's approval happens in `propose`, nowhere else.
@@ -57,7 +68,6 @@ review loop had a source of truth only in its comments.
 
 ## Not decided here
 
-- **What `reactive` allows.** Until someone says, it is `reviewed`.
 - **Whether a lane-approved draft is re-gated at queue time** when the streak
   has dropped since. Today the approval stands, as a human's would.
 - **Sending.** `queued` hands a draft over; `sent` and `failed` are written

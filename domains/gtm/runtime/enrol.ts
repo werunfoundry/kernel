@@ -42,7 +42,7 @@ import { and, eq } from "drizzle-orm";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
-import { normalizeIdentity } from "@werunfoundry/core/identity";
+import { checkIdentity, normalizeIdentity } from "@werunfoundry/core/identity";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
@@ -296,10 +296,23 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         await skip({ reason: "unreachable", company, detail: "no domain to find its people by" });
         continue;
       }
-      const people = await enrichment.peopleAt(
-        { company: { subject: "company", keys: [{ kind: "domain", value: company.domain }] }, limit: request.peoplePerCompany ?? 5 },
-        ctx,
+      // The company as the target list attests it (decisions 0024, 0029): its
+      // domain, and its id on a network when the source holds one. An
+      // enrichment source that only searches from an attested id gets one; a
+      // key the vocabulary refuses is not passed on as if it were good.
+      const companyIdentity = normalizeIdentity(
+        {
+          subject: "company",
+          keys: [{ kind: "domain", value: company.domain }, ...(company.identity?.keys.filter((k) => k.kind !== "domain") ?? [])],
+        },
+        deps.identity,
       );
+      const malformed = checkIdentity(companyIdentity, deps.identity).filter((i) => i.severity === "error");
+      if (malformed.length > 0) {
+        await skip({ reason: "unreachable", company, detail: `the target list's keys for it are not valid: ${malformed.map((i) => i.message).join("; ")}` });
+        continue;
+      }
+      const people = await enrichment.peopleAt({ company: companyIdentity, limit: request.peoplePerCompany ?? 5 }, ctx);
       if (!people.ok) {
         await skip({ reason: "unreachable", company, detail: `its people could not be looked up: ${people.error.code}` });
         continue;

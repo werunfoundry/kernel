@@ -63,8 +63,8 @@ export interface TargetCompany {
    * its keys, so that the two never disagree, and puts nothing in it that the
    * source does not carry — a key derived from another is a guess (0016).
    *
-   * Carried, not yet read: the enrolment path finds a company's people by
-   * `domain`.
+   * The enrolment path hands it to enrichment to find the company's people
+   * (decision 0029), with `domain` among the keys either way.
    */
   identity?: Identity;
   /** Everything else the source carries. Never interpreted by the engine. */

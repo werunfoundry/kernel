@@ -1,5 +1,8 @@
 # 0024 — A target carries its keys
 
+> Superseded in part by [0029](0029-enrichment-gets-the-company-keys.md): the
+> enrolment path reads `identity` and hands it to enrichment.
+
 Completes [0013](0013-an-identity-is-a-set-of-keys.md), which made an identity
 a set of keys, and [0004](0004-protection-is-its-own-route.md), whose
 `TargetList` predates it.

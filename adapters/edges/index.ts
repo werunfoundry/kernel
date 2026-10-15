@@ -21,9 +21,9 @@
  *   company's id on the network (`social_company_id`). Edges can find a
  *   company page from a domain, but by its own description it "uses AI to
  *   find" it: a guess, which decision 0016 refuses as a key. A company known
- *   only by its domain is refused as `invalid`. Until a target list carries a
- *   company's social key, this adapter cannot serve the enrolment path — that
- *   is intended, not an oversight.
+ *   only by its domain is refused as `invalid`. The enrolment path hands it the
+ *   company's keys as the target list attests them (decision 0029), so a
+ *   target list that carries the id is what lets it serve that path.
  * - **An empty page is "could not tell", never "nobody".** Edges documents
  *   that a page may hold fewer results than asked "in some cases like
  *   throttling". An empty page therefore cannot be told apart from a page the

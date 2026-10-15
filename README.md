@@ -116,8 +116,6 @@ real adapters. It decides what is built next.
 
 - The loop that reads inbound events into `core.event`: it needs a table for
   each adapter's cursor, which is a new core object (0017).
-- A target list may return a company's keys, its networked id included; the
-  enrolment path still finds people by domain (0024).
 - A rolling window is approximated by a closed one, and the engine plans
   against the approximation (0020).
 - `assert.ok(expr)` without a message, in the rest of the test suite: under

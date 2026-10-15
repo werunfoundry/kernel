@@ -166,9 +166,10 @@ whatever writes it, reads it, or connects it to the rest.
 - *Written by:* nobody. *Read by:* nobody.
 - *Not wired:* a writer; append-only in the schema (today it is a comment);
   freezing the numbers a decision rests on, which means reading them —
-  `MetricSource.read()` exists on the contract and is never called, and the
-  only metric source bound anywhere is the sandbox, so `verify`'s "measurable"
-  counts a source that measures nothing real; tying a decision to the
+  `readMetric` in `core/manifest/measure.ts` reads one through a source and
+  applies the not-applicable rule (0021), and nothing but its tests calls it;
+  the only metric source bound anywhere is the sandbox, so `verify`'s
+  "measurable" counts a source that measures nothing real; tying a decision to the
   experiment transition it causes (killed, validated, extended), and writing
   `baseline_snapshot` when the measurement window opens.
 

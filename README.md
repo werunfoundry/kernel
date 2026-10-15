@@ -116,6 +116,17 @@ real adapters. It decides what is built next.
 - Per-person enrolment outcomes are returned and printed, not stored (0019).
 - A rolling window is approximated by a closed one, and the engine plans
   against the approximation (0020).
+- A profile handle is not only mutable, it is reassignable: released by one
+  person, it can be taken by another. The enrichment adapter's `complete`
+  builds its lookup from the handle, so it must check that the profile it read
+  carries the attested `social_profile_id` before accepting the result, or it
+  attaches someone else's address to the original identity. Today it returns
+  the provider's id when the provider sends one, and `acceptCompletion`
+  rejects a mismatch; nothing checks when the id is absent, and the adapter
+  does not refuse on its own.
+- `assert.ok(expr)` without a message, in the rest of the test suite: under
+  tsx a failure hangs instead of failing, because Node re-reads the source to
+  rebuild the message. Fixed in the enrichment adapter's tests only.
 
 ### Set aside, and why
 

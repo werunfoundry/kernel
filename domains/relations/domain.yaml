@@ -26,6 +26,13 @@ identityKeys:
     subject: person
     immutable: false
     networked: true
+  # A number as the provider wrote it — `+33 1 42 86 82 82` and
+  # `+33142868282` are two values, because nothing normalises a number yet.
+  # Mutable, so two spellings are at worst two pieces of evidence, never a
+  # conflict, and nothing is matched or protected on it.
+  - kind: phone
+    subject: person
+    immutable: false
   - kind: domain
     subject: company
     immutable: false

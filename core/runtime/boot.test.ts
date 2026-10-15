@@ -370,7 +370,7 @@ describe("booting an instance", () => {
     const r = await boot({ root, env: {} });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (!r.ok) return;
-    assert.deepEqual([...r.identity.kinds.keys()].sort(), ["domain", "email", "social_company_id", "social_profile_handle", "social_profile_id"]);
+    assert.deepEqual([...r.identity.kinds.keys()].sort(), ["domain", "email", "phone", "social_company_id", "social_profile_handle", "social_profile_id"]);
     assert.deepEqual([...r.identity.subjects].sort(), ["company", "person"]);
     assert.deepEqual([...r.identity.networks], ["net_a"]);
   });

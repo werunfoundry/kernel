@@ -1,6 +1,6 @@
 {
-  "id": "fc291972-b2e4-4256-92d1-e8f12a56a75c",
-  "prevId": "b47c12b6-5fe4-40be-8739-bb2794521309",
+  "id": "6df66968-4c52-4a78-8039-ec016f6a4944",
+  "prevId": "1ddc9ee4-12d7-4f94-add4-c22ff2554f19",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -54,40 +54,40 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "company_state_last_touched_idx": {
           "name": "company_state_last_touched_idx",
           "columns": [
             {
               "expression": "\"last_touched_at\" desc nulls last",
-              "isExpression": true,
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "company_state_company_id_company_id_fk": {
           "name": "company_state_company_id_company_id_fk",
           "tableFrom": "company_state",
+          "tableTo": "company",
+          "schemaTo": "relations",
           "columnsFrom": [
             "company_id"
           ],
-          "tableTo": "company",
-          "schemaTo": "relations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -234,9 +234,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "draft_state_created_at_idx": {
           "name": "draft_state_created_at_idx",
@@ -255,67 +255,67 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "draft_experiment_id_experiment_id_fk": {
           "name": "draft_experiment_id_experiment_id_fk",
           "tableFrom": "draft",
+          "tableTo": "experiment",
+          "schemaTo": "core",
           "columnsFrom": [
             "experiment_id"
           ],
-          "tableTo": "experiment",
-          "schemaTo": "core",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "draft_person_id_person_id_fk": {
           "name": "draft_person_id_person_id_fk",
           "tableFrom": "draft",
+          "tableTo": "person",
+          "schemaTo": "relations",
           "columnsFrom": [
             "person_id"
           ],
-          "tableTo": "person",
-          "schemaTo": "relations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "draft_message_id_message_id_fk": {
           "name": "draft_message_id_message_id_fk",
           "tableFrom": "draft",
+          "tableTo": "message",
+          "schemaTo": "gtm",
           "columnsFrom": [
             "message_id"
           ],
-          "tableTo": "message",
-          "schemaTo": "gtm",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "draft_run_id_run_id_fk": {
           "name": "draft_run_id_run_id_fk",
           "tableFrom": "draft",
+          "tableTo": "run",
+          "schemaTo": "core",
           "columnsFrom": [
             "run_id"
           ],
-          "tableTo": "run",
-          "schemaTo": "core",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -331,6 +331,345 @@
           "value": "\"gtm\".\"draft\".\"state\" <> 'dropped' or \"gtm\".\"draft\".\"drop_reason\" is not null"
         }
       },
+      "isRLSEnabled": false
+    },
+    "gtm.enrolment": {
+      "name": "enrolment",
+      "schema": "gtm",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sequence_key": {
+          "name": "sequence_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "enrolment_state",
+          "typeSchema": "gtm",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refusal": {
+          "name": "refusal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "enrolled_at": {
+          "name": "enrolled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "enrolment_person_sequence_uidx": {
+          "name": "enrolment_person_sequence_uidx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "enrolment_company_idx": {
+          "name": "enrolment_company_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "enrolment_pending_idx": {
+          "name": "enrolment_pending_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"gtm\".\"enrolment\".\"state\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "enrolment_person_id_person_id_fk": {
+          "name": "enrolment_person_id_person_id_fk",
+          "tableFrom": "enrolment",
+          "tableTo": "person",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "enrolment_company_id_company_id_fk": {
+          "name": "enrolment_company_id_company_id_fk",
+          "tableFrom": "enrolment",
+          "tableTo": "company",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "enrolment_run_id_run_id_fk": {
+          "name": "enrolment_run_id_run_id_fk",
+          "tableFrom": "enrolment",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "gtm.enrolment_skip": {
+      "name": "enrolment_skip",
+      "schema": "gtm",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence_key": {
+          "name": "sequence_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "skip_reason",
+          "typeSchema": "gtm",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person": {
+          "name": "person",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "company": {
+          "name": "company",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "enrolment_skip_run_subject_uidx": {
+          "name": "enrolment_skip_run_subject_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "enrolment_skip_run_reason_idx": {
+          "name": "enrolment_skip_run_reason_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reason",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "enrolment_skip_run_id_run_id_fk": {
+          "name": "enrolment_skip_run_id_run_id_fk",
+          "tableFrom": "enrolment_skip",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "gtm.message": {
@@ -436,25 +775,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "message_experiment_id_experiment_id_fk": {
           "name": "message_experiment_id_experiment_id_fk",
           "tableFrom": "message",
+          "tableTo": "experiment",
+          "schemaTo": "core",
           "columnsFrom": [
             "experiment_id"
           ],
-          "tableTo": "experiment",
-          "schemaTo": "core",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -507,25 +846,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "person_state_person_id_person_id_fk": {
           "name": "person_state_person_id_person_id_fk",
           "tableFrom": "person_state",
+          "tableTo": "person",
+          "schemaTo": "relations",
           "columnsFrom": [
             "person_id"
           ],
-          "tableTo": "person",
-          "schemaTo": "relations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -549,6 +888,15 @@
         "failed"
       ]
     },
+    "gtm.enrolment_state": {
+      "name": "enrolment_state",
+      "schema": "gtm",
+      "values": [
+        "pending",
+        "enrolled",
+        "refused"
+      ]
+    },
     "gtm.lifecycle_stage": {
       "name": "lifecycle_stage",
       "schema": "gtm",
@@ -560,15 +908,25 @@
         "customer",
         "lost"
       ]
+    },
+    "gtm.skip_reason": {
+      "name": "skip_reason",
+      "schema": "gtm",
+      "values": [
+        "protected",
+        "capacity",
+        "duplicate",
+        "unreachable"
+      ]
     }
   },
   "schemas": {
     "gtm": "gtm"
   },
-  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

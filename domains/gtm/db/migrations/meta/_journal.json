@@ -12,15 +12,22 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1792036919736,
-      "tag": "0001_draft_decisions",
+      "when": 1792036384230,
+      "tag": "0001_enrolment_registry",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1792036921219,
-      "tag": "0002_draft_moves_forward",
+      "when": 1792039952079,
+      "tag": "0002_draft_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792039953034,
+      "tag": "0003_draft_moves_forward",
       "breakpoints": true
     }
   ]

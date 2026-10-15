@@ -134,6 +134,8 @@ try {
   expect(migrated.status === 0, `kernel-migrate exited ${migrated.status}`);
   const again = await bin("kernel-migrate");
   expect(again.status === 0, `kernel-migrate, run twice, exited ${again.status}`);
+  expect(/core: applied \d+ migration/.test(migrated.stdout), "the first migrate did not say it applied the core's migrations");
+  expect(!/applied \d+ migration/.test(again.stdout) && /nothing to apply/.test(again.stdout), "the second migrate did not say it applied nothing");
 
   // Every adapter the kernel ships, by the name a binding gives it (0023),
   // loaded by the instance's own Node from the installed pack: a published
@@ -150,6 +152,14 @@ try {
   expect(loaded.status === 0, "a shipped adapter does not load from the instance");
   expect(shipped.length > 0, "no shipped adapter was found to load");
 
+  // The instance's own `pnpm typecheck`, with the TypeScript it declares. A
+  // template that declared none ran whatever `tsc` the machine had, and an
+  // old one refused the tsconfig outright.
+  step("the instance typechecks itself");
+  const typed = await spawnAsync("pnpm", ["typecheck"], { cwd: root, env });
+  show(typed);
+  expect(typed.status === 0, "the instance does not typecheck with what it declares");
+
   step("the instance checks itself");
   sh("git", ["init", "-q"], root);
   console.log(sh(join(root, "node_modules/.bin/kernel-check-instance"), [], root).trim());
@@ -161,6 +171,7 @@ try {
   expect(verified.status === 0, `verify exited ${verified.status}`);
   expect(Boolean(verifyId), "verify opened no run");
   expect(/This configuration is real\./.test(verified.stdout), "verify did not find the configuration real");
+  expect(!/nobody has stood behind this since/.test(verified.stdout), "a new instance reports its example truth as stale");
   const verifyRow = verifyId ? await runRow(verifyId) : undefined;
   expect(verifyRow?.status === "succeeded" && verifyRow?.dry_run === true, `the verify run reads ${JSON.stringify(verifyRow)}`);
 
@@ -182,6 +193,14 @@ try {
     expect(enrolled(dry.stdout) === 3, "the dry run would not enrol the three open people");
     expect(!existsSync(state), "the dry run wrote the sandbox's state");
     expect((await runOf(dry.stdout))?.dry_run === true, "the dry run is not recorded as one");
+    // The registry (0026), read back from the database the packs migrated.
+    const registry = async () => (await client.query("select state, count(*)::int as n from gtm.enrolment group by 1 order by 1")).rows;
+    const skipsOf = async (out) => {
+      const id = out.match(/^run: ([0-9a-f-]{36})/m)?.[1];
+      return id ? (await client.query("select reason, count(*)::int as n from gtm.enrolment_skip where run_id = $1 group by 1 order by 1", [id])).rows : [];
+    };
+    expect(JSON.stringify(await registry()) === "[]", `the dry run wrote the registry: ${JSON.stringify(await registry())}`);
+    expect(JSON.stringify(await skipsOf(dry.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }]), "the dry run did not keep its skip");
 
     step("enrol, live");
     const live = await bin("kernel-enrol", [...enrolArgs, "--live"]);
@@ -194,6 +213,7 @@ try {
     expect(held.length === 3, `the sequencer holds ${held.length} people, not 3`);
     const liveRow = await runOf(live.stdout);
     expect(liveRow?.status === "succeeded" && liveRow?.dry_run === false, `the live run reads ${JSON.stringify(liveRow)}`);
+    expect(JSON.stringify(await registry()) === JSON.stringify([{ state: "enrolled", n: 3 }]), `the registry reads ${JSON.stringify(await registry())}`);
 
     step("enrol, replayed");
     const replay = await bin("kernel-enrol", [...enrolArgs, "--live"]);
@@ -201,6 +221,11 @@ try {
     expect(replay.status === 0, `the replay exited ${replay.status}`);
     expect(enrolled(replay.stdout) === 0, "the replay enrolled someone again");
     expect(/skipped, duplicate: 3/.test(replay.stdout), "the replay did not see the three as duplicates");
+    expect((replay.stdout.match(/already enrolled in this sequence, by the registry/g) ?? []).length === 3, "the replay did not answer from the registry");
+    expect(
+      JSON.stringify(await skipsOf(replay.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }, { reason: "duplicate", n: 3 }]),
+      "the replay's skips were not kept with their reasons",
+    );
   }
   await client.end();
 } catch (error) {

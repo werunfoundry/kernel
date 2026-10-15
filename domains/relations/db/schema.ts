@@ -22,7 +22,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { experiment, run } from "@werunfoundry/core/db/schema";
+import { actorType, experiment, run } from "@werunfoundry/core/db/schema";
 
 export const relations = pgSchema("relations");
 
@@ -219,6 +219,16 @@ export const audienceMember = relations.table(
  * It is not a mirror of the provider (doctrine 3). A touch is written when
  * something changes a decision — an action that locks a re-contact rule, a
  * reply, a bounce. Volume the provider keeps is read from the provider.
+ *
+ * Append-only in the schema, not by convention (decision 0026): a trigger
+ * refuses every UPDATE, so a touch is never rewritten into something that did
+ * not happen. DELETE is left to the restrict on `person` and to an erasure
+ * path, when there is one: a rule that forbade deleting a person's history
+ * would forbid erasing the person.
+ *
+ * Written only through `recordTouch` in `runtime/record.ts`, which belongs to
+ * this domain: another domain records a touch by calling it, never by writing
+ * the table (doctrine 2).
  */
 export const touch = relations.table(
   "touch",
@@ -255,6 +265,11 @@ export const touch = relations.table(
 
     outcome: text("outcome"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+
+    /** Doctrine 5: which run recorded it, on whose behalf. */
+    actorType: actorType("actor_type").notNull(),
+    actorId: text("actor_id"),
+    runId: uuid("run_id").references(() => run.id, { onDelete: "set null" }),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

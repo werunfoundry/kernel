@@ -15,9 +15,12 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { sql } from "drizzle-orm";
+
 import { loadDomain, readDocument } from "../manifest/load.js";
 import type { DomainManifest, ValidationIssue } from "../manifest/types.js";
 import { connect } from "./connect.js";
+import type { Database } from "./run.js";
 import { resolvePackage } from "./resolve.js";
 
 export interface MigrateOptions {
@@ -48,6 +51,19 @@ export function dependencyOrder(domains: readonly DomainManifest[]): { order: st
   };
   for (const d of [...domains].sort((a, b) => a.name.localeCompare(b.name))) visit(d.name, []);
   return { order, issues };
+}
+
+/**
+ * How many of a layer's migrations the database has recorded: the rows of its
+ * bookkeeping table, or none when the table does not exist yet. Read before
+ * and after, so the command says what it did rather than that all is well.
+ */
+async function recorded(db: Database, layer: string): Promise<number> {
+  const rowsOf = (result: unknown) => (Array.isArray(result) ? result : (result as { rows: unknown[] }).rows) as Record<string, unknown>[];
+  const present = rowsOf(await db.execute(sql`select to_regclass(${`drizzle.__migrations_${layer}`}) is not null as present`));
+  if (present[0]?.present !== true) return 0;
+  const counted = rowsOf(await db.execute(sql`select count(*)::int as n from ${sql.identifier("drizzle")}.${sql.identifier(`__migrations_${layer}`)}`));
+  return Number(counted[0]?.n ?? 0);
 }
 
 /** Returns the exit code. */
@@ -114,8 +130,14 @@ export async function migrate(options: MigrateOptions): Promise<number> {
       const folder = dirname(dirname(fileURLToPath(journal)));
       // One bookkeeping table per layer: a domain added later starts its own
       // count, and dropping a domain's schema leaves the others' untouched.
+      const before = await recorded(connection.db, layer);
       await migrator(connection.db, { migrationsFolder: folder, migrationsTable: `__migrations_${layer}`, migrationsSchema: "drizzle" });
-      say(`  ${layer}: up to date`);
+      const applied = (await recorded(connection.db, layer)) - before;
+      say(
+        applied > 0
+          ? `  ${layer}: applied ${applied} migration${applied === 1 ? "" : "s"}`
+          : `  ${layer}: nothing to apply, ${before} already applied`,
+      );
     }
   } catch (error) {
     const cause = (error as Error).cause;

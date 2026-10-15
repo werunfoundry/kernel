@@ -47,9 +47,13 @@ before(async () => {
   url.pathname = `/${database}`;
   client = new Client({ connectionString: url.toString() });
   await client.connect();
-  const migrations = join(import.meta.dirname, "../../../core/db/migrations");
-  for (const f of readdirSync(migrations).filter((x) => x.endsWith(".sql")).sort()) {
-    await client.query(readFileSync(join(migrations, f), "utf8"));
+  // The three layers, in dependency order: the registry lives in gtm and
+  // points into relations.
+  for (const layer of ["../../../core", "../../relations", ".."]) {
+    const migrations = join(import.meta.dirname, layer, "db/migrations");
+    for (const f of readdirSync(migrations).filter((x) => x.endsWith(".sql")).sort()) {
+      await client.query(readFileSync(join(migrations, f), "utf8"));
+    }
   }
   db = drizzle(client) as unknown as Database;
 });
@@ -81,6 +85,15 @@ const world = {
   /** What the sequencer holds: key → email. A dry run never writes here. */
   enrolled: new Map<string, string>(),
   enrolCalls: 0,
+  statusCalls: 0,
+  /** The idempotency key of every enrol call, in order. */
+  keysSent: [] as string[],
+  /**
+   * How the next enrol call fails: `after` holds the person and then fails —
+   * a timeout after the provider acted; `before` fails without holding;
+   * `refuse` answers invalid.
+   */
+  crash: undefined as "after" | "before" | "refuse" | undefined,
   remaining: 100,
   /** What the sequencer reports as its limits; by default one, from `remaining`. */
   limits: (): CapacityLimit[] => [{ unit: "messages", window: "day", remaining: world.remaining }],
@@ -129,6 +142,15 @@ const sequencer: Sequencer = {
   channels: ["email"],
   async enrol(e, ctx) {
     world.enrolCalls++;
+    world.keysSent.push(e.idempotencyKey);
+    const crash = world.crash;
+    world.crash = undefined;
+    if (crash === "refuse") return { ok: false, error: { code: "invalid", message: "this address cannot be sequenced", retryable: false } };
+    if (crash === "before") return down("the sequencer");
+    if (crash === "after") {
+      if (!ctx.dryRun) world.enrolled.set(e.idempotencyKey, emailOf(e.person));
+      return down("the sequencer");
+    }
     const held = world.enrolled.get(e.idempotencyKey);
     if (!held && !ctx.dryRun) world.enrolled.set(e.idempotencyKey, emailOf(e.person));
     return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { state: "active", asOf: NOW.toISOString() } };
@@ -140,6 +162,7 @@ const sequencer: Sequencer = {
     return ok({ applied: [], notApplicable: [] });
   },
   async status({ person }) {
+    world.statusCalls++;
     const held = [...world.enrolled.values()].includes(emailOf(person));
     return ok({ state: held ? "active" : "unknown", asOf: NOW.toISOString() });
   },
@@ -195,7 +218,13 @@ const row = async (id: string) =>
 
 const held = () => [...world.enrolled.values()].sort();
 
-beforeEach(() => {
+beforeEach(async () => {
+  if (client) {
+    await client.query("truncate gtm.enrolment_skip, gtm.enrolment, relations.person, relations.company cascade");
+  }
+  world.statusCalls = 0;
+  world.keysSent = [];
+  world.crash = undefined;
   world.candidates = [
     { domain: "open.example.com", attributes: {} },
     { domain: "customer.example.org", externalId: "acct-7", attributes: {} },
@@ -356,5 +385,167 @@ describe("the enrolment path", { skip: base ? false : "TEST_DATABASE_URL is not 
     const r = await run({ senders: [{ externalId: "sender@example.com" }] });
     assert.equal(r.status, "failed");
     assert.equal(world.enrolCalls, 0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The registry (decision 0026)                                                */
+/* -------------------------------------------------------------------------- */
+
+describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const registered = async () =>
+    (
+      await client.query(
+        `select p.email, e.state, e.sequence_key, e.channel, e.idempotency_key, e.provider, e.run_id, e.refusal, c.domain as company
+           from gtm.enrolment e join relations.person p on p.id = e.person_id left join relations.company c on c.id = e.company_id
+          order by p.email`,
+      )
+    ).rows as { email: string; state: string; sequence_key: string; channel: string; idempotency_key: string; provider: string; run_id: string; refusal: string | null; company: string | null }[];
+  const skips = async (runId: string) =>
+    (await client.query("select reason, subject, detail from gtm.enrolment_skip where run_id = $1 order by subject", [runId])).rows as {
+      reason: string;
+      subject: string;
+      detail: string;
+    }[];
+
+  it("records who was enrolled, in which sequence, through which company, by which run", async () => {
+    const r = await run();
+    const rows = await registered();
+    assert.deepEqual(
+      rows.map((x) => [x.email, x.state, x.sequence_key, x.channel, x.provider, x.company, x.run_id === r.runId]),
+      [
+        ["ada@open.example.com", "enrolled", "welcome", "email", "memory-sequencer", "open.example.com", true],
+        ["bo@open.example.com", "enrolled", "welcome", "email", "memory-sequencer", "open.example.com", true],
+      ],
+    );
+    // The key the provider was given is the key on record.
+    assert.deepEqual(rows.map((x) => x.idempotency_key).sort(), [...world.keysSent].sort());
+  });
+
+  it("writes no registry row, no person and no company in a dry run, and still keeps its skips", async () => {
+    const r = await run({ dryRun: true });
+    assert.equal(r.enrolled.length, 2);
+    assert.deepEqual(await registered(), []);
+    assert.equal((await client.query("select count(*)::int as n from relations.person")).rows[0].n, 0);
+    assert.equal((await client.query("select count(*)::int as n from relations.company")).rows[0].n, 0);
+    assert.deepEqual((await skips(r.runId)).map((s) => s.reason), ["protected"]);
+  });
+
+  it("answers a replay from the registry, without asking the provider", async () => {
+    await run();
+    const statusBefore = world.statusCalls;
+    const again = await run();
+    assert.equal(again.enrolled.length, 0);
+    assert.deepEqual(again.skipped.filter((s) => s.reason === "duplicate").map((s) => s.detail), [
+      "already enrolled in this sequence, by the registry",
+      "already enrolled in this sequence, by the registry",
+    ]);
+    assert.equal(world.statusCalls, statusBefore, "the provider was asked what the registry already knew");
+  });
+
+  it("is written before the provider is called: a run that dies after the provider acted leaves it pending", async () => {
+    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.crash = "after";
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.deepEqual((await registered()).map((x) => [x.email, x.state]), [["ada@open.example.com", "pending"]]);
+    assert.deepEqual(held(), ["ada@open.example.com"], "the provider holds her: the call did land");
+  });
+
+  it("reconciles that run on the next one: confirmed, not enrolled a second time", async () => {
+    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.crash = "after";
+    await run();
+    const calls = world.enrolCalls;
+    const next = await run();
+    assert.equal(next.status, "succeeded", next.stoppedBy);
+    assert.equal(world.enrolCalls, calls, "a reconciled enrolment was made again");
+    assert.deepEqual(next.reconciled.map((e) => emailOf(e.person)), ["ada@open.example.com"]);
+    assert.equal(next.enrolled.length, 0);
+    assert.deepEqual((await registered()).map((x) => [x.email, x.state, x.run_id === next.runId]), [["ada@open.example.com", "enrolled", true]]);
+  });
+
+  it("makes the enrolment on the next run when the provider never got it, with the key on record", async () => {
+    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.crash = "before";
+    await run();
+    const [pending] = await registered();
+    assert.equal(pending?.state, "pending");
+    const next = await run();
+    assert.deepEqual(next.enrolled.map((e) => emailOf(e.person)), ["ada@open.example.com"]);
+    assert.deepEqual(world.keysSent, [pending!.idempotency_key, pending!.idempotency_key], "the retry used another key");
+    assert.equal((await registered())[0]?.state, "enrolled");
+  });
+
+  it("keeps the key on record even when the person's keys have grown since", async () => {
+    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.crash = "before";
+    await run();
+    const [pending] = await registered();
+    // The same person, now known by a second key: the computed key changes, the recorded one does not.
+    const withHandle = enrichment.peopleAt;
+    enrichment.peopleAt = async (q, ctx) => {
+      const r = await withHandle(q, ctx);
+      if (!r.ok) return r;
+      return ok({ ...r.value, items: r.value.items.map((i) => ({ ...i, identity: { ...i.identity, keys: [...i.identity.keys, { kind: "social_profile_handle", value: "ada", network: "net_a" }] } })) });
+    };
+    try {
+      await run();
+    } finally {
+      enrichment.peopleAt = withHandle;
+    }
+    assert.equal(world.keysSent[1], pending!.idempotency_key);
+  });
+
+  it("records a refusal as refused, and skips the person as unreachable", async () => {
+    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.crash = "refuse";
+    const r = await run();
+    assert.deepEqual(r.skipped.filter((s) => s.person).map((s) => [s.reason, s.detail]), [["unreachable", "this address cannot be sequenced"]]);
+    const [x] = await registered();
+    assert.deepEqual([x?.state, x?.refusal], ["refused", "invalid: this address cannot be sequenced"]);
+  });
+
+  it("keeps every skip with its reason, the four never folded into one", async () => {
+    world.enrolled.set("seeded", "bo@open.example.com");
+    world.people.set("open.example.com", [
+      { email: "bo@open.example.com", name: "Bo" },
+      { email: "ada@open.example.com", name: "Ada" },
+      { email: "fay@open.example.com", name: "Fay" },
+      { email: "dee@customer.example.org", name: "Dee" },
+    ]);
+    world.candidates.push({ name: "No domain", attributes: {} });
+    world.remaining = 1;
+    const r = await run({ senders: [{ externalId: "sender@example.com" }] });
+    const kept = await skips(r.runId);
+    const byReason = (reason: string) => kept.filter((k) => k.reason === reason).map((k) => k.detail).sort();
+    assert.deepEqual(byReason("protected"), ["an address is on a protected domain", "the account is protected"]);
+    assert.deepEqual(byReason("duplicate"), ["already in the sequence (active)"]);
+    assert.deepEqual(byReason("capacity"), ["no capacity left on the given senders"]);
+    assert.deepEqual(byReason("unreachable"), ["no domain to find its people by"]);
+    assert.equal(kept.length, r.skipped.length, "a reported skip was not kept, or the other way round");
+  });
+
+  // A dry run, so that the registry's read is the only thing that can refuse:
+  // live, `recordPerson` would refuse too, and its own tests are in relations.
+  it("refuses to merge: a person whose keys name two recorded people is skipped, not enrolled — read before any write", async () => {
+    await client.query(
+      "insert into relations.person (email, external_id) values ('ada@open.example.com', null), (null, 'net_a:42')",
+    );
+    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    const withId = enrichment.peopleAt;
+    enrichment.peopleAt = async (q, ctx) => {
+      const r = await withId(q, ctx);
+      if (!r.ok) return r;
+      return ok({ ...r.value, items: r.value.items.map((i) => ({ ...i, identity: { ...i.identity, keys: [...i.identity.keys, { kind: "social_profile_id", value: "42", network: "net_a" }] } })) });
+    };
+    try {
+      const r = await run({ dryRun: true });
+      assert.deepEqual(r.enrolled, []);
+      assert.match(r.skipped.find((s) => s.person)?.detail ?? "", /registry cannot tell who this is: the person.s id and its other key name two recorded people/);
+      assert.equal(world.enrolCalls, 0);
+    } finally {
+      enrichment.peopleAt = withId;
+    }
   });
 });

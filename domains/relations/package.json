@@ -11,7 +11,8 @@
     "./contracts": "./contracts/index.ts",
     "./contracts/crm": "./contracts/crm.ts",
     "./contracts/enrichment": "./contracts/enrichment.ts",
-    "./db/migrations/*": "./db/migrations/*"
+    "./db/migrations/*": "./db/migrations/*",
+    "./adapters/*": "./adapters/*/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -37,7 +38,11 @@
         "types": "./dist/contracts/enrichment.d.ts",
         "default": "./dist/contracts/enrichment.js"
       },
-      "./db/migrations/*": "./db/migrations/*"
+      "./db/migrations/*": "./db/migrations/*",
+      "./adapters/*": {
+        "types": "./dist/adapters/*/index.d.ts",
+        "default": "./dist/adapters/*/index.js"
+      }
     }
   },
   "dependencies": {

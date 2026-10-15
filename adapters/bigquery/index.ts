@@ -54,7 +54,10 @@
  * text compared against another type. A BOOLEAN casts to "true" or "false"
  * (the published conversion rules), so `protected.activeValues: true` reads a
  * boolean active column, and `TRUE` is refused. A NULL casts to NULL and
- * equals no value: an account whose active column is NULL is not protected.
+ * equals no value — so the protected query also returns every row whose
+ * active column is NULL, and one such row stops the read: an unknown
+ * subscription is not an absent one (doctrine 6, 0009), and the run stops
+ * rather than protecting less in silence. Same columns, same scan.
  *
  * Two tables, because the protected set is not a subset of the candidates
  * (see the contract): the customer accounts are read from their own table,
@@ -88,7 +91,8 @@
  *   columns of the target table. Every page after the first is read from the
  *   job's result, not the table.
  * - `protectedAccounts`: the active, domain, and optional id and name columns
- *   of the customer table.
+ *   of the customer table. Over a view, that is whatever the view computes:
+ *   see this folder's README before scheduling it.
  * - `probe`: both freshness queries as dry runs, which bill nothing.
  */
 
@@ -332,10 +336,13 @@ export function candidatesSql(c: Config["candidates"]): string {
 export function protectedSql(p: Config["protected"]): string {
   const columns = [
     asString(p.domain, "domain"),
+    asString(p.activeColumn, "active"),
     ...(p.id ? [asString(p.id, "external_id")] : []),
     ...(p.name ? [asString(p.name, "name")] : []),
   ];
-  return `SELECT ${columns.join(", ")} FROM ${p.table} WHERE CAST(${q(p.activeColumn)} AS STRING) IN UNNEST(@active)`;
+  // The NULLs come back too, to be refused: they are the accounts whose
+  // subscription nobody can state.
+  return `SELECT ${columns.join(", ")} FROM ${p.table} WHERE CAST(${q(p.activeColumn)} AS STRING) IN UNNEST(@active) OR ${q(p.activeColumn)} IS NULL`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -685,6 +692,13 @@ const factory: AdapterFactory<TargetList> = ({ options, env }) => {
       const p = config.protected;
       const got = await read("protected", protectedSql(p), [arrayParam("active", p.activeValues)], query, ctx);
       if (!got.ok) return got;
+      const unknown = got.value.rows.filter((row) => row.active === null).length;
+      if (unknown > 0) {
+        return fail(
+          "unavailable",
+          `${unknown} account${unknown === 1 ? "'s" : "s'"} ${p.activeColumn} is NULL: an unknown subscription is not an absent one, and the protected set is not read past it`,
+        );
+      }
       if (got.value.total === 0 && !p.allowEmpty) {
         return fail(
           "unavailable",

@@ -1,5 +1,5 @@
 /**
- * gtm/adapters/instantly — the Sequencer contract, against Instantly's API v2.
+ * adapters/instantly — the Sequencer contract, against Instantly's API v2.
  *
  * Every claim below about how Instantly behaves was read in its published
  * OpenAPI document (api.instantly.ai/openapi/api_v2.json) or its help centre,
@@ -9,7 +9,7 @@
  * Binding, in an instance manifest:
  *
  *   - contract: sequencer
- *     adapter: "@werunfoundry/gtm/adapters/instantly"
+ *     adapter: "@werunfoundry/adapters/instantly"
  *     env: [INSTANTLY_API_KEY]
  *     options:
  *       campaign.<sequenceKey>: <Instantly campaign id>   # one per sequence
@@ -62,7 +62,7 @@ import type {
   EnrolmentStatus,
   Sequencer,
   Suppression,
-} from "../../contracts/sequencer.js";
+} from "@werunfoundry/gtm/contracts/sequencer";
 
 /* -------------------------------------------------------------------------- */
 /* What the API returns, as far as this adapter reads it                       */

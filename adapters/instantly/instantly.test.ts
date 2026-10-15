@@ -21,7 +21,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 
-import type { Sequencer } from "../../contracts/sequencer.js";
+import type { Sequencer } from "@werunfoundry/gtm/contracts/sequencer";
 import factory from "./index.js";
 
 interface Seen {

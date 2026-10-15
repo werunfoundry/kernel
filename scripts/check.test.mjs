@@ -192,7 +192,7 @@ describe("rule 1 — a provider is named only inside its adapter", () => {
   });
 
   it("allows one inside an adapter, which is the whole point of adapters", () => {
-    accepts(repo({ "domains/alpha/adapters/crm.ts": 'export const p = "salesforce";\n' }));
+    accepts(repo({ "adapters/vendor/index.ts": 'export const p = "salesforce";\n' }));
   });
 
   it("allows one in the template's adapters, which an instance inherits", () => {
@@ -335,13 +335,108 @@ describe("rule 2 — dependencies point down, never sideways", () => {
   });
 });
 
+describe("rule 6 — an adapter sees contracts, and nothing else of the engine", () => {
+  /** One adapter file holding exactly the line under test, so no other rule can answer for it. */
+  const adapter = (line, path = "adapters/vendor/index.ts") => repo({ [path]: `${line}\nexport const x = 1;\n` });
+
+  it("allows the contracts of two sibling domains, the core's contract types and identity", () => {
+    accepts(
+      repo({
+        "adapters/vendor/index.ts": [
+          'import type { A } from "@werunfoundry/alpha/contracts/a";',
+          'import type { B } from "@werunfoundry/beta/contracts";',
+          'import type { CallResult } from "@werunfoundry/core/contracts/types";',
+          'import type { Identity } from "@werunfoundry/core/identity";',
+          'import { request } from "node:https";',
+          'import { client } from "./client.js";',
+          'import sdk from "vendor-sdk";',
+          "export const x = 1;",
+          "",
+        ].join("\n"),
+      }),
+    );
+  });
+
+  it("refuses a schema", () => {
+    refuses(adapter('import { t } from "@werunfoundry/alpha/db/schema";'), 6, "imports @werunfoundry/alpha/db/schema");
+  });
+
+  it("refuses the runtime", () => {
+    refuses(adapter('import { enrol } from "@werunfoundry/beta/runtime/enrol";'), 6, "imports @werunfoundry/beta/runtime/enrol");
+  });
+
+  it("refuses the core beyond its contracts and identity", () => {
+    refuses(adapter('import type { M } from "@werunfoundry/core/manifest/types";'), 6, "imports @werunfoundry/core/manifest/types");
+  });
+
+  it("refuses another adapter", () => {
+    refuses(adapter('import other from "@werunfoundry/adapters/other";'), 6, "imports @werunfoundry/adapters/other");
+  });
+
+  it("refuses a re-export, which the layer check does not read", () => {
+    refuses(adapter('export { t } from "@werunfoundry/alpha/db/schema";'), 6, "imports @werunfoundry/alpha/db/schema");
+  });
+
+  it("refuses a bare import for its side effects", () => {
+    refuses(adapter('import "@werunfoundry/alpha/db/schema";'), 6, "imports @werunfoundry/alpha/db/schema");
+  });
+
+  it("refuses require and a literal dynamic import", () => {
+    refuses(adapter('const s = require("@werunfoundry/alpha/db/schema");'), 6, "imports @werunfoundry/alpha/db/schema");
+    refuses(adapter('const s = await import("@werunfoundry/alpha/db/schema");'), 6, "imports @werunfoundry/alpha/db/schema");
+  });
+
+  it("refuses a dynamic import it cannot read", () => {
+    refuses(adapter("const s = await import(name);"), 6, "cannot read");
+  });
+
+  it("refuses a relative import out of its own folder", () => {
+    refuses(adapter('import { t } from "../../domains/alpha/db/schema.ts";'), 6, "outside adapters/vendor/");
+    refuses(adapter('import { y } from "../other/index.ts";'), 6, "outside adapters/vendor/");
+  });
+
+  it("refuses a database client, which reaches the database without importing anything of ours", () => {
+    refuses(adapter('import pg from "pg";'), 6, "imports pg");
+    refuses(adapter('import { sql } from "drizzle-orm";'), 6, "imports drizzle-orm");
+  });
+
+  it("holds in the template's adapters, which an instance inherits", () => {
+    refuses(adapter('import { t } from "@werunfoundry/alpha/db/schema";', "template/adapters/x.ts"), 6, "imports @werunfoundry/alpha/db/schema");
+    refuses(adapter('import { t } from "../../core/db/schema.ts";', "template/adapters/x.ts"), 6, "outside template/adapters/");
+    accepts(adapter('import { load } from "./store.ts";', "template/adapters/x.ts"));
+  });
+
+  it("ignores prose that names a forbidden import", () => {
+    accepts(adapter('// never: import { t } from "@werunfoundry/alpha/db/schema";'));
+  });
+});
+
 describe("rule 6 — a rule can only hold where it can see", () => {
   it("refuses an adapter in the core, which would switch rule 1 off there", () => {
     refuses(repo({ "core/adapters/crm.ts": "export const x = 1;\n" }), 6, "adapter lives in");
   });
 
-  it("refuses one at the root of this repository, which is not an instance", () => {
+  it("refuses an adapter inside a domain, where a sibling domain's contracts are out of sight", () => {
+    refuses(repo({ "domains/alpha/adapters/vendor/index.ts": "export const x = 1;\n" }), 6, "adapter lives in");
+  });
+
+  it("refuses code at the root of adapters/, which belongs to no provider", () => {
     refuses(repo({ "adapters/crm.ts": "export const x = 1;\n" }), 6, "adapter lives in");
+  });
+
+  it("refuses an adapters package that publishes other paths than it exports", () => {
+    refuses(
+      repo({
+        "adapters/package.json":
+          '{ "name": "@werunfoundry/adapters", "exports": { "./*": "./*/index.ts" }, "publishConfig": { "exports": {} } }\n',
+      }),
+      6,
+      "exports and publishConfig.exports list different paths",
+    );
+  });
+
+  it("allows the adapters package's own files at that root", () => {
+    accepts(repo({ "adapters/package.json": '{ "name": "x" }\n', "adapters/tsconfig.json": "{}\n" }));
   });
 
   it("refuses a domain that does not export its domain.yaml, which no instance could boot", () => {

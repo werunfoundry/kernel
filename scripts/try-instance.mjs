@@ -51,7 +51,7 @@ if (!url) {
   process.exit(2);
 }
 
-const PACKAGES = ["core", "domains/relations", "domains/gtm"];
+const PACKAGES = ["core", "domains/relations", "domains/gtm", "adapters"];
 const SCHEMAS = ["gtm", "relations", "core", "drizzle"];
 
 const work = mkdtempSync(join(tmpdir(), "try-instance-"));
@@ -96,6 +96,9 @@ try {
   for (const [name, file] of Object.entries(tarballs)) {
     if (pkg.dependencies[name]) pkg.dependencies[name] = `file:${file}`;
   }
+  // The template binds no shipped adapter, so it does not depend on them; the
+  // instance here does, so that every one is loaded below by its published name.
+  pkg.dependencies["@werunfoundry/adapters"] = `file:${tarballs["@werunfoundry/adapters"]}`;
   // Both homes for overrides: pnpm 9 reads package.json, pnpm 10 onwards
   // reads pnpm-workspace.yaml, and outside this repository nothing pins which
   // pnpm runs.
@@ -131,6 +134,21 @@ try {
   expect(migrated.status === 0, `kernel-migrate exited ${migrated.status}`);
   const again = await bin("kernel-migrate");
   expect(again.status === 0, `kernel-migrate, run twice, exited ${again.status}`);
+
+  // Every adapter the kernel ships, by the name a binding gives it (0023),
+  // loaded by the instance's own Node from the installed pack: a published
+  // export that points nowhere passes every check inside the workspace.
+  step("every shipped adapter loads by its published name");
+  const shipped = sh("git", ["ls-files", "adapters"], kernel)
+    .split("\n")
+    .filter((f) => /^adapters\/.+\/index\.ts$/.test(f))
+    .map((f) => `@werunfoundry/${dirname(f)}`)
+    .sort();
+  const load = `for (const n of ${JSON.stringify(shipped)}) { const m = await import(n); if (typeof m.default !== "function") throw new Error(n + " has no factory"); console.log("  " + n); }`;
+  const loaded = await spawnAsync(process.execPath, ["--input-type=module", "-e", load], { cwd: root, env });
+  show(loaded);
+  expect(loaded.status === 0, "a shipped adapter does not load from the instance");
+  expect(shipped.length > 0, "no shipped adapter was found to load");
 
   step("the instance checks itself");
   sh("git", ["init", "-q"], root);

@@ -20,7 +20,7 @@ import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 import { identityVocabulary } from "@werunfoundry/core/identity";
 
-import { acceptCompletion } from "../../contracts/enrichment.js";
+import { acceptCompletion } from "@werunfoundry/relations/contracts/enrichment";
 import factory from "./index.js";
 
 interface Seen {

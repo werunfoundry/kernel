@@ -1,5 +1,8 @@
 # 0003 — They are called contracts
 
+> Superseded in part by [0023](0023-adapters-leave-the-domains.md): adapters
+> live in `adapters/<provider>/`, outside every domain.
+
 ## Decided
 
 What the engine requires of the outside world lives in `contracts/`. One way of

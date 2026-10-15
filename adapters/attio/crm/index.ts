@@ -1,13 +1,13 @@
 /**
- * gtm/adapters/attio/crm — the relations `Crm` contract, against Attio.
+ * adapters/attio/crm — the relations `Crm` contract, against Attio.
  *
  *   - contract: crm
- *     adapter: "@werunfoundry/gtm/adapters/attio/crm"
+ *     adapter: "@werunfoundry/adapters/attio/crm"
  *     env: [ATTIO_API_KEY]
  *
- * It lives beside the Attio inbound adapter, in gtm, so that both share one
- * client and one token (one folder per provider); gtm depends on relations,
- * whose contract this is.
+ * It lives beside the Attio inbound adapter, so that both share one client and
+ * one token: one folder per provider, whichever domains own the contracts it
+ * satisfies (decision 0023).
  *
  * How the contract maps:
  *

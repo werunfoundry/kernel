@@ -56,7 +56,7 @@ providers:
   # A real binding looks like this:
   #
   # - contract: sequencer
-  #   adapter: "@werunfoundry/gtm/adapters/<provider>"
+  #   adapter: "@werunfoundry/adapters/<provider>"
   #   env: [PROVIDER_API_KEY]
   #   channels: [email]
   #   options:

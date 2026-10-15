@@ -1,9 +1,9 @@
 /**
- * relations/adapters/edges — the relations `Enrichment` contract, against the
+ * adapters/edges — the relations `Enrichment` contract, against the
  * Edges API.
  *
  *   - contract: enrichment
- *     adapter: "@werunfoundry/relations/adapters/edges"
+ *     adapter: "@werunfoundry/adapters/edges"
  *     env: [EDGES_API_KEY]
  *     options:
  *       network: linkedin            # the instance's name for the network; must be in its `networks`
@@ -47,7 +47,7 @@
 import type { AdapterFactory, CallContext, CallError, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityKey } from "@werunfoundry/core/identity";
 
-import type { Completion, Enrichment, FoundPerson, PeoplePage } from "../../contracts/enrichment.js";
+import type { Completion, Enrichment, FoundPerson, PeoplePage } from "@werunfoundry/relations/contracts/enrichment";
 
 interface Employee {
   linkedin_profile_id?: number;

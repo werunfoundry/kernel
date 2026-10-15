@@ -27,6 +27,18 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  adapters:
+    devDependencies:
+      '@werunfoundry/core':
+        specifier: workspace:*
+        version: link:../core
+      '@werunfoundry/gtm':
+        specifier: workspace:*
+        version: link:../domains/gtm
+      '@werunfoundry/relations':
+        specifier: workspace:*
+        version: link:../domains/relations
+
   core:
     dependencies:
       drizzle-orm:

@@ -1,8 +1,8 @@
 /**
- * gtm/adapters/attio/inbound — the gtm `Inbound` contract, against Attio.
+ * adapters/attio/inbound — the gtm `Inbound` contract, against Attio.
  *
  *   - contract: inbound
- *     adapter: "@werunfoundry/gtm/adapters/attio/inbound"
+ *     adapter: "@werunfoundry/adapters/attio/inbound"
  *     env: [ATTIO_API_KEY]
  *     options:
  *       internalDomains: "example.com,example.org"   # your own; their people are not events
@@ -41,7 +41,7 @@
 
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
 
-import type { InboundEvent, InboundPage, Inbound } from "../../../contracts/inbound.js";
+import type { InboundEvent, InboundPage, Inbound } from "@werunfoundry/gtm/contracts/inbound";
 import { DEFAULT_BASE_URL, client, fail } from "../client.js";
 
 interface Meeting {

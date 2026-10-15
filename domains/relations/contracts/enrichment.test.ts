@@ -192,6 +192,44 @@ describe("completing through a sequence of sources", () => {
     assert.deepEqual(r.steps, []);
   });
 
+  it("records a dry run's simulated answer as nothing learnt: the kind stays missing, and the next source is asked", async () => {
+    const a = source("a", ["email"], { ok: true, simulated: true, value: { found: false, asOf } });
+    const b = source("b", ["email"], found(id, email));
+    const r = await completeInSequence([a.entry, b.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.deepEqual(r.steps.map((s) => `${s.provider}:${s.outcome}`), ["a:simulated", "b:added"]);
+  });
+
+  it("carries what the provider said about the keys it added, and only those, with what it cost", async () => {
+    const other = { kind: "email", value: "other@example.com" };
+    const a = source("a", ["email"], {
+      ok: true,
+      value: {
+        found: true,
+        asOf,
+        attested: { subject: "person", keys: [id, { kind: "email", value: "Ada@Example.com" }] },
+        said: [
+          { key: { kind: "email", value: "Ada@Example.com" }, status: "CATCH_ALL" },
+          { key: other, status: "DELIVERABLE" },
+        ],
+        cost: { amount: 1, unit: "credits" },
+      },
+    });
+    const r = await completeInSequence([a.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    assert.deepEqual(r.steps[0]?.said, [{ key: email, status: "CATCH_ALL" }]);
+    assert.deepEqual(r.steps[0]?.cost, { amount: 1, unit: "credits" });
+  });
+
+  it("keeps the cost of an answer that found nothing", async () => {
+    const a = source("a", ["email"], { ok: true, value: { found: false, asOf, cost: { amount: 0, unit: "credits" } } });
+    const r = await completeInSequence([a.entry], { identity: asked, want: ["email"] }, vocabulary, ctx);
+    assert.ok(r.ok);
+    if (r.ok) assert.deepEqual(r.steps[0]?.cost, { amount: 0, unit: "credits" });
+  });
+
   it("asks nobody for a kind the subject already has", async () => {
     const a = source("a", ["email"], found(id, email));
     const r = await completeInSequence([a.entry], { identity: { subject: "person", keys: [id, email] }, want: ["email"] }, vocabulary, ctx);

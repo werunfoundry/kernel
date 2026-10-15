@@ -8,10 +8,10 @@
     { "domain": "customer.example.net", "externalId": "acct-3", "reason": "customer" }
   ],
   "people": [
-    { "domain": "open.example.com", "email": "ada@open.example.com", "name": "Ada Example", "title": "Head of Operations" },
-    { "domain": "open.example.com", "email": "bo@open.example.com", "name": "Bo Example", "title": "Operations Lead" },
-    { "domain": "other.example.org", "email": "cy@other.example.org", "name": "Cy Example", "title": "Director" },
-    { "domain": "customer.example.net", "email": "dee@customer.example.net", "name": "Dee Example", "title": "Buyer" }
+    { "domain": "open.example.com", "email": "ada@open.example.com", "profileId": "1001", "name": "Ada Example", "title": "Head of Operations" },
+    { "domain": "open.example.com", "email": "bo@open.example.com", "profileId": "1002", "name": "Bo Example", "title": "Operations Lead" },
+    { "domain": "other.example.org", "email": "cy@other.example.org", "profileId": "1003", "name": "Cy Example", "title": "Director" },
+    { "domain": "customer.example.net", "email": "dee@customer.example.net", "profileId": "1004", "name": "Dee Example", "title": "Buyer" }
   ],
   "events": [
     { "id": "evt-1", "type": "gtm.reply", "occurredAt": "2026-01-02T09:00:00Z", "email": "ada@open.example.com" },

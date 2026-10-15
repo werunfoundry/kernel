@@ -1,5 +1,7 @@
 # 0016 — Enrichment says whether it looked
 
+> Superseded in part by [0022](0022-a-completion-carries-what-was-attested.md): a completion carries only what the provider attests, and is accepted only on an immutable key.
+
 ## Decided
 
 `relations` gains an `Enrichment` contract with two reads:

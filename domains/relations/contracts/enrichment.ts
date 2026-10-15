@@ -1,6 +1,6 @@
 /**
  * relations/contracts — enrichment: finding the people at a company, and
- * completing an identity that is missing a key (decision 0016).
+ * completing an identity that is missing a key (decisions 0016, 0022).
  *
  * It lives in `relations` because people and companies are this domain's
  * objects. No provider is named here (doctrine 6).
@@ -54,12 +54,21 @@ export interface PeoplePage {
 }
 
 /**
- * The provider looked. Either it found the subject and returns its keys —
- * the ones asked about plus any it adds — or it did not.
+ * The provider looked. Either it found the subject and says what its answer
+ * attests, or it did not.
+ *
+ * `attested` holds the keys the provider's answer itself carries, and nothing
+ * else (decision 0022). A key the request carried is not copied into it: if
+ * the answer does not name the profile id it was asked by, `attested` does
+ * not hold that id. The difference between "the provider said so" and "we
+ * told the provider" is the only evidence that the answer is about the
+ * subject asked about, and copying erases it — a lookup made by a reissued
+ * handle would then come back carrying the original person's id, and look
+ * corroborated.
  */
 export type Completion =
   | { found: false; asOf: string }
-  | { found: true; identity: Identity; added: IdentityKey[]; asOf: string };
+  | { found: true; attested: Identity; asOf: string };
 
 export interface Enrichment extends Contract {
   /**
@@ -80,8 +89,9 @@ export interface Enrichment extends Contract {
 
   /**
    * More keys for one subject. `want` names the kinds the caller is after; an
-   * adapter may return others it attests, and must return every key it was
-   * given.
+   * adapter may return others the provider attests. It returns only what the
+   * provider's answer carries — never a key it was given and the answer did
+   * not repeat.
    */
   complete(
     request: { identity: Identity; want?: string[] },
@@ -93,10 +103,16 @@ export interface Enrichment extends Contract {
  * What a caller does with a completion before trusting it.
  *
  * A provider can answer for the wrong subject: a common name, a stale
- * record. If the identity it returns conflicts with the one asked about — an
- * immutable key of the same kind with another value, decision 0013 — it is
- * someone else, and is rejected rather than merged. So is one that changed
- * the subject, or dropped a key it was given.
+ * record, a handle released by one person and taken by another. The answer
+ * is accepted only when it attests an immutable key of the subject asked
+ * about, and none that differs — decision 0013's `same_immutable`. An answer
+ * that shares only mutable keys with the request is evidence, not proof, and
+ * 0013 merges nothing on evidence; an answer that shares none is the
+ * provider's word alone. Either is rejected, as is one about another kind of
+ * subject or one whose immutable key differs, which is someone else.
+ *
+ * It follows that an identity with no immutable key cannot be completed:
+ * nothing a provider says could tie its answer to it.
  */
 export function acceptCompletion(
   asked: Identity,
@@ -104,20 +120,19 @@ export function acceptCompletion(
   vocabulary: IdentityVocabulary,
 ): { accepted: Identity; added: IdentityKey[] } | { rejected: string } {
   if (!completion.found) return { rejected: "not found" };
-  const returned = completion.identity;
-  if (returned.subject !== asked.subject) {
-    return { rejected: `asked about a ${asked.subject}, answered about a ${returned.subject}` };
+  const attested = completion.attested;
+  if (attested.subject !== asked.subject) {
+    return { rejected: `asked about a ${asked.subject}, answered about a ${attested.subject}` };
   }
-  if (compareIdentities(asked, returned, vocabulary) === "conflict") {
-    return { rejected: "an immutable key differs: this is someone else" };
+  const comparison = compareIdentities(asked, attested, vocabulary);
+  if (comparison === "conflict") return { rejected: "an immutable key differs: this is someone else" };
+  if (comparison !== "same_immutable") {
+    return { rejected: "the answer attests no immutable key of the subject asked about: nothing ties it to them" };
   }
   const given = normalizeIdentity(asked, vocabulary);
-  const back = normalizeIdentity(returned, vocabulary);
-  const has = (k: IdentityKey) =>
-    back.keys.some((b) => b.kind === k.kind && (b.network ?? "") === (k.network ?? "") && b.value === k.value);
-  if (!given.keys.every(has)) return { rejected: "a key that was asked about is missing from the answer" };
+  const back = normalizeIdentity(attested, vocabulary);
   const added = back.keys.filter(
     (b) => !given.keys.some((g) => g.kind === b.kind && (g.network ?? "") === (b.network ?? "") && g.value === b.value),
   );
-  return { accepted: back, added };
+  return { accepted: { subject: given.subject, keys: [...given.keys, ...added] }, added };
 }

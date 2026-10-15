@@ -20,7 +20,8 @@ import type { CallError, CallResult } from "@werunfoundry/core/contracts/types";
 export interface SandboxData {
   companies: { domain: string; name: string; externalId: string }[];
   protected: { domain: string; externalId: string; reason: "customer" | "open_opportunity" | "partner" | "do_not_contact" | "other" }[];
-  people: { domain: string; email: string; name: string; title?: string }[];
+  /** `profileId` is an invented id on the network the enrichment binding names: immutable, as 0013 means it. */
+  people: { domain: string; email: string; profileId: string; name: string; title?: string }[];
   events: { id: string; type: string; occurredAt: string; email: string }[];
 }
 

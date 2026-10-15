@@ -13,6 +13,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 
+import { identityVocabulary } from "@werunfoundry/core/identity";
+import { acceptCompletion } from "@werunfoundry/relations/contracts/enrichment";
+
 import enrichmentFactory from "./sandbox-enrichment.ts";
 import inboundFactory from "./sandbox-inbound.ts";
 import metricsFactory from "./sandbox-metrics.ts";
@@ -65,6 +68,50 @@ describe("found nothing is not could not look", () => {
   it("metrics: a key the source does not read is refused, never zero", async () => {
     const r = await metricsFactory({ options: { stateFile: join(dir, "m.json") }, env: {} }).read({ key: "gtm.opened" }, ctx(true));
     assert.equal(r.ok, false);
+  });
+});
+
+describe("enrichment: a completion the contract accepts (0022)", () => {
+  const vocabulary = identityVocabulary(
+    [
+      {
+        name: "relations",
+        version: "0.0.0",
+        description: "x",
+        schema: "relations",
+        dependsOn: [],
+        identityKeys: [
+          { kind: "email", subject: "person", immutable: false, caseInsensitive: true },
+          { kind: "social_profile_id", subject: "person", immutable: true, networked: true },
+        ],
+      },
+    ],
+    ["sandbox"],
+  );
+  const enrichment = enrichmentFactory({ options: { network: "sandbox" }, env: {} });
+
+  it("is accepted for a person found by peopleAt, who carries an immutable key", async () => {
+    const page = await enrichment.peopleAt({ company: company("open.example.com") }, ctx(true));
+    assert.ok(page.ok && page.value.items.length > 0, JSON.stringify(page));
+    if (!page.ok) return;
+    const byId = { subject: "person", keys: page.value.items[0]!.identity.keys.filter((k) => k.kind === "social_profile_id") };
+    const r = await enrichment.complete({ identity: byId }, ctx(true));
+    assert.ok(r.ok && r.value.found, JSON.stringify(r));
+    if (!r.ok) return;
+    const accepted = acceptCompletion(byId, r.value, vocabulary);
+    assert.ok("accepted" in accepted, JSON.stringify(accepted));
+    if ("accepted" in accepted) assert.deepEqual(accepted.added, [{ kind: "email", value: "ada@open.example.com" }]);
+  });
+
+  it("is rejected for a person known only by an address: nothing immutable ties the answer to them", async () => {
+    const byAddress = { subject: "person", keys: [{ kind: "email", value: "ada@open.example.com" }] };
+    const r = await enrichment.complete({ identity: byAddress }, ctx(true));
+    assert.ok(r.ok && r.value.found, JSON.stringify(r));
+    if (r.ok) {
+      assert.deepEqual(acceptCompletion(byAddress, r.value, vocabulary), {
+        rejected: "the answer attests no immutable key of the subject asked about: nothing ties it to them",
+      });
+    }
   });
 });
 

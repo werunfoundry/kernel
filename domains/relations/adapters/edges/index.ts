@@ -37,8 +37,11 @@
  *   Edges' quota of 250 lookups a day per identity. It needs the profile's
  *   handle, because every synchronous profile action takes a profile URL, and
  *   a URL is built from the handle, not from the numeric id. No address shown
- *   is `found: false`. Bulk address enrichment exists at Edges only as an
- *   asynchronous action, which this synchronous contract does not use.
+ *   is `found: false`. A handle can be released and taken by someone else,
+ *   so an answer that does not name the profile id is not accepted by the
+ *   contract (0022) — the adapter reports it as the provider gave it. Bulk
+ *   address enrichment exists at Edges only as an asynchronous action, which
+ *   this synchronous contract does not use.
  */
 
 import type { AdapterFactory, CallContext, CallError, CallResult } from "@werunfoundry/core/contracts/types";
@@ -211,13 +214,12 @@ const factory: AdapterFactory<Enrichment> = ({ options, env }) => {
       const email = r.value.body?.email?.trim().toLowerCase();
       if (!email) return { ok: true, value: { found: false, asOf } }; // looked; no address shown to this account
 
-      // The provider's own keys come back too, so that a caller can see — and
-      // acceptCompletion refuse — an answer about someone else.
-      const given = identity.keys;
-      const extra = [...keysOf(r.value.body), { kind: "email", value: email }].filter(
-        (k) => !given.some((g) => g.kind === k.kind && (g.network ?? "") === (k.network ?? "") && g.value === k.value),
-      );
-      return { ok: true, value: { found: true, identity: { subject: "person", keys: [...given, ...extra] }, added: extra, asOf } };
+      // Only what the answer carries (decision 0022). The lookup was built from
+      // a handle, which can have changed hands; the profile id the answer
+      // names, if any, is the only thing tying it to the person asked about,
+      // so the id from the request is never copied in to stand for it.
+      const attested = [...keysOf(r.value.body), { kind: "email", value: email }];
+      return { ok: true, value: { found: true, attested: { subject: "person", keys: attested }, asOf } };
     },
   };
 };

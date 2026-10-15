@@ -20,6 +20,7 @@ import type {
   CallContext,
   CallResult,
 } from "@werunfoundry/core/contracts/types";
+import type { Identity } from "@werunfoundry/core/identity";
 
 /** The two routes. They are read separately and aged separately. */
 export type TargetRoute = "candidates" | "protected";
@@ -55,6 +56,17 @@ export interface TargetCompany {
   externalId?: string;
   name?: string;
   domain?: string;
+  /**
+   * The keys that name this company, as the source holds them (decision
+   * 0024): a `domain` key, and a networked company id when the source has
+   * one. Subject `company`. An adapter that fills it repeats `domain` among
+   * its keys, so that the two never disagree, and puts nothing in it that the
+   * source does not carry — a key derived from another is a guess (0016).
+   *
+   * Carried, not yet read: the enrolment path finds a company's people by
+   * `domain`.
+   */
+  identity?: Identity;
   /** Everything else the source carries. Never interpreted by the engine. */
   attributes: Record<string, string | number | boolean | null>;
 }

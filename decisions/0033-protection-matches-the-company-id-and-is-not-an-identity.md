@@ -1,5 +1,7 @@
 # 0033 — Protection matches the company id too, and is not an identity
 
+> Completed by [0034](0034-an-uncovered-customer-is-acknowledged-by-a-person.md): protection counts customers; a customer with no key stops the run until a person acknowledges it.
+
 Completes [0019](0019-the-enrolment-path.md), which matched a candidate to a
 protected account by domain and by the target list's own identifier, and
 [0024](0024-a-target-carries-its-keys.md), which gave a candidate its keys.

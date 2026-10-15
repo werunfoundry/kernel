@@ -2,7 +2,7 @@
   "name": "instance",
   "version": "0.0.0",
   "private": true,
-  "description": "An instance of the engine. Configuration, context, truths, secrets — and adapters.",
+  "description": "An instance of the engine. Configuration, context, truths, secrets \u2014 and adapters.",
   "type": "module",
   "engines": {
     "node": ">=22.18"
@@ -22,6 +22,8 @@
     "pg": "^8.13.0"
   },
   "devDependencies": {
-    "@types/pg": "^8.11.0"
+    "@types/node": "^22.18.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.8.0"
   }
 }

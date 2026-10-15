@@ -112,6 +112,48 @@ for (const file of tracked) {
   });
 }
 
+/* -- Decision 0025: the engine is consumed as published, never as a folder */
+
+/**
+ * A dependency on the engine names a version or a packed tarball. A folder —
+ * `file:../kernel/core`, `link:`, `portal:`, `workspace:` — installs what the
+ * workspace sees, not what is published: `exports` pointing at TypeScript
+ * that is not installed, commands Node refuses to run under node_modules,
+ * and `workspace:*` dependencies that mean nothing here. It fails at the
+ * first command, far from the line that caused it; this says so at the line.
+ */
+const ENGINE = /^@werunfoundry\//;
+const FOLDER = /^(link:|portal:|workspace:)|^file:(?!.*\.tgz$)/;
+
+function refuseFolders(file, entries) {
+  for (const [name, spec] of entries) {
+    if (ENGINE.test(name) && typeof spec === "string" && FOLDER.test(spec)) {
+      fail(file, 0, `${name} is "${spec}": the engine is consumed as a published version or a packed tarball, never a folder (decision 0025)`);
+    }
+  }
+}
+
+if (tracked.includes("package.json")) {
+  try {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    for (const field of ["dependencies", "devDependencies", "optionalDependencies", "overrides"]) {
+      refuseFolders("package.json", Object.entries(pkg[field] ?? {}));
+    }
+    refuseFolders("package.json", Object.entries(pkg.pnpm?.overrides ?? {}));
+  } catch {
+    /* an unparsable package.json is reported above */
+  }
+}
+if (tracked.includes("pnpm-workspace.yaml")) {
+  // One entry per line, `"@werunfoundry/x": "spec"` or unquoted; nothing else
+  // in that file names the engine.
+  const lines = readFileSync("pnpm-workspace.yaml", "utf8").split("\n");
+  refuseFolders(
+    "pnpm-workspace.yaml",
+    lines.map((l) => l.match(/^\s*["']?(@werunfoundry\/[^"':\s]+)["']?\s*:\s*["']?([^"'\s#]+)["']?/)).filter(Boolean).map((m) => [m[1], m[2]]),
+  );
+}
+
 if (failures.length === 0) {
   console.log(`instance: ok (${tracked.length} files)`);
   process.exit(0);

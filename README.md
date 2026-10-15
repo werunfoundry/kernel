@@ -47,7 +47,7 @@ scripts/              checks that make the doctrine enforceable
 ## Where the work is
 
 **The rule for now: no engine capacity is added until a real instance has run
-and said what it lacks.** The contract surface is closed (0013–0021). What is
+and said what it lacks.** The contract surface is closed (0013–0022). What is
 left is adapters, the defects below, and the first instance. A feature built
 before that instance runs is built against a guess.
 
@@ -116,20 +116,6 @@ real adapters. It decides what is built next.
 - Per-person enrolment outcomes are returned and printed, not stored (0019).
 - A rolling window is approximated by a closed one, and the engine plans
   against the approximation (0020).
-- A profile handle is not only mutable, it is reassignable: released by one
-  person, it can be taken by another. The enrichment adapter's `complete`
-  builds its lookup from the handle, and accepts whatever address comes back
-  unless the provider's answer carries a different profile id. When the
-  answer carries no id at all, the result is accepted — with the attested id
-  in the identity or without it — because the adapter echoes every key it was
-  given, as the `Enrichment` contract requires, so `acceptCompletion`'s
-  "a key asked about is missing" check can never fire. Run against a fake
-  provider that answers another person's address and no id, both cases
-  attach that address to the original identity. Possible remedies, not built:
-  the adapter refuses an answer without the provider's own profile id, and
-  refuses a handle-only identity, as it refuses a domain-only company; or the
-  contract distinguishes the keys a provider attested in its answer from the
-  keys it was handed.
 - `assert.ok(expr)` without a message, in the rest of the test suite: under
   tsx a failure hangs instead of failing, because Node re-reads the source to
   rebuild the message. Fixed in the enrichment adapter's tests only.

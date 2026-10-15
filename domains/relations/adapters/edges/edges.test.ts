@@ -237,9 +237,10 @@ describe("complete", () => {
     const r = await adapter().complete({ identity: ada }, ctx());
     assert.ok(r.ok && r.value.found, JSON.stringify(r));
     if (!r.ok || !r.value.found) return;
-    assert.deepEqual(r.value.added, [{ kind: "email", value: "ada@example.com" }]);
     assert.equal((seen[0]?.body as { input: { linkedin_profile_url: string } }).input.linkedin_profile_url, "https://www.linkedin.com/in/ada-example/");
-    assert.ok("accepted" in acceptCompletion(ada, r.value, vocabulary), "the provider's own answer about Ada was rejected");
+    const accepted = acceptCompletion(ada, r.value, vocabulary);
+    assert.ok("accepted" in accepted, `the provider's own answer about Ada was rejected: ${JSON.stringify(accepted)}`);
+    if ("accepted" in accepted) assert.deepEqual(accepted.added, [{ kind: "email", value: "ada@example.com" }]);
   });
 
   it("says found: false when no address is shown to this account", async () => {
@@ -253,6 +254,37 @@ describe("complete", () => {
     const r = await adapter().complete({ identity: ada }, ctx());
     assert.ok(r.ok && r.value.found, JSON.stringify(r));
     if (r.ok) assert.deepEqual(acceptCompletion(ada, r.value, vocabulary), { rejected: "an immutable key differs: this is someone else" });
+  });
+
+  it("reports only what the answer carries, never a key it was handed", async () => {
+    state.contact = { email: "ada@example.com" };
+    const r = await adapter().complete({ identity: ada }, ctx());
+    assert.ok(r.ok && r.value.found, JSON.stringify(r));
+    if (r.ok && r.value.found) assert.deepEqual(r.value.attested, { subject: "person", keys: [{ kind: "email", value: "ada@example.com" }] });
+  });
+
+  // A handle released by Ada and taken by someone else: the provider answers
+  // that person's address and no profile id. Nothing in the fixture differs
+  // from Ada's immutable key, so only the requirement that the answer attest
+  // one can refuse it.
+  describe("a third party's address, and no profile id", () => {
+    const untied = { rejected: "the answer attests no immutable key of the subject asked about: nothing ties it to them" };
+    beforeEach(() => {
+      state.contact = { email: "someone-else@example.org", linkedin_profile_handle: "ada-example" };
+    });
+
+    it("is rejected when the request carried Ada's profile id", async () => {
+      const r = await adapter().complete({ identity: ada }, ctx());
+      assert.ok(r.ok && r.value.found, JSON.stringify(r));
+      if (r.ok) assert.deepEqual(acceptCompletion(ada, r.value, vocabulary), untied);
+    });
+
+    it("is rejected when the request carried only her handle", async () => {
+      const handleOnly: Identity = { subject: "person", keys: [{ kind: "social_profile_handle", network: "net_a", value: "ada-example" }] };
+      const r = await adapter().complete({ identity: handleOnly }, ctx());
+      assert.ok(r.ok && r.value.found, JSON.stringify(r));
+      if (r.ok) assert.deepEqual(acceptCompletion(handleOnly, r.value, vocabulary), untied);
+    });
   });
 
   it("refuses a person without a handle, and a company, calling nobody", async () => {

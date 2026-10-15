@@ -36,9 +36,14 @@ const factory: AdapterFactory<Enrichment> = ({ options }) => ({
     const data = loadData(options.dataFile);
     if (!data.ok) return data;
     const email = identity.keys.find((k) => k.kind === "email")?.value.toLowerCase();
-    const known = data.value.people.some((p) => p.email === email);
+    const known = data.value.people.find((p) => p.email === email);
     const asOf = new Date().toISOString();
-    return { ok: true, value: known ? { found: true, identity, added: [], asOf } : { found: false, asOf } };
+    // What the record says, not what was asked (0022). It holds only an
+    // address, which is mutable, so the contract never accepts this answer.
+    return {
+      ok: true,
+      value: known ? { found: true, attested: { subject: "person", keys: [{ kind: "email", value: known.email }] }, asOf } : { found: false, asOf },
+    };
   },
 });
 

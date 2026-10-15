@@ -11,6 +11,7 @@
     "./contracts": "./contracts/index.ts",
     "./contracts/crm": "./contracts/crm.ts",
     "./contracts/enrichment": "./contracts/enrichment.ts",
+    "./contracts/people-source": "./contracts/people-source.ts",
     "./runtime/record": "./runtime/record.ts",
     "./db/migrations/*": "./db/migrations/*"
   },
@@ -37,6 +38,10 @@
       "./contracts/enrichment": {
         "types": "./dist/contracts/enrichment.d.ts",
         "default": "./dist/contracts/enrichment.js"
+      },
+      "./contracts/people-source": {
+        "types": "./dist/contracts/people-source.d.ts",
+        "default": "./dist/contracts/people-source.js"
       },
       "./runtime/record": {
         "types": "./dist/runtime/record.d.ts",

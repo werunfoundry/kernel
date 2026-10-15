@@ -30,11 +30,21 @@ networks:
 # `env` and to .env.example.
 #
 # A relative path is an adapter in this instance; a bare specifier is a
-# published package. A contract may be bound once per channel (0015).
+# published package. A contract may be bound once per channel (0015), or in
+# sequence by the keys each binding finds (0030).
 providers:
   - contract: target_list
     adapter: ./adapters/sandbox-target-list.ts
     env: []
+  # Finding people and completing them are two contracts (0030). One module
+  # satisfies both here. An enrichment bound more than once is a sequence:
+  # each source is asked, in this order, only for what those before it did
+  # not find, and an error stops the walk rather than paying the next one.
+  - contract: people_source
+    adapter: ./adapters/sandbox-enrichment.ts
+    env: []
+    options:
+      network: sandbox
   - contract: enrichment
     adapter: ./adapters/sandbox-enrichment.ts
     env: []

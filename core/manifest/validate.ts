@@ -95,6 +95,7 @@ export const providerBindingSchema = z.object({
   env: z.array(envVarName),
   options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   channels: z.array(identifier).optional(),
+  finds: z.array(identifier).optional(),
 });
 
 export const instanceManifestSchema = z.object({
@@ -264,6 +265,7 @@ export function validateInstance(
   // declares for itself are only known once it is built, and boot checks
   // those (decision 0015).
   const declaredChannels = new Set(m.enabledDomains.flatMap((n) => known.get(n)?.channels ?? []));
+  const declaredKinds = new Set(m.enabledDomains.flatMap((n) => (known.get(n)?.identityKeys ?? []).map((k) => k.kind)));
   const claimed = new Map<string, number>(); // `${contract}/${channel}` -> binding index
   for (const [i, binding] of m.providers.entries()) {
     const mine = new Set<string>();
@@ -280,6 +282,18 @@ export function validateInstance(
       } else {
         claimed.set(`${binding.contract}/${channel}`, i);
       }
+    }
+    // Kinds a binding names explicitly are vocabulary too; the ones an
+    // adapter declares for itself are checked at boot (decision 0030).
+    const kinds = new Set<string>();
+    for (const [j, kind] of (binding.finds ?? []).entries()) {
+      const at = `providers.${i}.finds.${j}`;
+      if (!declaredKinds.has(kind)) issues.push(issue("error", at, `no enabled domain declares the identity key "${kind}"`, 1));
+      if (kinds.has(kind)) issues.push(issue("error", at, `"${kind}" is listed twice`));
+      kinds.add(kind);
+    }
+    if (binding.finds && binding.channels) {
+      issues.push(issue("error", `providers.${i}`, "a binding takes channels or finds keys in sequence, never both (decision 0030)"));
     }
     if (binding.env.length === 0) {
       issues.push(issue("warning", `providers.${i}.env`, "no credentials declared; is this adapter really unauthenticated?"));

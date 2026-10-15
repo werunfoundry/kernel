@@ -1,5 +1,7 @@
 # 0015 — One adapter per contract and channel
 
+> Completed by [0030](0030-sources-in-sequence-by-what-they-find.md): a contract may also be bound in sequence, by the key kinds each adapter finds — never both ways at once.
+
 Completes [0012](0012-one-provider-workspace-per-instance.md), which allowed an
 instance several providers for one capability and recorded that the kernel
 could not yet hold them.

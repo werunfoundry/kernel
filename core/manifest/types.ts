@@ -130,6 +130,12 @@ export interface ProviderBinding {
    * one adapter per channel, and never two on the same channel.
    */
   channels?: string[];
+  /**
+   * The identity key kinds this binding is asked for (decision 0030).
+   * Defaults to every kind the adapter declares. A contract bound more than
+   * once without channels is bound in sequence, in the order of `providers`.
+   */
+  finds?: string[];
 }
 
 export interface InstanceManifest {

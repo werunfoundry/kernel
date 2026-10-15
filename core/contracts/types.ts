@@ -76,6 +76,15 @@ export interface Contract {
   readonly channels?: readonly string[];
 
   /**
+   * The identity key kinds this adapter's answers can attest, when its
+   * contract finds keys — values from the `identityKeys` the enabled domains
+   * declare. A contract bound more than once may be bound in sequence by
+   * them instead of per channel (decision 0030), and this is how an adapter
+   * says which kinds it can be asked for.
+   */
+  readonly finds?: readonly string[];
+
+  /**
    * Can the provider be reached, and does it accept these credentials? The
    * cheapest call that answers both, and nothing more (decision 0009).
    *

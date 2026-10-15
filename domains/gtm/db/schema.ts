@@ -54,7 +54,7 @@ export const enrolmentState = gtm.enum("enrolment_state", [
 ]);
 
 /** Why someone was not enrolled. Four, and never folded into one (0019). */
-export const skipReason = gtm.enum("skip_reason", ["protected", "capacity", "duplicate", "unreachable"]);
+export const skipReason = gtm.enum("skip_reason", ["protected", "capacity", "duplicate", "unreachable", "opted_out"]);
 
 export const lifecycleStage = gtm.enum("lifecycle_stage", [
   "unknown",

@@ -12,7 +12,15 @@
  *   --max-age <min>     how old the protected set may be
  *   --sender <id>       a sender whose capacity bounds the run; repeatable
  *   --limit <n>         how many candidate companies to read
+ *   --from-run <id>     enrol the people this live sourcing run kept
+ *                       (`kernel-source --live`), instead of finding people
  *   --live              actually enrol
+ *
+ * With `--from-run`, nobody that run did not keep is considered, and
+ * protection, the opt-out and the registry are checked again here: what the
+ * sourcing run decided is not trusted past the moment it was decided. The
+ * two commands stay two on purpose — between them, a person reads the
+ * sourcing report.
  *
  * Exits 0 when the run succeeded, 1 otherwise — a run that protection
  * stopped is not a success, even though it is the right outcome.
@@ -77,6 +85,7 @@ async function main(): Promise<number> {
         trigger: "cli",
         actor: { type: "human" },
         ...(limit > 0 ? { query: { limit } } : {}),
+        ...(value("from-run") ? { fromSourcingRun: value("from-run")! } : {}),
         ...(values("sender").length ? { senders: values("sender").map((externalId) => ({ externalId })) } : {}),
       },
       );
@@ -89,8 +98,10 @@ async function main(): Promise<number> {
       return 1;
     }
 
-    const keyOf = (s: { person?: { keys: { value: string }[] }; company: { domain?: string; name?: string } }) =>
-      s.person?.keys[0]?.value ?? s.company.domain ?? s.company.name ?? "?";
+    // An address when there is one: a sourced person's first key is often a profile id.
+    const shown = (p: { keys: { kind: string; value: string }[] }) => p.keys.find((k) => k.kind === "email")?.value ?? p.keys[0]?.value;
+    const keyOf = (s: { person?: { keys: { kind: string; value: string }[] }; company: { domain?: string; name?: string } }) =>
+      (s.person ? shown(s.person) : undefined) ?? s.company.domain ?? s.company.name ?? "?";
     console.log(`run: ${report.runId} — ${report.dryRun ? "dry run" : "live"} — ${report.status}`);
     if (report.stoppedBy) console.log(`  stopped: ${report.stoppedBy}`);
     console.log(`  protected accounts read: ${report.protectedAccounts}`);
@@ -98,12 +109,12 @@ async function main(): Promise<number> {
       `  capacity: ${report.capacity.checked ? `budget ${report.capacity.budget}` : `not checked — ${report.capacity.why}`}`,
     );
     console.log(`  ${report.dryRun ? "would enrol" : "enrolled"}: ${report.enrolled.length}`);
-    for (const e of report.enrolled) console.log(`    + ${e.person.keys[0]?.value} (${e.state})`);
+    for (const e of report.enrolled) console.log(`    + ${shown(e.person)} (${e.state})`);
     if (report.reconciled.length > 0) {
       console.log(`  reconciled, enrolled by an earlier run that stopped before recording it: ${report.reconciled.length}`);
-      for (const e of report.reconciled) console.log(`    = ${e.person.keys[0]?.value} (${e.state})`);
+      for (const e of report.reconciled) console.log(`    = ${shown(e.person)} (${e.state})`);
     }
-    const reasons = ["protected", "capacity", "duplicate", "unreachable"] as const;
+    const reasons = ["protected", "opted_out", "capacity", "duplicate", "unreachable"] as const;
     for (const reason of reasons) {
       const these = report.skipped.filter((s) => s.reason === reason);
       if (these.length === 0) continue;

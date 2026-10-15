@@ -20,7 +20,8 @@
  *      that enrols the open accounts' people and skips the protected one, and
  *      a replay that enrols nobody twice; then `kernel-source`, dry and
  *      live, excluding by protection and by the CRM before and after
- *      completion. Every run is read back from the database.
+ *      completion; then `kernel-enrol --from-run` on what it kept, twice.
+ *      Every run is read back from the database.
  *
  *   TEST_DATABASE_URL=postgresql://… node scripts/try-instance.mjs
  *
@@ -259,6 +260,23 @@ try {
     expect(sourcedLive.status === 0, `the sourcing live run exited ${sourcedLive.status}`);
     expect(/kept: 1/.test(sourcedLive.stdout), "the sourcing live run did not keep Ada");
     expect(JSON.stringify(await outcomesOf(sourcedLive.stdout)) === JSON.stringify(expected(1)), `the sourcing live run kept ${JSON.stringify(await outcomesOf(sourcedLive.stdout))}`);
+
+    // The bridge: enrolment reads the people that run kept — Ada — and no one
+    // else, in a sequence of its own; a second consumption enrols nobody.
+    const sourcingRun = sourcedLive.stdout.match(/^run: ([0-9a-f-]{36})/m)?.[1] ?? "";
+    const fromArgs = ["--sequence", "sourced", "--channel", "email", "--max-age", "60", "--from-run", sourcingRun];
+
+    step("enrol from the sourcing run, live");
+    const fromLive = await bin("kernel-enrol", [...fromArgs, "--live"]);
+    show(fromLive);
+    expect(fromLive.status === 0, `enrolling from the sourcing run exited ${fromLive.status}`);
+    expect(enrolled(fromLive.stdout) === 1 && /\+ ada@open\.example\.com/.test(fromLive.stdout), "enrolling from the sourcing run did not enrol Ada alone");
+
+    step("enrol from the sourcing run, again");
+    const fromAgain = await bin("kernel-enrol", [...fromArgs, "--live"]);
+    show(fromAgain);
+    expect(enrolled(fromAgain.stdout) === 0, "a sourcing run consumed twice enrolled someone twice");
+    expect(/already enrolled in this sequence, by the registry/.test(fromAgain.stdout), "the second consumption was not caught by the registry");
   }
   await client.end();
 } catch (error) {

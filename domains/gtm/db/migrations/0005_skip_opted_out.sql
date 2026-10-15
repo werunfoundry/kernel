@@ -1,0 +1,1 @@
+ALTER TYPE "gtm"."skip_reason" ADD VALUE 'opted_out';

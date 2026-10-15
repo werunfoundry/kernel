@@ -213,7 +213,7 @@ const held = () => [...world.enrolled.values()].sort();
 
 beforeEach(async () => {
   if (client) {
-    await client.query("truncate gtm.enrolment_skip, gtm.enrolment, relations.person, relations.company cascade");
+    await client.query("truncate gtm.enrolment_skip, gtm.enrolment, gtm.sourcing_result, relations.person, relations.company cascade");
   }
   world.statusCalls = 0;
   world.lookedUp = [];
@@ -621,5 +621,113 @@ describe("what the people source is asked", { skip: base ? false : "TEST_DATABAS
     const r = await run({ dryRun: true });
     assert.deepEqual(world.lookedUp, []);
     assert.match(r.skipped.find((s) => s.reason === "unreachable")?.detail ?? "", /keys for it are not valid/);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The opt-out, read by every path that contacts anyone                        */
+/* -------------------------------------------------------------------------- */
+
+describe("the opt-out", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  // Ada is at an open company, unprotected, never enrolled: only her opt-out
+  // can stop her.
+  it("skips a person who opted out, and the sequencer never holds them", async () => {
+    await client.query("insert into relations.person (email, opted_out_at) values ('ada@open.example.com', now())");
+    const r = await run();
+    assert.deepEqual(held(), ["bo@open.example.com"]);
+    assert.deepEqual(r.skipped.filter((s) => s.reason === "opted_out").map((s) => emailOf(s.person!)), ["ada@open.example.com"]);
+    const kept = (await client.query("select reason from gtm.enrolment_skip where run_id = $1 and reason = 'opted_out'", [r.runId])).rows;
+    assert.equal(kept.length, 1, "the opt-out skip was not kept with the run");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Enrolling the people a sourcing run kept (0031)                             */
+/* -------------------------------------------------------------------------- */
+
+describe("enrolling from a sourcing run", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  /**
+   * A sourcing run on record, as `source` writes one: the run, the person
+   * recorded, and the kept row carrying the completed identity.
+   */
+  async function sourced(
+    kept: { email: string; id: string; domain: string; outcome?: string }[],
+    run: { processKey?: string; dryRun?: boolean; status?: string } = {},
+  ): Promise<string> {
+    const { rows } = await client.query(
+      "insert into core.run (process_key, trigger, status, actor_type, dry_run, finished_at) values ($1, 'cli', $2, 'human', $3, now()) returning id",
+      [run.processKey ?? "gtm.source", run.status ?? "succeeded", run.dryRun ?? false],
+    );
+    const runId = rows[0].id as string;
+    for (const k of kept) {
+      const person = { subject: "person", keys: [{ kind: "social_profile_id", network: "net_a", value: k.id }, { kind: "email", value: k.email }] };
+      const recorded = run.dryRun
+        ? undefined
+        : (await client.query("insert into relations.person (email, external_id, full_name) values ($1, $2, 'Someone') returning id", [k.email, `net_a:${k.id}`])).rows[0].id;
+      await client.query(
+        "insert into gtm.sourcing_result (run_id, pass, outcome, detail, person, company, person_id, subject) values ($1, 'person', $6, 'as the run decided', $2, $3, $4, $5)",
+        [runId, person, { domain: k.domain }, recorded ?? null, `person:${k.id}`, k.outcome ?? "kept"],
+      );
+    }
+    return runId;
+  }
+
+  it("enrols exactly the people the run kept, with the keys it attested, and sources nobody", async () => {
+    // Bo is recorded, but the run excluded him: a row with a person is not a
+    // kept one.
+    const id = await sourced([
+      { email: "ada@open.example.com", id: "101", domain: "open.example.com" },
+      { email: "bo@open.example.com", id: "102", domain: "open.example.com", outcome: "known_to_crm" },
+    ]);
+    const r = await run({ fromSourcingRun: id });
+    assert.equal(r.status, "succeeded", r.stoppedBy);
+    // Bo is at the same open company, and the target list would give him: the
+    // run did not keep him, so he is not considered.
+    assert.deepEqual(held(), ["ada@open.example.com"]);
+    assert.deepEqual(world.lookedUp, [], "the people source was asked again");
+    assert.deepEqual(r.enrolled[0]?.person.keys.map((k) => k.kind).sort(), ["email", "social_profile_id"]);
+  });
+
+  it("reads protection again: a company protected since the sourcing run is skipped", async () => {
+    // Cy's address is elsewhere: only the company's protection, read again
+    // by this run, can stop Cy.
+    const id = await sourced([{ email: "cy@cy-consulting.example.net", id: "103", domain: "customer.example.org" }]);
+    const r = await run({ fromSourcingRun: id });
+    assert.deepEqual(held(), []);
+    assert.deepEqual(r.skipped.map((s) => s.reason), ["protected"]);
+  });
+
+  it("reads the opt-out again: a person who opted out since the sourcing run is skipped", async () => {
+    const id = await sourced([{ email: "ada@open.example.com", id: "101", domain: "open.example.com" }]);
+    await client.query("update relations.person set opted_out_at = now() where email = 'ada@open.example.com'");
+    const r = await run({ fromSourcingRun: id });
+    assert.deepEqual(held(), []);
+    assert.deepEqual(r.skipped.map((s) => s.reason), ["opted_out"]);
+  });
+
+  it("consumed twice, enrols nobody the second time: the registry catches it (0026)", async () => {
+    const id = await sourced([
+      { email: "ada@open.example.com", id: "101", domain: "open.example.com" },
+      { email: "bo@open.example.com", id: "102", domain: "open.example.com" },
+    ]);
+    const first = await run({ fromSourcingRun: id });
+    assert.equal(first.enrolled.length, 2);
+    const calls = world.enrolCalls;
+    const second = await run({ fromSourcingRun: id });
+    assert.equal(second.enrolled.length, 0);
+    assert.equal(world.enrolCalls, calls, "the sequencer was asked to enrol someone again");
+    assert.deepEqual(second.skipped.map((s) => s.detail), ["already enrolled in this sequence, by the registry", "already enrolled in this sequence, by the registry"]);
+    const rows = (await client.query("select count(*)::int as n from gtm.enrolment")).rows[0].n;
+    assert.equal(rows, 2);
+  });
+
+  it("refuses a run it cannot enrol from, before opening one of its own", async () => {
+    const runs = async () => (await client.query("select count(*)::int as n from core.run where process_key like 'gtm.enrol.%'")).rows[0].n as number;
+    const before = await runs();
+    await assert.rejects(run({ fromSourcingRun: await sourced([], { dryRun: true }) }), /was a dry run: it kept nobody on record/);
+    await assert.rejects(run({ fromSourcingRun: await sourced([], { status: "failed" }) }), /ended as failed; only a finished sourcing run/);
+    await assert.rejects(run({ fromSourcingRun: await sourced([], { processKey: "instance.verify" }) }), /is a run of instance.verify, not a sourcing run/);
+    await assert.rejects(run({ fromSourcingRun: "00000000-0000-4000-8000-000000000000" }), /no run 00000000-0000-4000-8000-000000000000 is on record/);
+    assert.equal(await runs(), before, "an enrolment run was opened for a sourcing run that cannot be enrolled from");
   });
 });

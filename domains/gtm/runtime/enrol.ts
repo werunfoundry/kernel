@@ -46,22 +46,30 @@ import { checkIdentity, hostOf, normalizeIdentity } from "@werunfoundry/core/ide
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
-import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
+import { run as runTable } from "@werunfoundry/core/db/schema";
+import type { FoundPerson, PeopleSource } from "@werunfoundry/relations/contracts/people-source";
+import { person as personTable } from "@werunfoundry/relations/db/schema";
 import { findPerson, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequencer.js";
 import { remainingOf } from "../contracts/sequencer.js";
 import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
-import { enrolment, enrolmentSkip } from "../db/schema.js";
+import { enrolment, enrolmentSkip, sourcingResult } from "../db/schema.js";
 import { readProtection } from "./protection.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", peopleSource: "people_source", sequencer: "sequencer" } as const;
 
-export type SkipReason = "protected" | "capacity" | "duplicate" | "unreachable";
+export type SkipReason = "protected" | "opted_out" | "capacity" | "duplicate" | "unreachable";
 
 export interface EnrolRequest {
   sequenceKey: string;
+  /**
+   * Enrol the people this live sourcing run kept (0031), with the keys
+   * their completion attested, instead of finding people through the people
+   * source. Nobody that run did not keep is considered.
+   */
+  fromSourcingRun?: string;
   channel: string;
   /** The candidate query, passed to the target list untouched. */
   query?: TargetQuery;
@@ -148,6 +156,41 @@ function idempotencyKey(person: Identity, sequenceKey: string, channel: string):
   return createHash("sha256").update([sequenceKey, channel, ...keys].join("\n")).digest("hex").slice(0, 32);
 }
 
+/**
+ * The people a sourcing run kept, grouped by company, as that run recorded
+ * them: the completed identity and the person row it was recorded as.
+ *
+ * Only a live run that finished — succeeded, or partial after keeping
+ * someone — can be enrolled from. A dry run kept nobody on record, a failed
+ * one stopped before deciding, and a run of another process is not a
+ * sourcing run. Each is refused with the reason, before anything is opened.
+ */
+async function keptBy(deps: EnrolDeps, runId: string): Promise<{ company: TargetCompany; people: FoundPerson[] }[]> {
+  const [source] = await deps.db
+    .select({ processKey: runTable.processKey, dryRun: runTable.dryRun, status: runTable.status })
+    .from(runTable)
+    .where(eq(runTable.id, runId));
+  if (!source) throw new Error(`no run ${runId} is on record`);
+  if (source.processKey !== "gtm.source") throw new Error(`run ${runId} is a run of ${source.processKey}, not a sourcing run`);
+  if (source.dryRun) throw new Error(`run ${runId} was a dry run: it kept nobody on record`);
+  if (source.status !== "succeeded" && source.status !== "partial") throw new Error(`run ${runId} ${source.status === "running" ? "is still running" : `ended as ${source.status}`}; only a finished sourcing run can be enrolled from`);
+
+  const rows = await deps.db
+    .select({ person: sourcingResult.person, company: sourcingResult.company, fullName: personTable.fullName })
+    .from(sourcingResult)
+    .innerJoin(personTable, eq(personTable.id, sourcingResult.personId))
+    .where(and(eq(sourcingResult.runId, runId), eq(sourcingResult.outcome, "kept")));
+  const groups = new Map<string, { company: TargetCompany; people: FoundPerson[] }>();
+  for (const row of rows) {
+    const company = { ...(row.company as Omit<TargetCompany, "attributes">), attributes: {} } as TargetCompany;
+    const key = JSON.stringify(row.company);
+    const group = groups.get(key) ?? { company, people: [] };
+    group.people.push({ identity: row.person as Identity, ...(row.fullName ? { display: { fullName: row.fullName } } : {}) });
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
 export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<EnrolReport> {
   const now = deps.now ?? (() => new Date());
   const targets = deps.registry.get(CONTRACTS.targetList) as TargetList | undefined;
@@ -156,9 +199,13 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
   // Configuration, checked before a run is opened: a run that could not have
   // done anything is not a run.
   if (!targets) throw new Error(`no adapter is bound to "${CONTRACTS.targetList}"`);
-  if (!people) throw new Error(`no adapter is bound to "${CONTRACTS.peopleSource}"`);
+  if (!people && !request.fromSourcingRun) throw new Error(`no adapter is bound to "${CONTRACTS.peopleSource}"`);
   if (!sequencer) throw new Error(`no "${CONTRACTS.sequencer}" adapter takes the channel "${request.channel}"`);
   if (!(request.protectedMaxAgeMinutes > 0)) throw new Error("protectedMaxAgeMinutes must be a positive number of minutes");
+
+  // A sourcing run is read before this run is opened: a run that names one
+  // that cannot be enrolled from could not have done anything.
+  const fromRun = request.fromSourcingRun ? await keptBy(deps, request.fromSourcingRun) : undefined;
 
   const open: OpenRun = await openRun(deps.db, {
     processKey: `gtm.enrol.${request.sequenceKey}`,
@@ -251,44 +298,69 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       report.capacity = { checked: true, budget };
     }
 
-    /* 3. Candidates, people, enrolment ---------------------------------- */
+    /* 3. Who to consider: the target list's people, or a sourcing run's -- */
 
-    const candidates = await targets.candidates(request.query ?? {}, ctx);
-    if (!candidates.ok) throw new Stop(`candidates unavailable: ${candidates.error.code}: ${candidates.error.message}`);
+    /**
+     * Each company, and the people at it to consider. From the target list
+     * and the people source, company by company, as before; or from the
+     * people a sourcing run kept (0031), with the keys their completion
+     * attested — never sourced again here, and never anyone that run did not
+     * keep. Either way, everyone goes through the same checks below:
+     * protection is read fresh by this run, not trusted from the other one.
+     */
+    async function* considered(): AsyncGenerator<{ company: TargetCompany; host: string; people: FoundPerson[] }> {
+      if (fromRun) {
+        for (const group of fromRun) {
+          const company = group.company;
+          if (companyProtected(company)) {
+            await skip({ reason: "protected", company, detail: "the account is protected" });
+            continue;
+          }
+          yield { company, host: company.domain ? domainOf(company.domain) : "", people: group.people };
+        }
+        return;
+      }
+      const candidates = await targets!.candidates(request.query ?? {}, ctx);
+      if (!candidates.ok) throw new Stop(`candidates unavailable: ${candidates.error.code}: ${candidates.error.message}`);
+      for (const company of candidates.value.items) {
+        if (companyProtected(company)) {
+          await skip({ reason: "protected", company, detail: "the account is protected" });
+          continue;
+        }
+        const host = company.domain ? domainOf(company.domain) : "";
+        if (!host) {
+          await skip({ reason: "unreachable", company, detail: "no domain to find its people by" });
+          continue;
+        }
+        // The company as the target list attests it (decisions 0024, 0029): its
+        // domain, and its id on a network when the source holds one. A
+        // people source that only searches from an attested id gets one; a
+        // key the vocabulary refuses is not passed on as if it were good.
+        const companyIdentity = normalizeIdentity(
+          {
+            subject: "company",
+            keys: [{ kind: "domain", value: host }, ...(company.identity?.keys.filter((k) => k.kind !== "domain") ?? [])],
+          },
+          deps.identity,
+        );
+        const malformed = checkIdentity(companyIdentity, deps.identity).filter((i) => i.severity === "error");
+        if (malformed.length > 0) {
+          await skip({ reason: "unreachable", company, detail: `the target list's keys for it are not valid: ${malformed.map((i) => i.message).join("; ")}` });
+          continue;
+        }
+        const found = await people!.peopleAt({ company: companyIdentity, limit: request.peoplePerCompany ?? 5 }, ctx);
+        if (!found.ok) {
+          await skip({ reason: "unreachable", company, detail: `its people could not be looked up: ${found.error.code}` });
+          continue;
+        }
+        yield { company, host, people: found.value.items.slice(0, request.peoplePerCompany ?? 5) };
+      }
+    }
+
+    /* 4. Each person: the checks, the registry, the enrolment ------------ */
 
     const seenPeople = new Set<string>();
-    for (const company of candidates.value.items) {
-      if (companyProtected(company)) {
-        await skip({ reason: "protected", company, detail: "the account is protected" });
-        continue;
-      }
-      const host = company.domain ? domainOf(company.domain) : "";
-      if (!host) {
-        await skip({ reason: "unreachable", company, detail: "no domain to find its people by" });
-        continue;
-      }
-      // The company as the target list attests it (decisions 0024, 0029): its
-      // domain, and its id on a network when the source holds one. A
-      // people source that only searches from an attested id gets one; a
-      // key the vocabulary refuses is not passed on as if it were good.
-      const companyIdentity = normalizeIdentity(
-        {
-          subject: "company",
-          keys: [{ kind: "domain", value: host }, ...(company.identity?.keys.filter((k) => k.kind !== "domain") ?? [])],
-        },
-        deps.identity,
-      );
-      const malformed = checkIdentity(companyIdentity, deps.identity).filter((i) => i.severity === "error");
-      if (malformed.length > 0) {
-        await skip({ reason: "unreachable", company, detail: `the target list's keys for it are not valid: ${malformed.map((i) => i.message).join("; ")}` });
-        continue;
-      }
-      const found = await people.peopleAt({ company: companyIdentity, limit: request.peoplePerCompany ?? 5 }, ctx);
-      if (!found.ok) {
-        await skip({ reason: "unreachable", company, detail: `its people could not be looked up: ${found.error.code}` });
-        continue;
-      }
-
+    for await (const { company, host, people: atCompany } of considered()) {
       /** The company's row, recorded once per run, the first time someone at it is about to be enrolled. */
       let companyRow: { id: string } | { conflict: string } | undefined;
       const recordedCompany = async () =>
@@ -298,7 +370,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           company.name ? { name: company.name } : {},
         ));
 
-      for (const one of found.value.items.slice(0, request.peoplePerCompany ?? 5)) {
+      for (const one of atCompany) {
         const person = normalizeIdentity(one.identity, deps.identity);
         const computed = idempotencyKey(person, request.sequenceKey, request.channel);
         if (personProtected(person)) {
@@ -317,6 +389,15 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         if ("conflict" in known) {
           await skip({ reason: "unreachable", person, company, detail: `the registry cannot tell who this is: ${known.conflict}` });
           continue;
+        }
+        // The global opt-out, read by every path that contacts anyone: a
+        // person who opted out is not enrollable by any route.
+        if ("id" in known) {
+          const [recorded] = await deps.db.select({ optedOutAt: personTable.optedOutAt }).from(personTable).where(eq(personTable.id, known.id));
+          if (recorded?.optedOutAt) {
+            await skip({ reason: "opted_out", person, company, detail: "opted out" });
+            continue;
+          }
         }
         let row = "id" in known ? await registryRow(known.id) : undefined;
         if (row?.state === "enrolled") {

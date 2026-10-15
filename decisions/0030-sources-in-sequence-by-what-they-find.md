@@ -1,5 +1,7 @@
 # 0030 — Sources in sequence, by what they find
 
+> Completed by [0031](0031-the-sourcing-path-and-the-crm-as-exclusion.md): the sourcing path replays the person check on the completed identity, as this decision required.
+
 Supersedes in part [0016](0016-enrichment-says-whether-it-looked.md), which
 put finding a company's people and completing an identity in one contract.
 Completes [0015](0015-one-adapter-per-contract-and-channel.md), which bound a

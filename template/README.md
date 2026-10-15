@@ -28,7 +28,9 @@ follow:
 - **Only syntax that can be erased.** No enums, no namespaces, no constructor
   parameter properties: stripping cannot remove them, and they would fail at
   run time. `erasableSyntaxOnly` in `tsconfig.json` refuses them at typecheck
-  instead.
+  instead. It exists from TypeScript 5.8, which is why `package.json` asks
+  for `typescript` 5.8 or later, beside `@types/node` for the Node floor;
+  `pnpm typecheck` uses those, not whatever `tsc` the machine has.
 
 ## How this instance gets the engine
 

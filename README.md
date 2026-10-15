@@ -23,6 +23,7 @@ domains/
   gtm/                acquisition
     db/ contracts/    its tables; the sequencer and the target list
     manifest/         the shapes of its own truths
+adapters/             one folder per provider, satisfying the domains' contracts
 decisions/            boundary decisions, numbered
 template/             what an instance is generated from
 scripts/              checks that make the doctrine enforceable

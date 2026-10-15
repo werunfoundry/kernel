@@ -11,6 +11,7 @@
 
 import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
+import { posix } from "node:path";
 
 const staged = process.argv.includes("--staged");
 const messageAt = process.argv.indexOf("--message");
@@ -328,8 +329,12 @@ for (const file of allFiles) {
  * adds an export and forgets the second list — and the workspace, which never
  * reads the published one, stays green while every instance breaks.
  */
-for (const name of layers.keys()) {
-  const file = name === "core" ? "core/package.json" : `domains/${name}/package.json`;
+// The adapters package is published like a layer and is not one: the same
+// two lists, and no domain.yaml to export (decision 0023).
+const packages = [...layers.keys()].map((name) => [name, name === "core" ? "core/package.json" : `domains/${name}/package.json`]);
+if (allFiles.includes("adapters/package.json")) packages.push(["adapters", "adapters/package.json"]);
+
+for (const [name, file] of packages) {
   let pkg;
   try {
     pkg = JSON.parse(readFileSync(file, "utf8"));
@@ -360,7 +365,7 @@ for (const name of layers.keys()) {
     }
   }
 
-  if (name === "core") continue;
+  if (name === "core" || name === "adapters") continue;
   if (pkg.name !== `${PKG}/${name}`) {
     fail(6, file, 0, `is named "${pkg.name}"; an instance looks for this domain as "${PKG}/${name}"`);
   }
@@ -435,18 +440,21 @@ function lineAt(body, index) {
  */
 
 const ADAPTER_SEGMENT = /(^|\/)adapters?\//;
-// Two homes, for two different repositories. A domain's adapters are the ones
-// this package ships; `template/adapters/` is the skeleton an instance is
-// generated from, where an instance keeps its own (decision 0005). Anywhere
-// else, the exemption below would be a way to switch the provider check off.
-const ADAPTER_HOME = /^(domains\/[^/]+|template)\/adapters\//;
+// Two homes, for two different repositories. `adapters/<provider>/` holds the
+// adapters this repository ships, one folder per provider whichever domains
+// own the contracts it satisfies (decision 0023); `template/adapters/` is the
+// skeleton an instance is generated from, where an instance keeps its own
+// (decision 0005). Anywhere else, the exemption above would be a way to
+// switch the provider check off. At the root of `adapters/` only the
+// package's own files sit: code there belongs to no provider.
+const ADAPTER_HOME = /^(adapters\/[^/]+\/|template\/adapters\/|adapters\/(package\.json|tsconfig(\.build)?\.json|README\.md)$)/;
 const SCHEMA_HOME = /^(core|domains\/[^/]+)\/db\/schema\.ts$/;
 
 const domainFolders = new Set();
 
 for (const file of allFiles) {
   if (ADAPTER_SEGMENT.test(file) && !ADAPTER_HOME.test(file)) {
-    fail(6, file, 0, "an adapter lives in domains/<name>/adapters/ or template/adapters/, nowhere else");
+    fail(6, file, 0, "an adapter lives in adapters/<provider>/ or template/adapters/, nowhere else");
   }
 
   const inDomain = file.match(/^domains\/([^/]+)\//);
@@ -475,6 +483,81 @@ for (const file of allFiles) {
 for (const folder of [...domainFolders].sort()) {
   if (!layers.has(folder)) {
     fail(2, `domains/${folder}`, 0, "no domain.yaml: this folder declares nothing, so nothing about it is checked");
+  }
+}
+
+/* -- Rule 6: an adapter sees contracts, and nothing else of the engine ---- */
+
+/**
+ * An adapter satisfies contracts. It may import the contracts of any domain —
+ * that is what lets one provider's folder serve two sibling domains, which no
+ * single domain sees (decision 0023) — and nothing else the engine has: not a
+ * schema, not the runtime, not a manifest, not another adapter. An adapter
+ * that reaches the database or the enrolment path is a domain written in the
+ * wrong place.
+ *
+ * `@werunfoundry/core/identity` is part of that surface, not an exception to
+ * it: every contract that names a person or a company is written in its
+ * types (decision 0013).
+ *
+ * The rule-2 pass above reads static imports only, and only in layers, so this
+ * one reads every form a module can be named in — `import … from`,
+ * `export … from`, a bare `import "x"`, `import(…)`, `require(…)` — and
+ * refuses a dynamic one whose argument is not a literal, which no check can
+ * read. A relative import must stay in the adapter's own folder: `../../`
+ * would otherwise reach a schema without ever naming a package. And a
+ * database client is refused by name, because it reaches the database without
+ * importing anything of ours.
+ */
+
+const ADAPTER_CODE = /^(adapters\/([^/]+)\/|template\/adapters\/).*\.(ts|tsx|js|mjs|cjs)$/;
+const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s+)(["'])([^"']+)\1/gm;
+const UNREADABLE = /\b(?:import|require)\s*\(\s*(?!["'])(?!\))/g;
+const DATABASE_CLIENT = /^(pg|postgres|drizzle-orm|drizzle-kit)(\/|$)/;
+const CONTRACT_PATH = /^(contracts)(\/[a-z0-9-]+)*$/;
+
+function adapterMayImport(specifier) {
+  const [layer, ...rest] = specifier.slice(PKG.length + 1).split("/");
+  const path = rest.join("/");
+  if (!layers.has(layer)) return false;
+  if (CONTRACT_PATH.test(path)) return true;
+  return layer === "core" && path === "identity";
+}
+
+for (const file of allFiles) {
+  const at = file.match(ADAPTER_CODE);
+  if (!at) continue;
+  // Its own folder: one provider's, or the template's flat one.
+  const home = at[2] ? `adapters/${at[2]}/` : "template/adapters/";
+  let body;
+  try {
+    body = readFileSync(file, "utf8");
+  } catch {
+    continue;
+  }
+  const lines = body.split("\n");
+  const prose = (index) => /^\s*(\*|\/\/)/.test(lines[lineAt(body, index) - 1] ?? "");
+
+  for (const match of body.matchAll(SPECIFIER)) {
+    if (prose(match.index)) continue;
+    const specifier = match[2];
+    const line = lineAt(body, match.index);
+    if (specifier.startsWith(".")) {
+      const target = posix.normalize(posix.join(posix.dirname(file), specifier));
+      if (!target.startsWith(home)) {
+        fail(6, file, line, `imports ${specifier}, outside ${home}: an adapter reaches the engine through its contracts only`);
+      }
+    } else if (specifier.startsWith(`${PKG}/`)) {
+      if (!adapterMayImport(specifier)) {
+        fail(6, file, line, `imports ${specifier}: an adapter may import a domain's contracts and nothing else of the engine (decision 0023)`);
+      }
+    } else if (DATABASE_CLIENT.test(specifier)) {
+      fail(6, file, line, `imports ${specifier}: an adapter never reaches the database; the engine owns persistence`);
+    }
+  }
+  for (const match of body.matchAll(UNREADABLE)) {
+    if (prose(match.index)) continue;
+    fail(6, file, lineAt(body, match.index), "loads a module this check cannot read; name it with a string literal");
   }
 }
 

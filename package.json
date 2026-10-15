@@ -11,7 +11,7 @@
     "build": "pnpm -r build",
     "test": "pnpm test:checks && pnpm test:engine",
     "test:checks": "node --test \"scripts/**/*.test.mjs\"",
-    "test:engine": "node --import tsx --test --test-timeout=60000 \"core/**/*.test.ts\" \"domains/**/*.test.ts\" \"template/**/*.test.ts\"",
+    "test:engine": "node --import tsx --test --test-timeout=60000 \"core/**/*.test.ts\" \"domains/**/*.test.ts\" \"adapters/**/*.test.ts\" \"template/**/*.test.ts\"",
     "new-instance": "node scripts/new-instance.mjs",
     "try-instance": "node scripts/try-instance.mjs",
     "prepare": "git config core.hooksPath .githooks",

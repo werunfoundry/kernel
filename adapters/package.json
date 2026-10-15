@@ -1,0 +1,46 @@
+{
+  "name": "@werunfoundry/adapters",
+  "version": "0.1.0",
+  "description": "Adapters the kernel ships: one folder per provider, each satisfying contracts the domains declare.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./*": "./*/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      "./*": {
+        "types": "./dist/*/index.d.ts",
+        "default": "./dist/*/index.js"
+      }
+    }
+  },
+  "peerDependencies": {
+    "@werunfoundry/core": "workspace:*",
+    "@werunfoundry/gtm": "workspace:*",
+    "@werunfoundry/relations": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@werunfoundry/gtm": {
+      "optional": true
+    },
+    "@werunfoundry/relations": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@werunfoundry/core": "workspace:*",
+    "@werunfoundry/gtm": "workspace:*",
+    "@werunfoundry/relations": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "prepack": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && pnpm build",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo"
+  ]
+}

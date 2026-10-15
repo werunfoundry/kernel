@@ -83,7 +83,10 @@ this system asks.
   that is what they are, and because a reader should not need the pattern's
   name to understand the folder.)
 - A provider is named only inside its adapter — which may live in exactly one
-  place, `domains/<name>/adapters/`. Never in a domain, never in the core.
+  place, `adapters/<provider>/`. Never in a domain, never in the core.
+- An adapter may import the contracts of any domain, and nothing else of the
+  engine: no schema, no runtime, no database client. That is what lets one
+  provider serve two sibling domains without either depending on the other.
 
 ## 7. This repository is public
 

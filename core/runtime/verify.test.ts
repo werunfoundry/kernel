@@ -104,6 +104,8 @@ function instance(
     driver = true,
     truths = {} as Record<string, string>,
     truthsDir = "folder" as "folder" | "absent" | "file",
+    /** More bindings, each with its adapter file: `[line, file name, body]`. */
+    more = [] as [string, string, string][],
   } = {},
 ): string {
   const root = mkdtempSync(join(tmpdir(), "verify-"));
@@ -132,10 +134,12 @@ function instance(
       `enabledDomains: ${domains}`,
       "providers:",
       `  - { contract: crm, adapter: ./adapter.mjs, env: [], options: { baseUrl: "http://127.0.0.1:${port}" } }`,
+      ...more.map(([line]) => line),
       "",
     ].join("\n"),
   );
   writeFileSync(join(root, "adapter.mjs"), adapter);
+  for (const [, name, body] of more) writeFileSync(join(root, name), body);
   return root;
 }
 
@@ -164,6 +168,18 @@ const countRuns = async () => {
 };
 
 describe("verify", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  it("says a sequence in the order its sources are asked, per kind (0030)", async () => {
+    const source = (name: string, finds: string[]): [string, string, string] => [
+      `  - { contract: enrichment, adapter: ./${name}.mjs, env: [] }`,
+      `${name}.mjs`,
+      `export default () => ({ provider: "${name}", finds: ${JSON.stringify(finds)} });\n`,
+    ];
+    const forward = await run(instance(probing("/up"), { more: [source("first", ["email"]), source("second", ["email", "social_profile_handle"])] }));
+    assert.match(forward.said, /enrichment in sequence — email: first → second; social_profile_handle: second/);
+    const backward = await run(instance(probing("/up"), { more: [source("second", ["email", "social_profile_handle"]), source("first", ["email"])] }));
+    assert.match(backward.said, /enrichment in sequence — email: second → first; social_profile_handle: second/);
+  });
+
   it("makes the round trip: a dry run opened, the provider probed with its id, the run closed", async () => {
     const { code, said } = await run(instance(probing("/up")));
     assert.equal(code, 0, said);

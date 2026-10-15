@@ -35,9 +35,9 @@ scripts/              checks that make the doctrine enforceable
 | --- | --- |
 | Doctrine | written, and checked by `scripts/check.mjs` |
 | Schema | written; migrations generated, and applied by `kernel-migrate` in a generated instance in CI |
-| Contracts | written, every capability: target list, enrichment, sequencer (every channel), inbound, metrics, CRM (0013–0018) |
+| Contracts | written, every capability: target list, people source, enrichment, sequencer (every channel), inbound, metrics, CRM (0013–0018, 0030) |
 | Manifest | written, validated |
-| Binding resolver | written |
+| Binding resolver | written; a contract bound once, per channel (0015), or in sequence by the keys each source finds (0030) |
 | Run recorder | written |
 | Boot | written; resolves every name from the instance (0007) |
 | End to end | in CI, a generated instance migrates, verifies and runs the enrolment path — dry, live and replayed (0019) |

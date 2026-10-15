@@ -36,6 +36,12 @@ export interface ResolvedAdapter {
    * channels.
    */
   channels: readonly string[];
+  /**
+   * The identity key kinds this binding is asked for: the ones the manifest
+   * names, or else every one the adapter declares. Empty for a contract that
+   * does not find keys (decision 0030).
+   */
+  finds: readonly string[];
   /** Its position in the manifest's `providers`, for messages. */
   index: number;
 }
@@ -48,8 +54,8 @@ export interface ResolvedAdapter {
 export interface Registry {
   /**
    * The adapter bound to a contract, when exactly one is. A contract bound
-   * per channel has no single answer, and asking for one throws rather than
-   * returning one of them at random (decision 0015).
+   * per channel or in sequence has no single answer, and asking for one
+   * throws rather than returning one of them at random (decisions 0015, 0030).
    */
   get(contract: string): Contract | undefined;
   /**
@@ -65,6 +71,12 @@ export interface Registry {
    * of them uses — suppressing someone is suppressing them on every channel.
    */
   all<T extends Contract>(contract: string): readonly T[];
+  /**
+   * Every binding of a contract, in the order of the manifest's `providers`,
+   * with the kinds each is asked for. The order is the sequence: a source is
+   * asked only for what those before it did not find (decision 0030).
+   */
+  sequence<T extends Contract>(contract: string): readonly { adapter: T; provider: string; finds: readonly string[]; index: number }[];
   list(): readonly ResolvedAdapter[];
 }
 
@@ -251,6 +263,18 @@ async function build(
   if (binding.channels && !serves) {
     channelIssues.push(issue(`${at}.channels`, "this adapter declares no channels, so a binding cannot assign it any"));
   }
+
+  // The same, for the key kinds an adapter finds (decision 0030).
+  const declaredFinds = (adapter as { finds?: unknown }).finds;
+  const finds = Array.isArray(declaredFinds) ? declaredFinds.filter((k): k is string => typeof k === "string") : undefined;
+  for (const [j, kind] of (binding.finds ?? []).entries()) {
+    if (finds && !finds.includes(kind)) {
+      channelIssues.push(issue(`${at}.finds.${j}`, `"${kind}" is not a key this adapter finds (it finds ${finds.join(", ") || "none"})`));
+    }
+  }
+  if (binding.finds && !finds) {
+    channelIssues.push(issue(`${at}.finds`, "this adapter declares no keys it finds, so a binding cannot ask it for any"));
+  }
   if (channelIssues.length > 0) return { issues: channelIssues };
 
   return {
@@ -261,6 +285,7 @@ async function build(
       provider,
       adapter: adapter as Contract,
       channels: binding.channels ?? serves ?? [],
+      finds: binding.finds ?? finds ?? [],
       index,
     },
   };
@@ -270,8 +295,10 @@ async function build(
  * Build every adapter the manifest binds.
  *
  * The manifest is assumed validated: `validateInstance` has already refused a
- * contract bound twice or a domain enabled without its dependencies. What is
- * checked here is only what cannot be known without reaching for the module.
+ * domain enabled without its dependencies, and a channel or a key kind named
+ * twice. It does not refuse a contract bound twice: whether that is allowed
+ * depends on the channels and the kinds each adapter declares, which only
+ * the built module says, so that rule is checked here (decisions 0015, 0030).
  */
 export async function resolveAdapters(
   manifest: InstanceManifest,
@@ -295,13 +322,39 @@ export async function resolveAdapters(
   for (const r of resolved) byContract.set(r.contract, [...(byContract.get(r.contract) ?? []), r]);
   for (const [contract, bound] of byContract) {
     if (bound.length < 2) continue;
+    // Or in sequence: every binding finds at least one kind, and none takes a
+    // channel. Never both ways at once — a contract half routed by channel and
+    // half by kind has no rule for which half answers (decision 0030).
+    if (bound.some((r) => r.finds.length > 0) && bound.every((r) => r.channels.length === 0)) {
+      for (const r of bound) {
+        if (r.finds.length === 0) {
+          issues.push(
+            issue(
+              `providers.${r.index}`,
+              `contract "${contract}" is bound in sequence, so each binding finds keys, and this one finds none`,
+            ),
+          );
+        }
+      }
+      continue;
+    }
     const taken = new Map<string, number>();
     for (const r of bound) {
       if (r.channels.length === 0) {
         issues.push(
           issue(
             `providers.${r.index}`,
-            `contract "${contract}" is bound more than once, so each binding takes channels, and this one takes none`,
+            r.finds.length > 0
+              ? `contract "${contract}" is bound per channel by another binding, and this one finds keys in sequence; never both ways at once`
+              : `contract "${contract}" is bound more than once, so each binding takes channels or finds keys in sequence, and this one does neither`,
+          ),
+        );
+      }
+      if (r.channels.length > 0 && r.finds.length > 0) {
+        issues.push(
+          issue(
+            `providers.${r.index}`,
+            `contract "${contract}" is bound more than once, and this binding both takes channels and finds keys; one or the other`,
           ),
         );
       }
@@ -327,7 +380,9 @@ export async function resolveAdapters(
     const bound = byContract.get(contract) ?? [];
     if (bound.length > 1) {
       throw new Error(
-        `the contract "${contract}" is bound per channel (${bound.flatMap((r) => r.channels).join(", ")}); ask for one channel, or for all`,
+        bound.every((r) => r.channels.length === 0)
+          ? `the contract "${contract}" is bound in sequence (${bound.map((r) => r.provider).join(" → ")}); ask for the sequence`
+          : `the contract "${contract}" is bound per channel (${bound.flatMap((r) => r.channels).join(", ")}); ask for one channel, or for all`,
       );
     }
     return bound[0];
@@ -350,6 +405,8 @@ export async function resolveAdapters(
       forChannel: <T extends Contract>(contract: string, channel: string) =>
         (byContract.get(contract) ?? []).find((r) => r.channels.includes(channel))?.adapter as T | undefined,
       all: <T extends Contract>(contract: string) => (byContract.get(contract) ?? []).map((r) => r.adapter as T),
+      sequence: <T extends Contract>(contract: string) =>
+        (byContract.get(contract) ?? []).map((r) => ({ adapter: r.adapter as T, provider: r.provider, finds: r.finds, index: r.index })),
       list: () => resolved,
     },
   };

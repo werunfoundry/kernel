@@ -61,6 +61,7 @@ describe("booting an instance", () => {
       r.registry.list().map((a) => `${a.contract}:${a.provider}`),
       [
         "target_list:sandbox-target-list",
+        "people_source:sandbox-enrichment",
         "enrichment:sandbox-enrichment",
         "sequencer:sandbox-sequencer",
         "inbound:sandbox-inbound",
@@ -272,7 +273,7 @@ describe("booting an instance", () => {
     it("refuses a contract bound twice where a binding takes no channel", async () => {
       const r = await boot({ root: twoSequencers(serving("email"), ADAPTER), env: {} });
       assert.equal(r.ok, false);
-      assert.match(messages(r).join("\n"), /bound more than once, so each binding takes channels, and this one takes none/);
+      assert.match(messages(r).join("\n"), /bound more than once, so each binding takes channels or finds keys in sequence, and this one does neither/);
     });
 
     it("refuses a channel no enabled domain declares, whoever names it", async () => {
@@ -280,6 +281,85 @@ describe("booting an instance", () => {
       assert.match(messages(declaredByAdapter).join("\n"), /no enabled domain declares the channel "carrier_pigeon"/);
       const namedByManifest = await boot({ root: twoSequencers(serving("email"), serving("social_message"), ["", ", channels: [carrier_pigeon]"]), env: {} });
       assert.match(messages(namedByManifest).join("\n"), /no enabled domain declares the channel "carrier_pigeon"/);
+    });
+  });
+
+  describe("a contract bound in sequence, by what it finds (0030)", () => {
+    /** An adapter that finds the given key kinds. */
+    const finding = (provider: string, ...kinds: string[]) =>
+      `export default () => ({ provider: ${JSON.stringify(provider)}, finds: ${JSON.stringify(kinds)} });\n`;
+    const twoSources = (a: string, b: string, extra: string[] = []) =>
+      instance({
+        "manifest.yaml": manifest([
+          "enabledDomains: [relations]",
+          "providers:",
+          `  - { contract: enrichment, adapter: ./adapters/a.mjs, env: []${extra[0] ?? ""} }`,
+          `  - { contract: enrichment, adapter: ./adapters/b.mjs, env: []${extra[1] ?? ""} }`,
+        ]),
+        "adapters/a.mjs": a,
+        "adapters/b.mjs": b,
+      }, ["relations"]);
+
+    it("binds two sources, and answers them in the manifest's order with what each finds", async () => {
+      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email", "social_profile_handle")), env: {} });
+      assert.equal(r.ok, true, JSON.stringify(r.issues));
+      if (!r.ok) return;
+      assert.deepEqual(
+        r.registry.sequence("enrichment").map((s) => `${s.provider}:${s.finds.join("+")}`),
+        ["first:email", "second:email+social_profile_handle"],
+      );
+      assert.throws(() => r.registry.get("enrichment"), /bound in sequence \(first → second\)/);
+    });
+
+    it("follows the manifest: the same two sources, listed the other way, run the other way", async () => {
+      const r = await boot({ root: twoSources(finding("second", "email"), finding("first", "email")), env: {} });
+      assert.equal(r.ok, true, JSON.stringify(r.issues));
+      if (!r.ok) return;
+      assert.deepEqual(r.registry.sequence("enrichment").map((s) => s.provider), ["second", "first"]);
+    });
+
+    it("lets a binding narrow a source to some of the kinds it finds", async () => {
+      const r = await boot({
+        root: twoSources(finding("first", "email", "social_profile_handle"), finding("second", "email"), [", finds: [social_profile_handle]"]),
+        env: {},
+      });
+      assert.equal(r.ok, true, JSON.stringify(r.issues));
+      if (!r.ok) return;
+      assert.deepEqual(r.registry.sequence("enrichment")[0]?.finds, ["social_profile_handle"]);
+    });
+
+    it("refuses a binding that asks a source for a kind it does not find", async () => {
+      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), [", finds: [social_profile_id]"]), env: {} });
+      assert.equal(r.ok, false);
+      assert.match(messages(r).join("\n"), /providers\.0\.finds\.0 "social_profile_id" is not a key this adapter finds \(it finds email\)/);
+    });
+
+    it("refuses a kind no enabled domain declares, whoever names it", async () => {
+      const declaredByAdapter = await boot({ root: twoSources(finding("first", "email"), finding("second", "fax")), env: {} });
+      assert.match(messages(declaredByAdapter).join("\n"), /providers\.1\.finds no enabled domain declares the identity key "fax"/);
+      const namedByManifest = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), ["", ", finds: [fax]"]), env: {} });
+      assert.match(messages(namedByManifest).join("\n"), /providers\.1\.finds\.0 no enabled domain declares the identity key "fax"/);
+    });
+
+    it("refuses a sequence where one binding finds nothing", async () => {
+      const r = await boot({ root: twoSources(finding("first", "email"), ADAPTER), env: {} });
+      assert.equal(r.ok, false);
+      assert.match(messages(r).join("\n"), /providers\.1 contract "enrichment" is bound in sequence, so each binding finds keys, and this one finds none/);
+    });
+
+    it("refuses a contract bound per channel by one binding and in sequence by another", async () => {
+      const r = await boot({
+        root: twoSources(`export default () => ({ provider: "by-channel", channels: ["email"] });\n`, finding("by-kind", "email")),
+        env: {},
+      });
+      assert.equal(r.ok, false);
+      assert.match(messages(r).join("\n"), /providers\.1 contract "enrichment" is bound per channel by another binding, and this one finds keys in sequence; never both ways at once/);
+    });
+
+    it("refuses a binding that names both channels and kinds", async () => {
+      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), [", channels: [email], finds: [email]"]), env: {} });
+      assert.equal(r.ok, false);
+      assert.match(messages(r).join("\n"), /providers\.0 a binding takes channels or finds keys in sequence, never both/);
     });
   });
 

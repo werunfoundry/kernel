@@ -86,10 +86,11 @@ function execute(sql: string, params: Record<string, string | string[]>): { fiel
     };
   }
   const aliases = [...sql.matchAll(/CAST\(`([^`]+)` AS STRING\) AS (\w+)/g)].map(([, column, alias]) => ({ column: column!, alias: alias! }));
-  const filter = /WHERE CAST\(`([^`]+)` AS STRING\) (= @status|IN UNNEST\(@active\))/.exec(sql);
+  const filter = /WHERE CAST\(`([^`]+)` AS STRING\) (= @status|IN UNNEST\(@active\))( OR `([^`]+)` IS NULL)?/.exec(sql);
   const kept = table.filter((row) => {
     if (!filter) return true;
     const value = row[filter[1]!] ?? null;
+    if (filter[3] && (row[filter[4]!] ?? null) === null) return true;
     return filter[2] === "= @status" ? value === params.status : (params.active as string[]).includes(value ?? "");
   });
   return { fields: aliases.map((a) => a.alias), rows: kept.map((row) => aliases.map((a) => row[a.column] ?? null)) };
@@ -317,15 +318,24 @@ describe("the binding", () => {
   });
 
   it("reads a boolean active column as the text a BOOLEAN casts to", async () => {
-    // What the warehouse hands the comparison: CAST(TRUE AS STRING) is "true", CAST(NULL AS STRING) is NULL.
+    // What the warehouse hands the comparison: CAST(TRUE AS STRING) is "true".
     state.customers = [
       { sub: "true", dom: "on.example.org", cust: null, nm: null },
       { sub: "false", dom: "off.example.org", cust: null, nm: null },
-      { sub: null, dom: "unknown.example.org", cust: null, nm: null },
     ];
     const r = await adapter({ "protected.activeValues": true }).protectedAccounts({}, ctx());
     assert.ok(r.ok && r.value.items.map((a) => a.domain).join() === "on.example.org", JSON.stringify(r));
-    assert.match(String(posted()[0]?.query), /WHERE CAST\(`sub` AS STRING\) IN UNNEST\(@active\)$/);
+    assert.match(String(posted()[0]?.query), /WHERE CAST\(`sub` AS STRING\) IN UNNEST\(@active\) OR `sub` IS NULL$/);
+  });
+
+  it("stops on an account whose active column is NULL: unknown is not absent", async () => {
+    // CAST(NULL AS STRING) is NULL, which equals no value: without this it would go unprotected in silence.
+    state.customers = [
+      { sub: "true", dom: "on.example.org", cust: null, nm: null },
+      { sub: null, dom: "unknown.example.org", cust: null, nm: null },
+    ];
+    const r = await adapter({ "protected.activeValues": true }).protectedAccounts({}, ctx());
+    assert.ok(!r.ok && r.error.code === "unavailable" && /1 account's sub is NULL/.test(r.error.message), JSON.stringify(r));
   });
 
   it("reads a status or active value written in YAML as a number or a boolean as text", async () => {
@@ -481,7 +491,7 @@ describe("protectedAccounts", () => {
       { externalId: "c-2", name: "Trial", domain: "trial.example.org", reason: "customer" },
     ]);
     const body = posted()[0]!;
-    assert.match(String(body.query), /FROM `proj-fixture`\.`warehouse`\.`customers` WHERE CAST\(`sub` AS STRING\) IN UNNEST\(@active\)$/);
+    assert.match(String(body.query), /FROM `proj-fixture`\.`warehouse`\.`customers` WHERE CAST\(`sub` AS STRING\) IN UNNEST\(@active\) OR `sub` IS NULL$/);
     assert.deepEqual(body.queryParameters, [
       { name: "active", parameterType: { type: "ARRAY", arrayType: { type: "STRING" } }, parameterValue: { arrayValues: [{ value: "active" }, { value: "trialing" }] } },
     ]);

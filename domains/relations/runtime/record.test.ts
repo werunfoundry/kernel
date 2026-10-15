@@ -15,6 +15,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
 import type { Identity } from "@werunfoundry/core/identity";
+import { identityVocabulary, normalizeIdentity } from "@werunfoundry/core/identity";
+import { loadDomain } from "@werunfoundry/core/manifest/load";
 import type { Database } from "@werunfoundry/core/runtime/run";
 
 import { findPerson, recordCompany, recordPerson, recordTouch } from "./record.js";
@@ -117,6 +119,13 @@ describe("recordCompany", { skip: base ? false : "TEST_DATABASE_URL is not set" 
     assert.ok("id" in a && "id" in b && a.id === b.id);
     assert.deepEqual(await rows("select name, domain, external_id from relations.company"), [{ name: "open.example.com", domain: "open.example.com", external_id: "net_a:7" }]);
   });
+
+  it("records a domain as its host, so two spellings are one company (decision 0028)", async () => {
+    const a = await recordCompany(db, company({ kind: "domain", value: "http://WWW.Open.example.com/about" }));
+    const b = await recordCompany(db, company({ kind: "domain", value: "open.example.com" }));
+    assert.ok("id" in a && "id" in b && a.id === b.id);
+    assert.deepEqual(await rows("select domain from relations.company"), [{ domain: "open.example.com" }]);
+  });
 });
 
 describe("recordTouch", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
@@ -155,5 +164,14 @@ describe("recordTouch", { skip: base ? false : "TEST_DATABASE_URL is not set" },
     await touch({ runId: run.id });
     await client.query("delete from core.run where id = $1", [run.id]);
     assert.deepEqual(await rows("select run_id from relations.touch"), [{ run_id: null }]);
+  });
+});
+
+describe("relations' own vocabulary", () => {
+  it("declares its domain key a host, so normalising a company reduces a URL to it (decision 0028)", () => {
+    const loaded = loadDomain(join(import.meta.dirname, "../domain.yaml"));
+    assert.ok(loaded.manifest, JSON.stringify(loaded.issues));
+    const n = normalizeIdentity(company({ kind: "domain", value: "http://WWW.Open.example.com/" }), identityVocabulary([loaded.manifest]));
+    assert.deepEqual(n.keys, [{ kind: "domain", value: "open.example.com" }]);
   });
 });

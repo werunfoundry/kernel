@@ -30,6 +30,9 @@ identityKeys:
     subject: company
     immutable: false
     caseInsensitive: true
+    # A source writes `http://Example.com/about` as readily as `example.com`
+    # (decision 0028); both name one company.
+    hostname: true
   - kind: social_company_id
     subject: company
     immutable: true

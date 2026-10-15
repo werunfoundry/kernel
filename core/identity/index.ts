@@ -65,15 +65,42 @@ export function identityVocabulary(
 const keyOf = (k: IdentityKey) => `${k.kind}\u0000${k.network ?? ""}`;
 
 /**
- * Trimmed, lower-cased where the kind says case means nothing, and without
- * duplicate keys. Two identities are compared only in this form.
+ * The host a value names, as it is compared (decision 0028): lower case,
+ * without a scheme, credentials or a leading `@`, without `www.`, a port, a
+ * path, a query or a trailing dot. `http://WWW.Example.com:443/about?x` and
+ * `@example.com` are both `example.com`. A subdomain other than `www` is kept:
+ * `app.example.com` may be another company's.
+ *
+ * Matching more widely is the safe direction for protection: a protected
+ * company spelled as a URL by one source is still the same company.
+ */
+export function hostOf(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
+    .replace(/^[^/?#]*@/, "")
+    .replace(/[/?#].*$/, "")
+    .replace(/:\d*$/, "")
+    .replace(/\.+$/, "")
+    .replace(/^www\./, "");
+}
+
+/**
+ * Trimmed, lower-cased where the kind says case means nothing, reduced to its
+ * host where the kind names one (`hostOf`), and without duplicate keys. Two
+ * identities are compared only in this form.
  */
 export function normalizeIdentity(identity: Identity, vocabulary: IdentityVocabulary): Identity {
   const seen = new Set<string>();
   const keys: IdentityKey[] = [];
   for (const key of identity.keys) {
     const kind = vocabulary.kinds.get(key.kind);
-    const value = kind?.caseInsensitive ? key.value.trim().toLowerCase() : key.value.trim();
+    const value = kind?.hostname
+      ? hostOf(key.value)
+      : kind?.caseInsensitive
+        ? key.value.trim().toLowerCase()
+        : key.value.trim();
     const normalized: IdentityKey = key.network === undefined
       ? { kind: key.kind, value }
       : { kind: key.kind, value, network: key.network };

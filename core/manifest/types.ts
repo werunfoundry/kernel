@@ -99,6 +99,12 @@ export interface IdentityKeyKind {
   networked?: boolean;
   /** Whether case carries no meaning, as in an address or a domain. */
   caseInsensitive?: boolean;
+  /**
+   * Whether the value names a host on the web, so that what a source wraps
+   * around one — a scheme, `www.`, a port, a path, a trailing dot — is not
+   * part of it (decision 0028). Compared as `hostOf` leaves it.
+   */
+  hostname?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */

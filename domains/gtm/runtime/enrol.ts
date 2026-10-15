@@ -42,7 +42,7 @@ import { and, eq } from "drizzle-orm";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
-import { normalizeIdentity } from "@werunfoundry/core/identity";
+import { hostOf, normalizeIdentity } from "@werunfoundry/core/identity";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
@@ -131,7 +131,12 @@ export interface EnrolDeps {
 /** A refusal to go on, carrying the sentence the run records. */
 class Stop extends Error {}
 
-const domainOf = (value: string) => value.trim().toLowerCase().replace(/^@/, "").replace(/^www\./, "");
+/**
+ * A domain as protection compares it: the host it names (decision 0028). The
+ * target list's two routes come from different sources, and one spelling a
+ * company as `http://Example.com` must not let it past the other's `example.com`.
+ */
+const domainOf = hostOf;
 
 /**
  * The same person in the same sequence on the same channel always gets the
@@ -240,10 +245,13 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       const page = await targets.protectedAccounts({ ...(cursor ? { cursor } : {}) }, ctx);
       if (!page.ok) throw new Stop(`protection unavailable: the protected set could not be read to its last page (${page.error.code}: ${page.error.message})`);
       for (const account of page.value.items as ProtectedAccount[]) {
-        if (!account.domain && !account.externalId) {
+        // A "domain" that names no host — `http://`, a blank — matches
+        // nothing, so it is no domain at all.
+        const host = account.domain ? domainOf(account.domain) : "";
+        if (!host && !account.externalId) {
           throw new Stop("protection unavailable: a protected account has neither a domain nor an identifier, so nothing could be matched against it");
         }
-        if (account.domain) protectedDomains.add(domainOf(account.domain));
+        if (host) protectedDomains.add(host);
         if (account.externalId) protectedIds.add(account.externalId);
         report.protectedAccounts++;
       }
@@ -292,12 +300,13 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         await skip({ reason: "protected", company, detail: "the account is protected" });
         continue;
       }
-      if (!company.domain) {
+      const host = company.domain ? domainOf(company.domain) : "";
+      if (!host) {
         await skip({ reason: "unreachable", company, detail: "no domain to find its people by" });
         continue;
       }
       const people = await enrichment.peopleAt(
-        { company: { subject: "company", keys: [{ kind: "domain", value: company.domain }] }, limit: request.peoplePerCompany ?? 5 },
+        { company: { subject: "company", keys: [{ kind: "domain", value: host }] }, limit: request.peoplePerCompany ?? 5 },
         ctx,
       );
       if (!people.ok) {
@@ -310,7 +319,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       const recordedCompany = async () =>
         (companyRow ??= await recordCompany(
           deps.db,
-          company.identity ?? { subject: "company", keys: [{ kind: "domain", value: company.domain! }] },
+          company.identity ?? { subject: "company", keys: [{ kind: "domain", value: host }] },
           company.name ? { name: company.name } : {},
         ));
 

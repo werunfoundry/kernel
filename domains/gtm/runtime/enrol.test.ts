@@ -23,6 +23,7 @@ import { Client } from "pg";
 import type { CallContext, CallResult, Contract } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 import { identityVocabulary } from "@werunfoundry/core/identity";
+import { loadDomain } from "@werunfoundry/core/manifest/load";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import type { Enrichment } from "@werunfoundry/relations/contracts/enrichment";
@@ -183,19 +184,10 @@ const registry: Registry = {
   list: () => [],
 };
 
-const identity = identityVocabulary([
-  {
-    name: "relations",
-    version: "0.0.0",
-    description: "x",
-    schema: "relations",
-    dependsOn: [],
-    identityKeys: [
-      { kind: "email", subject: "person", immutable: false, caseInsensitive: true },
-      { kind: "domain", subject: "company", immutable: false, caseInsensitive: true },
-    ],
-  },
-]);
+// The real relations domain.yaml, so the vocabulary is the one an instance gets.
+const relationsDomain = loadDomain(join(import.meta.dirname, "../../relations/domain.yaml")).manifest;
+if (!relationsDomain) throw new Error("relations/domain.yaml does not load");
+const identity = identityVocabulary([relationsDomain], ["net_a"]);
 
 const request = (over: Partial<EnrolRequest> = {}): EnrolRequest => ({
   sequenceKey: "welcome",
@@ -547,5 +539,46 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     } finally {
       enrichment.peopleAt = withId;
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* A domain is compared as the host it names (decision 0028)                   */
+/* -------------------------------------------------------------------------- */
+
+describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  it("protects a candidate whose domain is a URL when the protected set writes it bare", async () => {
+    world.candidates = [{ domain: "http://WWW.Customer.Example.org/about", attributes: {} }];
+    world.people.set("customer.example.org", [{ email: "cy@cy-consulting.example.net", name: "Cy" }]);
+    const r = await run();
+    assert.deepEqual(held(), []);
+    assert.deepEqual(r.skipped.map((s) => s.reason), ["protected"]);
+  });
+
+  it("protects a person on a protected domain the protected set writes as a URL", async () => {
+    world.protected = [{ domain: "https://customer.example.org/", reason: "customer" }];
+    world.people.set("open.example.com", [{ email: "dee@Customer.Example.org", name: "Dee" }, { email: "ada@open.example.com", name: "Ada" }]);
+    await run();
+    assert.deepEqual(held(), ["ada@open.example.com"]);
+  });
+
+  it("looks a URL-spelled candidate's people up by its host", async () => {
+    world.candidates = [{ domain: "https://open.example.com/", attributes: {} }];
+    await run();
+    assert.deepEqual(held(), ["ada@open.example.com", "bo@open.example.com"]);
+  });
+
+  it("stops on a protected account whose domain names no host: it would match nothing", async () => {
+    world.protected = [{ domain: "http://", reason: "customer" }];
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.match(r.stoppedBy ?? "", /neither a domain nor an identifier/);
+    assert.equal(world.enrolCalls, 0);
+  });
+
+  it("calls a candidate whose domain names no host unreachable", async () => {
+    world.candidates = [{ domain: "http://", attributes: {} }];
+    const r = await run();
+    assert.deepEqual(r.skipped.map((s) => [s.reason, s.detail]), [["unreachable", "no domain to find its people by"]]);
   });
 });

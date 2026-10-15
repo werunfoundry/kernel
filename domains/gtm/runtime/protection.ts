@@ -11,10 +11,19 @@
  * by, the answer is a refusal with the sentence the run records. A stale
  * answer is an inability to know, not a green light.
  *
- * Matching protects wide. A company is protected if its domain, or its
- * identifier in the target list's own source, is a protected account's; a
- * person is protected if any address they have is on a protected domain.
- * Wrongly skipping someone is recoverable; wrongly contacting them is not.
+ * Matching protects wide. A company is protected if its domain, its company
+ * id on a network, or its identifier in the target list's own source, is a
+ * protected account's (decision 0033) — any one of them; a person is
+ * protected if any address they have is on a protected domain. Wrongly
+ * skipping someone is recoverable; wrongly contacting them is not.
+ *
+ * **The protected set is read to protect, never as an identity.** Nothing
+ * here is written to `relations`, reconciled or compared as an identity: no
+ * key is created from it, and no difference between two of its rows, or
+ * between two reads, is a conflict. A domain that comes with one company id
+ * today and another tomorrow — several companies sharing a domain upstream,
+ * one picked by an aggregation — protects under whichever ids it carries
+ * when it is read.
  */
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
@@ -24,8 +33,14 @@ import { hostOf } from "@werunfoundry/core/identity";
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
 
 export interface Protection {
-  /** How many protected accounts were read. */
+  /**
+   * How many distinct accounts were read: rows that share a key — a domain,
+   * a company id, an identifier — are one account, however many rows the
+   * source repeats it on.
+   */
   accounts: number;
+  /** How many rows the source returned, duplicates included. */
+  rows: number;
   company(c: TargetCompany): boolean;
   /**
    * Whether any address or domain this identity holds is protected. An
@@ -60,8 +75,22 @@ export async function readProtection(
 
   const domains = new Set<string>();
   const ids = new Set<string>();
+  /** Networked company ids, as `kind \n network \n value`: the network is part of the key. */
+  const companyIds = new Set<string>();
   const seenCursors = new Set<string>();
-  let accounts = 0;
+  // Distinct accounts: rows joined by any key they share (union–find).
+  const parent = new Map<string, string>();
+  const find = (k: string): string => {
+    let root = k;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    parent.set(k, root);
+    return root;
+  };
+  const union = (keys: string[]) => {
+    for (const k of keys) if (!parent.has(k)) parent.set(k, k);
+    for (const k of keys.slice(1)) parent.set(find(k), find(keys[0]!));
+  };
+  let rows = 0;
   let cursor: string | undefined;
   do {
     const page = await targets.protectedAccounts({ ...(cursor ? { cursor } : {}) }, ctx);
@@ -70,12 +99,17 @@ export async function readProtection(
       // A "domain" that names no host — `http://`, a blank — matches
       // nothing, so it is no domain at all.
       const host = account.domain ? domainOf(account.domain) : "";
-      if (!host && !account.externalId) {
-        return stop("a protected account has neither a domain nor an identifier, so nothing could be matched against it");
+      const networked = (account.identity?.keys ?? [])
+        .filter((k) => k.kind !== "domain" && k.network && k.value.trim() !== "")
+        .map((k) => `${k.kind}\n${k.network}\n${k.value.trim()}`);
+      if (!host && !account.externalId && networked.length === 0) {
+        return stop("a protected account has neither a domain, a company id nor an identifier, so nothing could be matched against it");
       }
       if (host) domains.add(host);
       if (account.externalId) ids.add(account.externalId);
-      accounts++;
+      for (const k of networked) companyIds.add(k);
+      union([...(host ? [`domain\n${host}`] : []), ...(account.externalId ? [`id\n${account.externalId}`] : []), ...networked]);
+      rows++;
     }
     cursor = page.value.nextCursor;
     if (cursor !== undefined) {
@@ -84,12 +118,16 @@ export async function readProtection(
     }
   } while (cursor !== undefined);
 
+  const accounts = new Set([...parent.keys()].map(find)).size;
   return {
     ok: true,
     protection: {
       accounts,
+      rows,
       company: (c) =>
-        (c.domain !== undefined && domains.has(domainOf(c.domain))) || (c.externalId !== undefined && ids.has(c.externalId)),
+        (c.domain !== undefined && domains.has(domainOf(c.domain))) ||
+        (c.externalId !== undefined && ids.has(c.externalId)) ||
+        (c.identity?.keys ?? []).some((k) => k.kind !== "domain" && k.network !== undefined && companyIds.has(`${k.kind}\n${k.network}\n${k.value.trim()}`)),
       person: (p) =>
         p.keys.some(
           (k) =>

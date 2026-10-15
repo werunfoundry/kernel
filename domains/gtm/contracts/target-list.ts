@@ -86,6 +86,19 @@ export interface ProtectedAccount {
   externalId?: string;
   name?: string;
   domain?: string;
+  /**
+   * The keys the source holds for the account, as a candidate's are
+   * (decision 0024): its domain, and its company id on a network. Protection
+   * matches a candidate on any of them (decision 0033).
+   *
+   * **Read to protect, never as an identity.** Nothing here is recorded,
+   * reconciled or compared as one: a source may name a different company id
+   * for the same domain from one build to the next — several companies can
+   * share a domain upstream, and an aggregation picks one — and that is not
+   * a contradiction. It only means the account is protected under both, for
+   * as long as each is in the set.
+   */
+  identity?: Identity;
   reason: ProtectionReason;
   /** When the protection began, when the source knows. */
   since?: string;

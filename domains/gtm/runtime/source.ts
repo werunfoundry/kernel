@@ -102,7 +102,9 @@ export interface SourceReport {
   /** "succeeded", "partial" (stopped after keeping someone), or "failed". */
   status: "succeeded" | "partial" | "failed";
   stoppedBy?: string;
+  /** Distinct protected accounts (decision 0033); `protectedRows` counts the source's rows. */
   protectedAccounts: number;
+  protectedRows: number;
   candidates: number;
   /** Every company and person looked at, in order. */
   looked: Looked[];
@@ -187,6 +189,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
     dryRun: request.dryRun,
     status: "succeeded",
     protectedAccounts: 0,
+    protectedRows: 0,
     candidates: 0,
     looked: [],
     peopleSearches: 0,
@@ -210,7 +213,15 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
         outcome: l.outcome,
         detail: l.detail.slice(0, 500),
         ...(l.person ? { person: l.person } : {}),
-        company: { ...(l.company.domain ? { domain: l.company.domain } : {}), ...(l.company.externalId ? { externalId: l.company.externalId } : {}), ...(l.company.name ? { name: l.company.name } : {}) },
+        // The company's keys too: an enrolment reading this run back checks
+        // protection again, and matches on the company id as well as the
+        // domain (decision 0033).
+        company: {
+          ...(l.company.domain ? { domain: l.company.domain } : {}),
+          ...(l.company.externalId ? { externalId: l.company.externalId } : {}),
+          ...(l.company.name ? { name: l.company.name } : {}),
+          ...(l.company.identity ? { identity: l.company.identity } : {}),
+        },
         ...(l.personId ? { personId: l.personId } : {}),
         ...(l.said ? { said: l.said } : {}),
         ...(l.cost ? { cost: l.cost } : {}),
@@ -229,6 +240,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
     if (!read.ok) throw new Stop(read.stop);
     const protection = read.protection;
     report.protectedAccounts = protection.accounts;
+    report.protectedRows = protection.rows;
 
     /* 2. The company pass, before anything is spent ----------------------- */
 

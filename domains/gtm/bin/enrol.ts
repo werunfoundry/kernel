@@ -104,7 +104,7 @@ async function main(): Promise<number> {
       (s.person ? shown(s.person) : undefined) ?? s.company.domain ?? s.company.name ?? "?";
     console.log(`run: ${report.runId} — ${report.dryRun ? "dry run" : "live"} — ${report.status}`);
     if (report.stoppedBy) console.log(`  stopped: ${report.stoppedBy}`);
-    console.log(`  protected accounts read: ${report.protectedAccounts}`);
+    console.log(`  protected accounts read: ${report.protectedAccounts} distinct, from ${report.protectedRows} rows`);
     console.log(
       `  capacity: ${report.capacity.checked ? `budget ${report.capacity.budget}` : `not checked — ${report.capacity.why}`}`,
     );

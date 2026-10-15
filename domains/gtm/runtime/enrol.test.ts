@@ -289,7 +289,7 @@ describe("the enrolment path", { skip: base ? false : "TEST_DATABASE_URL is not 
         world.failing.add("protected-page-1");
       }, /could not be read to its last page/));
     it("an account has nothing to match it by", () =>
-      blocked(() => world.protected.push({ name: "Somebody", reason: "do_not_contact" }), /neither a domain nor an identifier/));
+      blocked(() => world.protected.push({ name: "Somebody", reason: "do_not_contact" }), /neither a domain, a company id nor an identifier/));
   });
 
   it("writes nothing in a dry run, and records the run as one", async () => {
@@ -574,7 +574,7 @@ describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is
     world.protected = [{ domain: "http://", reason: "customer" }];
     const r = await run();
     assert.equal(r.status, "failed");
-    assert.match(r.stoppedBy ?? "", /neither a domain nor an identifier/);
+    assert.match(r.stoppedBy ?? "", /neither a domain, a company id nor an identifier/);
     assert.equal(world.enrolCalls, 0);
   });
 
@@ -729,5 +729,43 @@ describe("enrolling from a sourcing run", { skip: base ? false : "TEST_DATABASE_
     await assert.rejects(run({ fromSourcingRun: await sourced([], { processKey: "instance.verify" }) }), /is a run of instance.verify, not a sourcing run/);
     await assert.rejects(run({ fromSourcingRun: "00000000-0000-4000-8000-000000000000" }), /no run 00000000-0000-4000-8000-000000000000 is on record/);
     assert.equal(await runs(), before, "an enrolment run was opened for a sourcing run that cannot be enrolled from");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Protection by the company id, and never as an identity (0033)               */
+/* -------------------------------------------------------------------------- */
+
+describe("protection by company id", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const id = (value: string) => ({ subject: "company", keys: [{ kind: "social_company_id", network: "net_a", value }] });
+
+  // The candidate's domain is open: only its company id is protected.
+  it("skips a company protected by its company id alone, and the sequencer never holds its people", async () => {
+    world.candidates = [{ domain: "open.example.com", identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, ...id("4242").keys] }, attributes: {} }];
+    world.protected = [{ identity: id("4242"), reason: "customer" }];
+    const r = await run();
+    assert.deepEqual(held(), []);
+    assert.deepEqual(r.skipped.map((s) => [s.reason, s.company.domain]), [["protected", "open.example.com"]]);
+  });
+
+  it("passes two runs in a row whose protected set names another company id for the same domain, writing nothing from it", async () => {
+    world.protected = [{ domain: "customer.example.org", identity: { subject: "company", keys: [{ kind: "domain", value: "customer.example.org" }, ...id("1001").keys] }, reason: "customer" }];
+    const first = await run({ dryRun: true });
+    world.protected = [{ domain: "customer.example.org", identity: { subject: "company", keys: [{ kind: "domain", value: "customer.example.org" }, ...id("2002").keys] }, reason: "customer" }];
+    const second = await run({ dryRun: true });
+    assert.deepEqual([first.status, second.status], ["succeeded", "succeeded"], `${first.stoppedBy} / ${second.stoppedBy}`);
+    assert.deepEqual(second.skipped.map((s) => [s.reason, s.company.domain]), [["protected", "customer.example.org"]]);
+    const written = (await client.query("select (select count(*) from relations.company)::int as companies, (select count(*) from relations.person)::int as people")).rows[0];
+    assert.deepEqual(written, { companies: 0, people: 0 }, "reading the protected set wrote to relations");
+  });
+
+  it("reports distinct accounts, not rows", async () => {
+    world.protected = [
+      { domain: "customer.example.org", identity: id("1"), reason: "customer" },
+      { domain: "customer.example.org", identity: id("2"), reason: "customer" },
+      { domain: "other.example.net", reason: "customer" },
+    ];
+    const r = await run({ dryRun: true });
+    assert.deepEqual([r.protectedAccounts, r.protectedRows], [2, 3]);
   });
 });

@@ -109,7 +109,7 @@ async function main(): Promise<number> {
 
     console.log(`run: ${report.runId} — ${report.dryRun ? "dry run" : "live"} — ${report.status}`);
     if (report.stoppedBy) console.log(`  stopped: ${report.stoppedBy}`);
-    console.log(`  protected accounts read: ${report.protectedAccounts}`);
+    console.log(`  protected accounts read: ${report.protectedAccounts} distinct, from ${report.protectedRows} rows`);
     console.log(`  candidates: ${report.candidates}`);
     console.log(`  company pass, before anything was spent — excluded: ${companyExcluded.length}`);
     for (const o of ["protected", "known_to_crm", "unreachable"] as const) list(o, by("company", o));

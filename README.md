@@ -123,16 +123,14 @@ real adapters. It decides what is built next.
   tsx a failure hangs instead of failing, because Node re-reads the source to
   rebuild the message. Fixed in the enrichment adapter's tests only.
 
-**Protection cannot pass until the accounts table says how old it is.** The
-protected route's freshness reads an extraction column (0019, doctrine 6).
-The first real instance's accounts table is a view with no such column, so
-its protected set has no age, and every enrolment stops before reading a
-candidate — correctly. The column must carry the upstream freshness: when
-the source last extracted the rows. Never a time computed when the query
-runs — `CURRENT_TIMESTAMP` in a view would make every read look fresh, which
-is the cheerful stale answer doctrine 6 exists to refuse. The same view scans
-9.5 GB per read (see the warehouse adapter's README); a table materialised
-from it, with that column, settles both.
+**Protection reads a table built for it, and stops on an account it cannot
+match.** The protected route's freshness reads the time the table was built
+(0019, doctrine 6) — never a time computed when the query runs, which would
+make every read look fresh. Accounts match on their domain or their company
+id, and either is enough (0033). An account with neither — no domain, no
+company id, no identifier — stops every run, because nothing could be
+matched against it: until the source gives such accounts a key, or the
+instance decides they are not protected, no run passes protection.
 
 #### The objects phase 3 was going to build — what exists, and what is not wired
 

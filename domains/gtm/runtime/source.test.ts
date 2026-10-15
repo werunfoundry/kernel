@@ -273,6 +273,18 @@ describe("the company pass, before anything is spent", { skip: base ? false : "T
     assert.deepEqual(r.avoidedByCompanyPass, { companies: 1, peopleSearches: 1, completionsAtMost: 3 });
   });
 
+  // The domain is open and unknown to the CRM: only the company id is protected.
+  it("excludes a company protected by its company id alone, and never looks up its people", async () => {
+    const id = { kind: "social_company_id", network: "net_a", value: "4242" };
+    world.candidates = [{ domain: "open.example.com", identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, id] }, attributes: {} }];
+    world.protected = [{ identity: { subject: "company", keys: [id] }, reason: "customer" }];
+    const r = await run();
+    assert.deepEqual([world.searched, world.completed], [[], []]);
+    assert.deepEqual(r.looked.map((l) => [l.pass, l.outcome]), [["company", "protected"]]);
+    const kept = (await client.query("select company from gtm.sourcing_result where run_id = $1", [r.runId])).rows[0]?.company;
+    assert.deepEqual(kept?.identity?.keys, [{ kind: "domain", value: "open.example.com" }, id], "the company's keys were not kept with the outcome");
+  });
+
   it("stops before anything is spent when the CRM cannot answer", async () => {
     world.failing.add("crm");
     const r = await run();

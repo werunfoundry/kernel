@@ -22,6 +22,7 @@
  *       protected.activeValues: "<value>,<value>"   # a BOOLEAN column: true
  *       protected.domainColumn: <column>
  *       protected.idColumn: <column>       # optional; see "Two tables" below
+ *       protected.companyIdColumn: <column>   # optional: the account's company id on `network`
  *       protected.nameColumn: <column>     # optional
  *       protected.extractedAtColumn: <column>
  *       protected.reason: customer         # optional, the default
@@ -90,7 +91,7 @@
  * - `candidates`: the status, domain, and optional id, company id and name
  *   columns of the target table. Every page after the first is read from the
  *   job's result, not the table.
- * - `protectedAccounts`: the active, domain, and optional id and name columns
+ * - `protectedAccounts`: the active, domain, and optional company id, id and name columns
  *   of the customer table. Over a view, that is whatever the view computes:
  *   see this folder's README before scheduling it.
  * - `probe`: both freshness queries as dry runs, which bill nothing.
@@ -168,7 +169,7 @@ interface Config {
   maximumBytesBilled?: string;
   network?: string;
   candidates: RouteConfig & { statusColumn: string; status?: string; companyId?: string };
-  protected: RouteConfig & { activeColumn: string; activeValues: string[]; reason: ProtectionReason; allowEmpty: boolean };
+  protected: RouteConfig & { activeColumn: string; activeValues: string[]; reason: ProtectionReason; allowEmpty: boolean; companyId?: string };
 }
 
 /** Every problem with the binding's options, or the configuration they describe. */
@@ -266,7 +267,10 @@ function configure(options: Readonly<Record<string, string | number | boolean>>)
   if (!REASONS.includes(reason)) problems.push(`protected.reason is one of ${REASONS.join(", ")}, not "${reason}"`);
   const allowEmpty = options["protected.allowEmpty"];
   if (allowEmpty !== undefined && typeof allowEmpty !== "boolean") problems.push("protected.allowEmpty is true or false");
+  const protectedCompanyId = column("protected.companyIdColumn", false);
+  if (protectedCompanyId && !network) problems.push("protected.companyIdColumn needs network: the company ids are on a network the instance names");
   const protectedRoute = {
+    ...(protectedCompanyId ? { companyId: protectedCompanyId } : {}),
     table: table("protected.table"),
     extractedAt: column("protected.extractedAtColumn", true) ?? "",
     freshness: freshness("protected"),
@@ -337,6 +341,7 @@ export function protectedSql(p: Config["protected"]): string {
   const columns = [
     asString(p.domain, "domain"),
     asString(p.activeColumn, "active"),
+    ...(p.companyId ? [asString(p.companyId, "company_id")] : []),
     ...(p.id ? [asString(p.id, "external_id")] : []),
     ...(p.name ? [asString(p.name, "name")] : []),
   ];
@@ -705,11 +710,26 @@ const factory: AdapterFactory<TargetList> = ({ options, env }) => {
           "no account is protected: an active value that matches nothing looks exactly like this. If the set is truly empty, say protected.allowEmpty: true",
         );
       }
+      // Every row as it is: the same domain on several rows, with a company
+      // id that differs between them or between two builds, is passed on as
+      // the source has it. Protection counts and matches; it does not decide
+      // which row is the account (decision 0033).
       const items = got.value.rows.map((row): ProtectedAccount => {
         const domain = clean(row.domain);
+        const companyId = clean(row.company_id);
         const externalId = clean(row.external_id);
         const name = clean(row.name);
-        return { ...(externalId ? { externalId } : {}), ...(name ? { name } : {}), ...(domain ? { domain } : {}), reason: p.reason };
+        const keys: Identity["keys"] = [
+          ...(domain ? [{ kind: "domain", value: domain }] : []),
+          ...(companyId && config.network ? [{ kind: "social_company_id", value: companyId, network: config.network }] : []),
+        ];
+        return {
+          ...(externalId ? { externalId } : {}),
+          ...(name ? { name } : {}),
+          ...(domain ? { domain } : {}),
+          ...(keys.length > 0 ? { identity: { subject: "company", keys } } : {}),
+          reason: p.reason,
+        };
       });
       return { ok: true, value: { items, ...(got.value.next ? { nextCursor: got.value.next } : {}) } };
     },

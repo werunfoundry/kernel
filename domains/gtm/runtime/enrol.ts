@@ -112,7 +112,9 @@ export interface EnrolReport {
   status: "succeeded" | "partial" | "failed";
   /** Why the run stopped, when it did. */
   stoppedBy?: string;
+  /** Distinct protected accounts (decision 0033); `protectedRows` counts the source's rows. */
   protectedAccounts: number;
+  protectedRows: number;
   enrolled: Enrolled[];
   /**
    * People a previous run wrote to the registry and died before confirming,
@@ -219,6 +221,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     dryRun: request.dryRun,
     status: "succeeded",
     protectedAccounts: 0,
+    protectedRows: 0,
     enrolled: [],
     reconciled: [],
     skipped: [],
@@ -278,6 +281,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     if (!read.ok) throw new Stop(read.stop);
     const protection = read.protection;
     report.protectedAccounts = protection.accounts;
+    report.protectedRows = protection.rows;
     const companyProtected = protection.company;
     const personProtected = protection.person;
 

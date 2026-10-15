@@ -154,6 +154,41 @@ function commentIn(file) {
   return null;
 }
 
+/* -- Rule 7: every file is text the checks can read --------------------- */
+
+/**
+ * The secret, fixture and provider checks read text. A file that is not text
+ * is not refused by them; it is unseen. An archive of the working tree is the shape this takes:
+ * the tree it packs holds a real `.env` next to `.env.example`, and a tarball
+ * carries one as readily as the other, compressed into bytes no pattern here
+ * matches. One was committed at the root of this repository, and only the way
+ * it happened to be made kept the `.env` out of it.
+ *
+ * `.gitignore` lists archives too, but it is a courtesy, not a gate: `git add
+ * -f`, or a name it does not cover, walks past it. This repository is text
+ * from end to end, so the rule is about content, not names: every file must
+ * decode as UTF-8 and hold no NUL byte. The NUL matters — an uncompressed tar
+ * of text files is valid UTF-8, its headers padded with NULs, and its members
+ * readable to anyone who downloads it.
+ */
+const UTF8 = new TextDecoder("utf-8", { fatal: true });
+
+function notText(file) {
+  let bytes;
+  try {
+    bytes = readFileSync(file);
+  } catch {
+    return null; // unreadable here; the listing already dropped what is gone
+  }
+  if (bytes.includes(0)) return "holds a NUL byte";
+  try {
+    UTF8.decode(bytes);
+  } catch {
+    return "is not valid UTF-8";
+  }
+  return null;
+}
+
 /* -- Rule 8: an instance holds no engine code --------------------------- */
 
 const TEMPLATE_CODE = /^template\/(context|manifest)\/.*\.(ts|js|mjs)$/;
@@ -166,6 +201,11 @@ for (const file of files) {
   if (TEMPLATE_CODE.test(file)) {
     fail(8, file, 0, "an instance carries configuration and context, not code");
   }
+  const binary = notText(file);
+  if (binary) {
+    fail(7, file, 0, `${binary}: no check here can read what it carries, so none can say it carries no secret`);
+    continue;
+  }
   if (!isText(file)) continue;
 
   let body;
@@ -174,7 +214,6 @@ for (const file of files) {
   } catch {
     continue;
   }
-  if (body.includes("\u0000")) continue; // binary
 
   if (file.endsWith(".json")) {
     try {

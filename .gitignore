@@ -10,6 +10,20 @@ build/
 *.tsbuildinfo
 .turbo/
 
+# Archives. A tarball of the working tree carries whatever the tree holds,
+# .env included. Ignoring them is a courtesy; scripts/check.mjs is the gate,
+# because `git add -f` walks straight past this file.
+*.tar
+*.tgz
+*.tar.gz
+*.gz
+*.bz2
+*.xz
+*.zst
+*.zip
+*.7z
+*.rar
+
 # Local data. Nothing operational belongs in this repository.
 data/
 out/

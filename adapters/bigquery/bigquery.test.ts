@@ -296,6 +296,7 @@ describe("the binding", () => {
       [{ "protected.freshness": "average" }, /"oldest" or "newest"/],
       [{ maximumBytesBilled: "lots" }, /positive whole number/],
       [{ "protected.allowEmpty": "yes" }, /true or false/],
+      [{ "protected.activeValues": "TRUE" }, /a BOOLEAN column reads as "true", lowercase/],
     ] as const) {
       const r = await adapter(bad).freshness("candidates", ctx());
       assert.ok(!r.ok && r.error.code === "invalid" && why.test(r.error.message), JSON.stringify(r));
@@ -313,6 +314,18 @@ describe("the binding", () => {
       posted().map((b) => /FROM (\S+)/.exec(String(b.query))?.[1]),
       ["`proj-fixture`.`other_set`.`targets`", "`proj-other`.`other_set`.`targets`"],
     );
+  });
+
+  it("reads a boolean active column as the text a BOOLEAN casts to", async () => {
+    // What the warehouse hands the comparison: CAST(TRUE AS STRING) is "true", CAST(NULL AS STRING) is NULL.
+    state.customers = [
+      { sub: "true", dom: "on.example.org", cust: null, nm: null },
+      { sub: "false", dom: "off.example.org", cust: null, nm: null },
+      { sub: null, dom: "unknown.example.org", cust: null, nm: null },
+    ];
+    const r = await adapter({ "protected.activeValues": true }).protectedAccounts({}, ctx());
+    assert.ok(r.ok && r.value.items.map((a) => a.domain).join() === "on.example.org", JSON.stringify(r));
+    assert.match(String(posted()[0]?.query), /WHERE CAST\(`sub` AS STRING\) IN UNNEST\(@active\)$/);
   });
 
   it("reads a status or active value written in YAML as a number or a boolean as text", async () => {

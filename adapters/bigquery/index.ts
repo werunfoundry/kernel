@@ -19,7 +19,7 @@
  *       candidates.extractedAtColumn: <column>
  *       protected.table: <table>
  *       protected.activeColumn: <column>
- *       protected.activeValues: "<value>,<value>"
+ *       protected.activeValues: "<value>,<value>"   # a BOOLEAN column: true
  *       protected.domainColumn: <column>
  *       protected.idColumn: <column>       # optional; see "Two tables" below
  *       protected.nameColumn: <column>     # optional
@@ -49,6 +49,12 @@
  *   trusted only with a schema; without one it failed, whatever it says.
  * - **Read-only by construction.** A service account's token asks for the
  *   `bigquery.readonly` scope, which both methods accept. Nothing here writes.
+ *
+ * **Every compared column is cast to STRING first**, so a value is never
+ * text compared against another type. A BOOLEAN casts to "true" or "false"
+ * (the published conversion rules), so `protected.activeValues: true` reads a
+ * boolean active column, and `TRUE` is refused. A NULL casts to NULL and
+ * equals no value: an account whose active column is NULL is not protected.
  *
  * Two tables, because the protected set is not a subset of the candidates
  * (see the contract): the customer accounts are read from their own table,
@@ -244,6 +250,14 @@ function configure(options: Readonly<Record<string, string | number | boolean>>)
     .map((v) => v.trim())
     .filter(Boolean);
   if (options["protected.activeValues"] !== undefined && activeValues.length === 0) problems.push("protected.activeValues lists no value");
+  // The column is compared as text, and a BOOLEAN reads as "true" or "false",
+  // lowercase. `TRUE` would match nothing, and with allowEmpty an unprotected
+  // run would look like an empty protected set. Refused here, not discovered.
+  for (const value of activeValues) {
+    if (/^(true|false)$/i.test(value) && value !== value.toLowerCase()) {
+      problems.push(`protected.activeValues has "${value}": a BOOLEAN column reads as "${value.toLowerCase()}", lowercase`);
+    }
+  }
   const reason = (text("protected.reason") ?? "customer") as ProtectionReason;
   if (!REASONS.includes(reason)) problems.push(`protected.reason is one of ${REASONS.join(", ")}, not "${reason}"`);
   const allowEmpty = options["protected.allowEmpty"];

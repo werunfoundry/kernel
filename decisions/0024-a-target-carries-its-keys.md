@@ -2,6 +2,8 @@
 
 > Superseded in part by [0029](0029-enrichment-gets-the-company-keys.md): the
 > enrolment path reads `identity` and hands it to enrichment.
+>
+> Completed by [0033](0033-protection-matches-the-company-id-and-is-not-an-identity.md): a protected account carries its keys too, and is matched on them.
 
 Completes [0013](0013-an-identity-is-a-set-of-keys.md), which made an identity
 a set of keys, and [0004](0004-protection-is-its-own-route.md), whose

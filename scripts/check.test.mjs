@@ -20,6 +20,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import { after, describe, it } from "node:test";
 
 const CHECK = join(dirname(fileURLToPath(import.meta.url)), "check.mjs");
@@ -141,6 +142,43 @@ describe("rule 7 — nothing published that cannot be unpublished", () => {
 
   it("refuses a real profile URL in a fixture", () => {
     refuses(repo({ "core/fixtures/p.ts": '// https://linkedin.com/in/someone\n' }), 7, "profile");
+  });
+});
+
+describe("rule 7 — every file is text the checks can read", () => {
+  /**
+   * A tarball of a working tree, reduced to what matters: a header naming the
+   * member, NUL-padded to 512 bytes, then the member. Every byte is ASCII, so
+   * it decodes as UTF-8 — only the NULs give it away.
+   */
+  const tar = (name, body) => {
+    const out = Buffer.alloc(1024);
+    out.write(name, 0, "ascii");
+    out.write(body, 512, "ascii");
+    return out;
+  };
+
+  it("refuses a compressed archive, even one .gitignore lists and git add -f forced in", () => {
+    const dir = repo({
+      ".gitignore": "*.tgz\n",
+      "snapshot.tgz": gzipSync(tar(".env", "TOKEN=x\n")),
+    });
+    execFileSync("git", ["add", "-f", "snapshot.tgz"], { cwd: dir });
+    refuses(dir, 7, "snapshot\\.tgz");
+  });
+
+  it("refuses an uncompressed archive, which is valid UTF-8", () => {
+    const archive = tar(".env", "TOKEN=x\n");
+    assert.doesNotThrow(() => new TextDecoder("utf-8", { fatal: true }).decode(archive));
+    refuses(repo({ "snapshot.tar": archive }), 7, "NUL byte");
+  });
+
+  it("refuses bytes that are not UTF-8, whatever the file is named", () => {
+    refuses(repo({ "core/notes.md": Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]) }), 7, "not valid UTF-8");
+  });
+
+  it("allows UTF-8 beyond ASCII, which every decision here uses", () => {
+    accepts(repo({ "core/x.ts": "// a dash — an accent é, a mark ✓\nexport const x = 1;\n" }));
   });
 });
 
@@ -406,6 +444,12 @@ describe("--staged", () => {
     const dir = repo({ "domains/gamma/index.ts": "export const x = 1;\n" });
     stage(dir, ["domains/alpha/db/schema.ts"]);
     refuses(dir, 2, "no domain.yaml", ["--staged"]);
+  });
+
+  it("still catches an archive forced past .gitignore", () => {
+    const dir = repo({ ".gitignore": "*.tgz\n", "snapshot.tgz": gzipSync("TOKEN=x\n") });
+    stage(dir, ["-f", "snapshot.tgz"]);
+    refuses(dir, 7, "snapshot\\.tgz", ["--staged"]);
   });
 
   it("still catches a structural violation from a partial commit", () => {

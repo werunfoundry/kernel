@@ -193,6 +193,14 @@ try {
     expect(enrolled(dry.stdout) === 3, "the dry run would not enrol the three open people");
     expect(!existsSync(state), "the dry run wrote the sandbox's state");
     expect((await runOf(dry.stdout))?.dry_run === true, "the dry run is not recorded as one");
+    // The registry (0026), read back from the database the packs migrated.
+    const registry = async () => (await client.query("select state, count(*)::int as n from gtm.enrolment group by 1 order by 1")).rows;
+    const skipsOf = async (out) => {
+      const id = out.match(/^run: ([0-9a-f-]{36})/m)?.[1];
+      return id ? (await client.query("select reason, count(*)::int as n from gtm.enrolment_skip where run_id = $1 group by 1 order by 1", [id])).rows : [];
+    };
+    expect(JSON.stringify(await registry()) === "[]", `the dry run wrote the registry: ${JSON.stringify(await registry())}`);
+    expect(JSON.stringify(await skipsOf(dry.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }]), "the dry run did not keep its skip");
 
     step("enrol, live");
     const live = await bin("kernel-enrol", [...enrolArgs, "--live"]);
@@ -205,6 +213,7 @@ try {
     expect(held.length === 3, `the sequencer holds ${held.length} people, not 3`);
     const liveRow = await runOf(live.stdout);
     expect(liveRow?.status === "succeeded" && liveRow?.dry_run === false, `the live run reads ${JSON.stringify(liveRow)}`);
+    expect(JSON.stringify(await registry()) === JSON.stringify([{ state: "enrolled", n: 3 }]), `the registry reads ${JSON.stringify(await registry())}`);
 
     step("enrol, replayed");
     const replay = await bin("kernel-enrol", [...enrolArgs, "--live"]);
@@ -212,6 +221,11 @@ try {
     expect(replay.status === 0, `the replay exited ${replay.status}`);
     expect(enrolled(replay.stdout) === 0, "the replay enrolled someone again");
     expect(/skipped, duplicate: 3/.test(replay.stdout), "the replay did not see the three as duplicates");
+    expect((replay.stdout.match(/already enrolled in this sequence, by the registry/g) ?? []).length === 3, "the replay did not answer from the registry");
+    expect(
+      JSON.stringify(await skipsOf(replay.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }, { reason: "duplicate", n: 3 }]),
+      "the replay's skips were not kept with their reasons",
+    );
   }
   await client.end();
 } catch (error) {

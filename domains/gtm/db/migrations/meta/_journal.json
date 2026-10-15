@@ -8,6 +8,13 @@
       "when": 1791943269725,
       "tag": "0000_robust_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792036384230,
+      "tag": "0001_enrolment_registry",
+      "breakpoints": true
     }
   ]
 }

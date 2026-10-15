@@ -87,6 +87,8 @@ const world = {
   enrolled: new Map<string, string>(),
   enrolCalls: 0,
   statusCalls: 0,
+  /** Every company enrichment was asked about, as it was asked. */
+  lookedUp: [] as Identity[],
   /** The idempotency key of every enrol call, in order. */
   keysSent: [] as string[],
   /**
@@ -124,6 +126,7 @@ const targetList: TargetList = {
 const enrichment: Enrichment = {
   provider: "memory-enrichment",
   async peopleAt({ company }) {
+    world.lookedUp.push(company);
     const domain = company.keys.find((k) => k.kind === "domain")?.value ?? "";
     const people = world.people.get(domain) ?? [];
     return ok({
@@ -215,6 +218,7 @@ beforeEach(async () => {
     await client.query("truncate gtm.enrolment_skip, gtm.enrolment, relations.person, relations.company cascade");
   }
   world.statusCalls = 0;
+  world.lookedUp = [];
   world.keysSent = [];
   world.crash = undefined;
   world.candidates = [
@@ -580,5 +584,44 @@ describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is
     world.candidates = [{ domain: "http://", attributes: {} }];
     const r = await run();
     assert.deepEqual(r.skipped.map((s) => [s.reason, s.detail]), [["unreachable", "no domain to find its people by"]]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Enrichment is asked with the company's keys (decision 0029)                 */
+/* -------------------------------------------------------------------------- */
+
+describe("what enrichment is asked", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const keys = () => world.lookedUp.map((c) => c.keys.map((k) => `${k.kind}${k.network ? `@${k.network}` : ""}=${k.value}`));
+
+  it("the company's id on a network, when the target list attests one, beside its domain", async () => {
+    world.candidates = [
+      {
+        domain: "open.example.com",
+        identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, { kind: "social_company_id", value: "4242", network: "net_a" }] },
+        attributes: {},
+      },
+    ];
+    await run({ dryRun: true });
+    assert.deepEqual(keys(), [["domain=open.example.com", "social_company_id@net_a=4242"]]);
+  });
+
+  it("the domain alone, when that is all the target list knows", async () => {
+    world.candidates = [{ domain: "open.example.com", attributes: {} }];
+    await run({ dryRun: true });
+    assert.deepEqual(keys(), [["domain=open.example.com"]]);
+  });
+
+  it("nothing, when the target list's keys are not valid: the company is unreachable", async () => {
+    world.candidates = [
+      {
+        domain: "open.example.com",
+        identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, { kind: "social_company_id", value: "4242", network: "undeclared" }] },
+        attributes: {},
+      },
+    ];
+    const r = await run({ dryRun: true });
+    assert.deepEqual(world.lookedUp, []);
+    assert.match(r.skipped.find((s) => s.reason === "unreachable")?.detail ?? "", /keys for it are not valid/);
   });
 });

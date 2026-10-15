@@ -2,6 +2,8 @@
 
 > Completed by [0026](0026-the-enrolment-registry.md): enrolments and skips
 > are recorded, written before the provider is called.
+>
+> Completed by [0031](0031-the-sourcing-path-and-the-crm-as-exclusion.md): a sourcing path, with the CRM as a second exclusion source.
 
 Completes [0004](0004-protection-is-its-own-route.md), which decided that
 protection is its own route and is re-checked at enrolment, and

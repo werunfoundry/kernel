@@ -23,6 +23,12 @@ export interface SandboxData {
   /** `profileId` is an invented id on the network the enrichment binding names: immutable, as 0013 means it. */
   people: { domain: string; email: string; profileId: string; name: string; title?: string }[];
   events: { id: string; type: string; occurredAt: string; email: string }[];
+  /**
+   * What the CRM already holds — domains and addresses. Not the target
+   * list's companies: a CRM knows the accounts in conversation, which is why
+   * it excludes them from cold prospecting (0031). Absent is an empty CRM.
+   */
+  crm?: { companies: string[]; people: string[] };
 }
 
 export interface SandboxState {

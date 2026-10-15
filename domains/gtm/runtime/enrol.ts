@@ -51,8 +51,9 @@ import { findPerson, recordCompany, recordPerson } from "@werunfoundry/relations
 
 import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequencer.js";
 import { remainingOf } from "../contracts/sequencer.js";
-import type { ProtectedAccount, TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
+import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
 import { enrolment, enrolmentSkip } from "../db/schema.js";
+import { readProtection } from "./protection.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", peopleSource: "people_source", sequencer: "sequencer" } as const;
@@ -226,51 +227,12 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
   try {
     /* 1. Protection, before anything else ------------------------------ */
 
-    const fresh = await targets.freshness("protected", ctx);
-    if (!fresh.ok) throw new Stop(`protection unavailable: the protected set's age could not be read (${fresh.error.code}: ${fresh.error.message})`);
-    const asOf = Date.parse(fresh.value.asOf);
-    if (Number.isNaN(asOf)) throw new Stop(`protection unavailable: the protected set says it is from "${fresh.value.asOf}", which is not a time`);
-    const ageMinutes = (now().getTime() - asOf) / 60_000;
-    if (ageMinutes > request.protectedMaxAgeMinutes) {
-      throw new Stop(
-        `protection unavailable: the protected set is ${Math.round(ageMinutes)} minutes old, older than the ${request.protectedMaxAgeMinutes} allowed`,
-      );
-    }
-
-    const protectedDomains = new Set<string>();
-    const protectedIds = new Set<string>();
-    const seenCursors = new Set<string>();
-    let cursor: string | undefined;
-    do {
-      const page = await targets.protectedAccounts({ ...(cursor ? { cursor } : {}) }, ctx);
-      if (!page.ok) throw new Stop(`protection unavailable: the protected set could not be read to its last page (${page.error.code}: ${page.error.message})`);
-      for (const account of page.value.items as ProtectedAccount[]) {
-        // A "domain" that names no host — `http://`, a blank — matches
-        // nothing, so it is no domain at all.
-        const host = account.domain ? domainOf(account.domain) : "";
-        if (!host && !account.externalId) {
-          throw new Stop("protection unavailable: a protected account has neither a domain nor an identifier, so nothing could be matched against it");
-        }
-        if (host) protectedDomains.add(host);
-        if (account.externalId) protectedIds.add(account.externalId);
-        report.protectedAccounts++;
-      }
-      cursor = page.value.nextCursor;
-      if (cursor !== undefined) {
-        if (seenCursors.has(cursor)) throw new Stop("protection unavailable: the protected set's pages loop");
-        seenCursors.add(cursor);
-      }
-    } while (cursor !== undefined);
-
-    const companyProtected = (c: TargetCompany) =>
-      (c.domain !== undefined && protectedDomains.has(domainOf(c.domain))) ||
-      (c.externalId !== undefined && protectedIds.has(c.externalId));
-    const personProtected = (p: Identity) =>
-      p.keys.some(
-        (k) =>
-          (k.kind === "email" && protectedDomains.has(domainOf(k.value.split("@")[1] ?? ""))) ||
-          (k.kind === "domain" && protectedDomains.has(domainOf(k.value))),
-      );
+    const read = await readProtection(targets, { maxAgeMinutes: request.protectedMaxAgeMinutes, now: now() }, ctx);
+    if (!read.ok) throw new Stop(read.stop);
+    const protection = read.protection;
+    report.protectedAccounts = protection.accounts;
+    const companyProtected = protection.company;
+    const personProtected = protection.person;
 
     /* 2. Capacity, known before the first enrolment, or not checked ---- */
 

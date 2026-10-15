@@ -65,7 +65,8 @@
       "./db/migrations/*": "./db/migrations/*"
     },
     "bin": {
-      "kernel-enrol": "./dist/bin/enrol.js"
+      "kernel-enrol": "./dist/bin/enrol.js",
+      "kernel-source": "./dist/bin/source.js"
     }
   },
   "dependencies": {
@@ -87,6 +88,7 @@
     "!dist/*.tsbuildinfo"
   ],
   "bin": {
-    "kernel-enrol": "./bin/enrol.ts"
+    "kernel-enrol": "./bin/enrol.ts",
+    "kernel-source": "./bin/source.ts"
   }
 }

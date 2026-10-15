@@ -17,7 +17,10 @@ enabledDomains:
 
 # The networks a social profile or company id may belong to (decision 0013).
 # Named here, never in the engine. A key on a network not listed is refused.
-networks: []
+# `sandbox` is the invented network of the sandbox enrichment's profile ids;
+# remove it with that binding.
+networks:
+  - sandbox
 
 # Every contract the engine has, each bound to a sandbox adapter that answers
 # from invented data in adapters/sandbox-data.json. With these, a new instance
@@ -35,6 +38,8 @@ providers:
   - contract: enrichment
     adapter: ./adapters/sandbox-enrichment.ts
     env: []
+    options:
+      network: sandbox
   - contract: sequencer
     adapter: ./adapters/sandbox-sequencer.ts
     env: []

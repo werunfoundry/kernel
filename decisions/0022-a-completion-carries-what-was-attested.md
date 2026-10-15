@@ -53,8 +53,10 @@ uses it sits in `acceptCompletion`, which every caller goes through.
 
 - **An adapter whose provider never names an immutable key completes
   nothing.** That is the intended outcome: its answers were never tied to
-  the subject. The template's sandbox completes by address only, and is now
-  always rejected — it never had anything to add.
+  the subject. The template's sandbox answered with an address only, and
+  would have been rejected every time — an example that taught nothing. It
+  now gives each invented person an invented profile id, on a network the
+  template's manifest declares, so it shows the shape that is accepted.
 - **The enrichment adapter is only as useful as its provider's answer.** If
   the contact lookup does not return the profile id, every completion it
   makes is rejected. This was not verified against a real workspace.

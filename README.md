@@ -42,7 +42,7 @@ scripts/              checks that make the doctrine enforceable
 | Boot | written; resolves every name from the instance (0007) |
 | End to end | in CI, a generated instance migrates, verifies and runs the enrolment path — dry, live and replayed (0019) |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
-| Adapters | one live sequencer, verified read-only against a real provider (0011); a sandbox for every contract; an API example to copy |
+| Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
 
 ## Where the work is
@@ -62,8 +62,9 @@ In this order, because each one is what the next needs.
 Next:
 - **inbound and metrics on that same email provider.** Read-only. They read
   real people's replies, so they wait for the owner's explicit agreement.
-- **the target list**, which waits until its data has been looked at: how it
-  is served, and whether it can say when it was last recomputed.
+- **the target list, against a real warehouse.** The adapter reads candidates
+  and protected accounts from two tables and its age from an extraction
+  column; it has run against a fake of the warehouse's API, not a real one.
 - **enrichment and a social sequencer**, which wait for the choice of tools.
 
 **Withdrawing someone whose account becomes protected later.** The protected
@@ -147,9 +148,11 @@ real adapters. It decides what is built next.
 
 ### Known unknowns
 
-- Whether the sources behind a target list can report their own staleness. If
-  they cannot, fail-closed on freshness is not implementable, and `TargetList`
-  needs a different shape.
+- Whether the sources behind a target list can report their own staleness. A
+  warehouse table with an extraction column can, and the adapter reads its
+  oldest row by default; any other source is still an open question. One
+  that cannot makes fail-closed on freshness unimplementable, and `TargetList`
+  would need a different shape.
 - What a contract change costs once an adapter outside this repository
   implements one. The answer is cheap today and will not stay cheap; see 0005.
 

@@ -135,7 +135,7 @@ const REAL_PROFILE = /(linkedin\.com|twitter\.com|x\.com)\/(in|company)\//i;
 // "_" as a letter, which let `linkedin_profile_id` or `hubspot_id` through —
 // the exact shape a provider name takes when it slips into an identifier.
 const PROVIDERS =
-  /(?<![a-z0-9])(instantly|lemlist|attio|pipedrive|hubspot|salesforce|customer\.?io|apollo|clay|smartlead|linkedin)(?![a-z0-9])/i;
+  /(?<![a-z0-9])(instantly|lemlist|attio|pipedrive|hubspot|salesforce|customer\.?io|apollo|clay|smartlead|linkedin|bigquery)(?![a-z0-9])/i;
 // Every file in the repository, except an adapter. Covering only the engine's
 // code left decisions/, the README and the template open, and a decision is
 // exactly where a provider gets named while explaining it.

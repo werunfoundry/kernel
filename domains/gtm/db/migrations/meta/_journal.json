@@ -8,6 +8,20 @@
       "when": 1791943269725,
       "tag": "0000_robust_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792036919736,
+      "tag": "0001_draft_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792036921219,
+      "tag": "0002_draft_moves_forward",
+      "breakpoints": true
     }
   ]
 }

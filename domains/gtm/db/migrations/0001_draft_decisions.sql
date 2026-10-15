@@ -1,0 +1,2 @@
+ALTER TABLE "gtm"."draft" ADD CONSTRAINT "draft_decided" CHECK ("gtm"."draft"."state" in ('drafting', 'awaiting_review') or ("gtm"."draft"."decided_by" is not null and "gtm"."draft"."decided_at" is not null));--> statement-breakpoint
+ALTER TABLE "gtm"."draft" ADD CONSTRAINT "draft_dropped_has_reason" CHECK ("gtm"."draft"."state" <> 'dropped' or "gtm"."draft"."drop_reason" is not null);

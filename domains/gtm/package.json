@@ -15,6 +15,7 @@
     "./contracts/target-list": "./contracts/target-list.ts",
     "./contracts/inbound": "./contracts/inbound.ts",
     "./runtime/enrol": "./runtime/enrol.ts",
+    "./runtime/draft": "./runtime/draft.ts",
     "./db/migrations/*": "./db/migrations/*"
   },
   "publishConfig": {
@@ -56,6 +57,10 @@
       "./runtime/enrol": {
         "types": "./dist/runtime/enrol.d.ts",
         "default": "./dist/runtime/enrol.js"
+      },
+      "./runtime/draft": {
+        "types": "./dist/runtime/draft.d.ts",
+        "default": "./dist/runtime/draft.js"
       },
       "./db/migrations/*": "./db/migrations/*"
     },

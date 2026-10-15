@@ -16,6 +16,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   pgSchema,
@@ -104,6 +105,13 @@ export const message = gtm.table(
  *
  * It replaces the arrangement where a spreadsheet *was* the state, and where
  * a reviewer's judgement survived only in a file of dropped rows.
+ *
+ * Its gate is in the schema (decision 0027), not only in `runtime/draft.ts`:
+ * a trigger allows only the moves forward — drafting to review or approved,
+ * review to approved or dropped, approved to queued or dropped, queued to
+ * sent or failed — and refuses any change to the rendered text once it is
+ * approved, so what goes out is what was approved. The checks below make
+ * every decision carry who took it, and every drop its reason.
  */
 export const draft = gtm.table(
   "draft",
@@ -162,6 +170,14 @@ export const draft = gtm.table(
 
     /** `listDraftsAwaitingReview`, oldest first. */
     index("draft_state_created_at_idx").on(t.state, t.createdAt),
+
+    /** Past review, a draft says who decided and when — a human, or the lane. */
+    check(
+      "draft_decided",
+      sql`${t.state} in ('drafting', 'awaiting_review') or (${t.decidedBy} is not null and ${t.decidedAt} is not null)`,
+    ),
+    /** A drop without a reason is a judgement nobody can learn from. */
+    check("draft_dropped_has_reason", sql`${t.state} <> 'dropped' or ${t.dropReason} is not null`),
   ],
 );
 

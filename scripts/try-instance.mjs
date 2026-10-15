@@ -134,6 +134,8 @@ try {
   expect(migrated.status === 0, `kernel-migrate exited ${migrated.status}`);
   const again = await bin("kernel-migrate");
   expect(again.status === 0, `kernel-migrate, run twice, exited ${again.status}`);
+  expect(/core: applied \d+ migration/.test(migrated.stdout), "the first migrate did not say it applied the core's migrations");
+  expect(!/applied \d+ migration/.test(again.stdout) && /nothing to apply/.test(again.stdout), "the second migrate did not say it applied nothing");
 
   // Every adapter the kernel ships, by the name a binding gives it (0023),
   // loaded by the instance's own Node from the installed pack: a published
@@ -150,6 +152,14 @@ try {
   expect(loaded.status === 0, "a shipped adapter does not load from the instance");
   expect(shipped.length > 0, "no shipped adapter was found to load");
 
+  // The instance's own `pnpm typecheck`, with the TypeScript it declares. A
+  // template that declared none ran whatever `tsc` the machine had, and an
+  // old one refused the tsconfig outright.
+  step("the instance typechecks itself");
+  const typed = await spawnAsync("pnpm", ["typecheck"], { cwd: root, env });
+  show(typed);
+  expect(typed.status === 0, "the instance does not typecheck with what it declares");
+
   step("the instance checks itself");
   sh("git", ["init", "-q"], root);
   console.log(sh(join(root, "node_modules/.bin/kernel-check-instance"), [], root).trim());
@@ -161,6 +171,7 @@ try {
   expect(verified.status === 0, `verify exited ${verified.status}`);
   expect(Boolean(verifyId), "verify opened no run");
   expect(/This configuration is real\./.test(verified.stdout), "verify did not find the configuration real");
+  expect(!/nobody has stood behind this since/.test(verified.stdout), "a new instance reports its example truth as stale");
   const verifyRow = verifyId ? await runRow(verifyId) : undefined;
   expect(verifyRow?.status === "succeeded" && verifyRow?.dry_run === true, `the verify run reads ${JSON.stringify(verifyRow)}`);
 

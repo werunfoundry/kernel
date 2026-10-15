@@ -28,7 +28,44 @@ follow:
 - **Only syntax that can be erased.** No enums, no namespaces, no constructor
   parameter properties: stripping cannot remove them, and they would fail at
   run time. `erasableSyntaxOnly` in `tsconfig.json` refuses them at typecheck
-  instead.
+  instead. It exists from TypeScript 5.8, which is why `package.json` asks
+  for `typescript` 5.8 or later, beside `@types/node` for the Node floor;
+  `pnpm typecheck` uses those, not whatever `tsc` the machine has.
+
+## How this instance gets the engine
+
+As a published version, or as a packed tarball — never as a folder
+(decision 0025). A tarball is what a publish would upload: `pnpm pack`
+applies the package's `publishConfig` and rebuilds its JavaScript, which a
+folder path skips, and an instance installed from a folder fails at its first
+command.
+
+Until the packages are on the registry, or to try a change to the engine
+before it is published, pack them from a checkout of the engine:
+
+```
+mkdir -p ../packs
+(cd ../kernel/core              && pnpm pack --pack-destination ../../packs)
+(cd ../kernel/domains/relations && pnpm pack --pack-destination ../../../packs)
+(cd ../kernel/domains/gtm       && pnpm pack --pack-destination ../../../packs)
+```
+
+and point the dependencies at the tarballs, here and in the overrides (one
+engine package depends on another, and pnpm must take that one from the
+tarball too):
+
+```json
+"dependencies": { "@werunfoundry/core": "file:../packs/werunfoundry-core-0.1.0.tgz" }
+```
+
+```yaml
+# pnpm-workspace.yaml
+overrides:
+  "@werunfoundry/core": "file:../packs/werunfoundry-core-0.1.0.tgz"
+```
+
+The same for `relations` and `gtm`, and for `@werunfoundry/adapters` if a
+binding names a shipped adapter. `pnpm check` refuses a folder.
 
 ## Starting one
 

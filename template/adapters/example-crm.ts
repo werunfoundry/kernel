@@ -61,7 +61,12 @@ function errorFor(status: number, body: string): CallError {
  * A network failure is `unavailable` and retryable; an abort is not, because
  * the caller asked for it and retrying would ignore them.
  */
-function errorForThrown(thrown: unknown): CallError {
+function errorForThrown(thrown: unknown, timeoutMs: number): CallError {
+  // The request's own deadline: the provider did not answer in time. Retryable,
+  // and said in words — a run must not wait for ever on a silent provider.
+  if (thrown instanceof Error && thrown.name === "TimeoutError") {
+    return { code: "unavailable", message: `no answer within ${timeoutMs} ms`, retryable: true, retryAfterMs: 5_000 };
+  }
   if (thrown instanceof Error && thrown.name === "AbortError") {
     return { code: "unavailable", message: "cancelled", retryable: false };
   }
@@ -86,6 +91,9 @@ const factory: AdapterFactory<Crm> = ({ options, env }) => {
   const token = env.EXAMPLE_CRM_TOKEN;
   // CHANGE: your provider's base URL, overridable per instance.
   const baseUrl = String(options.baseUrl ?? "https://api.example.invalid/v1");
+  // Every request has a deadline, overridable per binding: a provider that
+  // stops answering becomes an error, not a run that never ends.
+  const timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : 30_000;
 
   async function call<T>(
     path: string,
@@ -100,7 +108,7 @@ const factory: AdapterFactory<Crm> = ({ options, env }) => {
     try {
       const response = await fetch(`${baseUrl}${path}`, {
         ...init,
-        ...(ctx.signal ? { signal: ctx.signal } : {}),
+        signal: ctx.signal ? AbortSignal.any([ctx.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
         headers: {
           ...init.headers,
           authorization: `Bearer ${token}`,
@@ -114,7 +122,7 @@ const factory: AdapterFactory<Crm> = ({ options, env }) => {
       }
       return { ok: true, value: (await response.json()) as T };
     } catch (thrown) {
-      return { ok: false, error: errorForThrown(thrown) };
+      return { ok: false, error: errorForThrown(thrown, timeoutMs) };
     }
   }
 

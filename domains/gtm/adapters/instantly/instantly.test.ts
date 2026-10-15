@@ -39,10 +39,14 @@ const state = {
   sentToday: 15,
   /** When set, every response is this status. */
   forceStatus: 0,
+  /** When set, the fake never answers. */
+  hang: false,
   /** When set, the next lead lookup finds nothing — a read that loses a race. */
   missNextList: false,
 };
 let seen: Seen[] = [];
+/** Requests left unanswered on purpose; closed once their test is over. */
+const hung: import("node:http").ServerResponse[] = [];
 /** Every request of the whole run. `seen` is reset per test; this never is. */
 const everyRequest: Seen[] = [];
 let server: Server;
@@ -67,6 +71,10 @@ before(async () => {
       res.setHeader("content-type", "application/json");
       res.end(value === undefined ? "" : JSON.stringify(value));
     };
+    if (state.hang) {
+      hung.push(res); // never answers while the test runs
+      return;
+    }
     if (state.forceStatus) return reply(state.forceStatus, { message: "forced" });
 
     const p = url.pathname;
@@ -125,9 +133,15 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
-after(() => server.close());
+after(() => {
+  for (const res of hung.splice(0)) res.destroy();
+  server.closeAllConnections();
+  server.close();
+});
 
 beforeEach(() => {
+  for (const res of hung.splice(0)) res.destroy();
+  state.hang = false;
   state.leads = [];
   state.blocklist = [];
   state.forceStatus = 0;
@@ -169,6 +183,15 @@ describe("probe", () => {
     const r = await adapter().probe!(ctx(true));
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.error.code, "unauthorized");
+  });
+
+  it("gives up on a provider that never answers, rather than hanging the run", async () => {
+    state.hang = true;
+    const slow = factory({ options: { baseUrl, timeoutMs: 200 }, env: { INSTANTLY_API_KEY: "test-key" } });
+    const started = Date.now();
+    const r = await slow.probe!(ctx(true));
+    assert.ok(!r.ok && r.error.code === "unavailable" && /no answer within 200 ms/.test(r.error.message), JSON.stringify(r));
+    assert.ok(Date.now() - started < 5_000);
   });
 
   it("fails without a key, without calling anyone", async () => {

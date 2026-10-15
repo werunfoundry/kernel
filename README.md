@@ -41,23 +41,34 @@ scripts/              checks that make the doctrine enforceable
 | Boot | written; resolves every name from the instance (0007) |
 | End to end | in CI, a generated instance migrates, verifies and runs the enrolment path — dry, live and replayed (0019) |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
-| Adapters | two: an example against an invented API, and a sequencer verified read-only against a live provider (0011) |
+| Adapters | one live sequencer, verified read-only against a real provider (0011); a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
 
 ## Where the work is
 
+**The rule for now: no engine capacity is added until a real instance has run
+and said what it lacks.** The contract surface is closed (0013–0021). What is
+left is adapters, the defects below, and the first instance. A feature built
+before that instance runs is built against a guess.
+
 In this order, because each one is what the next needs.
 
-**Audiences and suppression.** The protected-accounts path from decision 0004
-now runs inside the enrolment path (0019): read whole and fresh before anyone
-is enrolled, failing closed on age as well as on reachability. What remains is
-withdrawing someone already enrolled when their account becomes protected
-later — `suppress` exists on the sequencer (0014), and nothing calls it on a
-newly protected account yet.
+**Adapters.** Bound today:
+- one live sequencer, the email adapter, verified read-only against a real
+  workspace (0011, 0014, 0020);
+- a sandbox for every contract, so a generated instance runs as is.
 
-**The remaining adapter.** A target list. Its shape depends on answers this
-repository does not have — how a target list is actually served, and whether
-it can say when it was last recomputed.
+Next:
+- **inbound and metrics on that same email provider.** Read-only. They read
+  real people's replies, so they wait for the owner's explicit agreement.
+- **the target list**, which waits until its data has been looked at: how it
+  is served, and whether it can say when it was last recomputed.
+- **enrichment and a social sequencer**, which wait for the choice of tools.
+
+**Withdrawing someone whose account becomes protected later.** The protected
+set is read whole and fresh before anyone is enrolled (0019). `suppress`
+exists on every sequencer (0014), but nothing yet calls it when an account
+becomes protected after enrolment.
 
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
@@ -83,8 +94,9 @@ it is the engine's own state machine, and the engine owns it.
 The fix is about ten lines today: text, a vocabulary declared in `domain.yaml`
 beside `channels`, checked against the union of the enabled domains. Note what
 "like `channels`" means today: the manifest validator reads the declaration,
-but no write path checks a channel value yet, because no write path exists. The
-check lands with the first one, for both. Once an instance has rows in these
+and the enrolment path only routes to declared channels (0015), but nothing
+writes `relations.touch` or these tables yet, so no write checks a stored value.
+The check lands with the first such write, for both. Once an instance has rows in these
 tables, the same change is a data migration on a Postgres type. The build and
 the publication make that first instance close, so this lands before it does.
 Adding a vocabulary key to `domain.yaml` changes how a domain contributes its
@@ -94,9 +106,38 @@ vocabulary, which is a decision record when the change is made.
 (0008). Putting them on the registry needs the `@werunfoundry` scope to exist
 there, which is an account, not code.
 
-**A first instance.** Generated from `template/`, in its own repository. It is
-last on purpose: an instance built before the engine runs would be built
-against intentions.
+**A first instance.** Generated from `template/`, in its own repository, with
+real adapters. It decides what is built next.
+
+### Not built yet, and recorded where it was decided
+
+- The loop that reads inbound events into `core.event`: it needs a table for
+  each adapter's cursor, which is a new core object (0017).
+- Per-person enrolment outcomes are returned and printed, not stored (0019).
+- A rolling window is approximated by a closed one, and the engine plans
+  against the approximation (0020).
+
+### Set aside, and why
+
+- **Managing a pool of senders** — warm-up, rotation, health — belongs to the
+  provider, not to the kernel.
+- **An MCP server or an HTTP API** waits until there are operations worth a
+  conversation.
+- **Reading runs back** — listing, filtering, dashboards — waits until there
+  are enough runs to read.
+- **Erasure and retention** wait until a real instance touches real people.
+- **The experiment object**, beyond the row that exists, waits until a real
+  campaign has run.
+
+### Open questions
+
+- Which tool sequences the social channels.
+- What shape `Inbound` takes when one instance reads events from several
+  sources at once — one binding per source, or one per event type.
+- Where a diagnostic metric is declared. `experimentMetrics` now says only
+  what judges an experiment (`channel_test` dropped `gtm.replied` for that
+  reason), and a metric worth reading beside the judgement has nowhere to be
+  named.
 
 ### Known unknowns
 

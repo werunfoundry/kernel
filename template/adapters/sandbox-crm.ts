@@ -1,6 +1,7 @@
 /**
- * CRM, sandbox. Looks companies and people up in invented data, and keeps
- * what it is asked to register in the sandbox's state file. For a CRM you
+ * CRM, sandbox. Knows the companies and people the invented data says it
+ * holds (`crm`), and what it is asked to register, kept in the sandbox's
+ * state file. For a CRM you
  * can reach, start from `example-crm.ts`, which talks to an API.
  */
 
@@ -22,15 +23,22 @@ const factory: AdapterFactory<Crm> = ({ options }) => {
     async findCompanyByDomain(domain) {
       const data = loadData(options.dataFile);
       if (!data.ok) return data;
-      const c = data.value.companies.find((x) => x.domain === domain.toLowerCase());
-      return { ok: true, value: c ? { ref: { externalId: c.externalId }, name: c.name, domain: c.domain, fields: {} } : null };
+      const d = domain.toLowerCase();
+      if (!(data.value.crm?.companies ?? []).includes(d)) return { ok: true, value: null };
+      const c = data.value.companies.find((x) => x.domain === d);
+      return { ok: true, value: { ref: { externalId: c?.externalId ?? d }, ...(c ? { name: c.name } : {}), domain: d, fields: {} } };
     },
 
     async findPersonByEmail(email) {
       const data = loadData(options.dataFile);
       if (!data.ok) return data;
-      const p = data.value.people.find((x) => x.email === email.toLowerCase());
-      return { ok: true, value: p ? { ref: { externalId: p.email }, email: p.email, fullName: p.name, fields: {} } : null };
+      // What the CRM was seeded with, and what it was asked to register.
+      const e = email.toLowerCase();
+      const state = loadState(path);
+      if (!state.ok) return state;
+      if (!(data.value.crm?.people ?? []).includes(e) && !state.value.crm.some((r) => r.email === e)) return { ok: true, value: null };
+      const p = data.value.people.find((x) => x.email === e);
+      return { ok: true, value: { ref: { externalId: e }, email: e, ...(p ? { fullName: p.name } : {}), fields: {} } };
     },
 
     async register(registration, ctx): Promise<CallResult<CrmRegistrationResult>> {

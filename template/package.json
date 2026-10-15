@@ -12,6 +12,7 @@
     "migrate": "kernel-migrate",
     "verify": "kernel-verify",
     "enrol": "kernel-enrol",
+    "source": "kernel-source",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

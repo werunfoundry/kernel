@@ -18,8 +18,9 @@
  *      experiment type measurable;
  *   5. `kernel-enrol`, three times: a dry run that writes nothing, a live run
  *      that enrols the open accounts' people and skips the protected one, and
- *      a replay that enrols nobody twice. Every run is read back from the
- *      database.
+ *      a replay that enrols nobody twice; then `kernel-source`, dry and
+ *      live, excluding by protection and by the CRM before and after
+ *      completion. Every run is read back from the database.
  *
  *   TEST_DATABASE_URL=postgresql://… node scripts/try-instance.mjs
  *
@@ -226,6 +227,38 @@ try {
       JSON.stringify(await skipsOf(replay.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }, { reason: "duplicate", n: 3 }]),
       "the replay's skips were not kept with their reasons",
     );
+
+    // The sourcing path (0031): the protected account and the one the CRM
+    // holds are excluded before anyone there is looked up; Bo, whom the CRM
+    // knows by address, after; Ada is kept.
+    const sourceArgs = ["--max-age", "60", "--max-people", "10", "--want", "email"];
+    const outcomesOf = async (out) => {
+      const id = out.match(/^run: ([0-9a-f-]{36})/m)?.[1];
+      return id
+        ? (await client.query("select pass, outcome, count(*)::int as n, count(person_id)::int as recorded from gtm.sourcing_result where run_id = $1 group by 1, 2 order by 1, 2", [id])).rows
+        : [];
+    };
+    const expected = (recorded) => [
+      { pass: "company", outcome: "protected", n: 1, recorded: 0 },
+      { pass: "company", outcome: "known_to_crm", n: 1, recorded: 0 },
+      { pass: "person", outcome: "kept", n: 1, recorded },
+      { pass: "person", outcome: "known_to_crm", n: 1, recorded: 0 },
+    ];
+
+    step("source, dry run");
+    const sourcedDry = await bin("kernel-source", sourceArgs);
+    show(sourcedDry);
+    expect(sourcedDry.status === 0, `the sourcing dry run exited ${sourcedDry.status}`);
+    expect(/company pass, before anything was spent — excluded: 2/.test(sourcedDry.stdout), "the company pass did not exclude the protected account and the CRM's");
+    expect(/would keep: 1/.test(sourcedDry.stdout), "the sourcing dry run would not keep Ada");
+    expect(JSON.stringify(await outcomesOf(sourcedDry.stdout)) === JSON.stringify(expected(0)), `the sourcing dry run kept ${JSON.stringify(await outcomesOf(sourcedDry.stdout))}`);
+
+    step("source, live");
+    const sourcedLive = await bin("kernel-source", [...sourceArgs, "--live"]);
+    show(sourcedLive);
+    expect(sourcedLive.status === 0, `the sourcing live run exited ${sourcedLive.status}`);
+    expect(/kept: 1/.test(sourcedLive.stdout), "the sourcing live run did not keep Ada");
+    expect(JSON.stringify(await outcomesOf(sourcedLive.stdout)) === JSON.stringify(expected(1)), `the sourcing live run kept ${JSON.stringify(await outcomesOf(sourcedLive.stdout))}`);
   }
   await client.end();
 } catch (error) {

@@ -358,3 +358,81 @@ export const enrolmentSkip = gtm.table(
     index("enrolment_skip_run_reason_idx").on(t.runId, t.reason),
   ],
 );
+
+/**
+ * What a sourcing run did with each company and person it looked at
+ * (decision 0031): kept, or excluded and why, in which pass.
+ */
+export const sourcingOutcome = gtm.enum("sourcing_outcome", [
+  "kept",
+  "protected",
+  "known_to_crm",
+  "opted_out",
+  "duplicate",
+  "incomplete",
+  "unreachable",
+  "not_reached",
+  "simulated",
+]);
+
+/**
+ * Every company and person a sourcing run looked at, and what it did with
+ * each (decision 0031). The sourcing path's counterpart of `enrolment_skip`,
+ * with the people it kept beside the ones it excluded: a later enrolment
+ * reads the kept ones back by run, rather than sourcing — and paying — again.
+ *
+ * Per run and append-only in use, dry runs included. A kept person names the
+ * relations row it was recorded as; a dry run records nobody, so its kept
+ * rows name none. An excluded subject is kept as it was seen — its keys —
+ * because a protected person is not recorded in order to record that they
+ * were not contacted.
+ */
+export const sourcingResult = gtm.table(
+  "sourcing_result",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    /** Cascade: an outcome is part of its run. */
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => run.id, { onDelete: "cascade" }),
+
+    /** `company`: decided before anyone there was looked up. `person`: after. */
+    pass: text("pass").notNull(),
+    outcome: sourcingOutcome("outcome").notNull(),
+    detail: text("detail").notNull(),
+
+    /** The person's keys, when a person; absent when a whole company. */
+    person: jsonb("person"),
+    /** The company as the target list gave it: domain, identifier, name. */
+    company: jsonb("company").notNull(),
+
+    /** The recorded person, for a kept one in a live run. Restrict: a kept person is not quietly deleted from under the run that kept them. */
+    personId: uuid("person_id").references(() => person.id, { onDelete: "restrict" }),
+
+    /**
+     * What the provider said about the keys the completion added, and what
+     * each source charged, as the walk reported them. The run's own
+     * observation, kept so a report can be read back; not a copy of a
+     * provider's record.
+     */
+    said: jsonb("said"),
+    cost: jsonb("cost"),
+
+    /** What the outcome is about, stable within a run: the person's keys, or the company's. */
+    subject: text("subject").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** A run that writes the same outcome twice — a retried write — keeps one. */
+    uniqueIndex("sourcing_result_run_subject_uidx").on(t.runId, t.subject),
+
+    /** `listKept(runId)` and `listExcluded(runId, outcome)` — reading a run back, and enrolling what it kept. */
+    index("sourcing_result_run_outcome_idx").on(t.runId, t.outcome),
+
+    check("sourcing_result_pass_check", sql`${t.pass} in ('company', 'person')`),
+    /** A company-pass row is about a whole company: no person. */
+    check("sourcing_result_company_pass_check", sql`${t.pass} = 'person' or ${t.person} is null`),
+  ],
+);

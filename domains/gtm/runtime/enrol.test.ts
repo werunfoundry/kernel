@@ -31,6 +31,7 @@ import type { PeopleSource } from "@werunfoundry/relations/contracts/people-sour
 import type { CapacityLimit, Sequencer } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
 import type { EnrolRequest } from "./enrol.js";
+import { acknowledgeUncovered, withdrawAcknowledgement } from "./acknowledge.js";
 import { enrol } from "./enrol.js";
 
 const base = process.env.TEST_DATABASE_URL;
@@ -213,7 +214,7 @@ const held = () => [...world.enrolled.values()].sort();
 
 beforeEach(async () => {
   if (client) {
-    await client.query("truncate gtm.enrolment_skip, gtm.enrolment, gtm.sourcing_result, relations.person, relations.company cascade");
+    await client.query("truncate gtm.enrolment_skip, gtm.enrolment, gtm.sourcing_result, gtm.protection_acknowledgement, relations.person, relations.company cascade");
   }
   world.statusCalls = 0;
   world.lookedUp = [];
@@ -742,7 +743,7 @@ describe("protection by company id", { skip: base ? false : "TEST_DATABASE_URL i
   // The candidate's domain is open: only its company id is protected.
   it("skips a company protected by its company id alone, and the sequencer never holds its people", async () => {
     world.candidates = [{ domain: "open.example.com", identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, ...id("4242").keys] }, attributes: {} }];
-    world.protected = [{ identity: id("4242"), reason: "customer" }];
+    world.protected = [{ domain: "client.example.net", identity: { subject: "company", keys: [{ kind: "domain", value: "client.example.net" }, ...id("4242").keys] }, reason: "customer" }];
     const r = await run();
     assert.deepEqual(held(), []);
     assert.deepEqual(r.skipped.map((s) => [s.reason, s.company.domain]), [["protected", "open.example.com"]]);
@@ -767,5 +768,35 @@ describe("protection by company id", { skip: base ? false : "TEST_DATABASE_URL i
     ];
     const r = await run({ dryRun: true });
     assert.deepEqual([r.protectedAccounts, r.protectedRows], [2, 3]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* An uncovered customer, and its acknowledgement (0034)                        */
+/* -------------------------------------------------------------------------- */
+
+describe("an uncovered customer", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  beforeEach(() => {
+    world.protected = [
+      { domain: "customer.example.org", customerId: "cust-a", reason: "customer" },
+      // No key on any of cust-z's rows: nothing can protect it.
+      { name: "Zed", customerId: "cust-z", reason: "customer" },
+    ];
+  });
+
+  it("stops the run, naming itself, until a person acknowledges it — and stops it again once withdrawn", async () => {
+    const before = await run({ dryRun: true });
+    assert.equal(before.status, "failed");
+    assert.match(before.stoppedBy ?? "", /no key on any row.*cust-z \(Zed\)/);
+
+    await acknowledgeUncovered(db, { customerId: "cust-z", note: "no key upstream; reviewed", by: "an operator" });
+    const acknowledged = await run({ dryRun: true });
+    assert.equal(acknowledged.status, "succeeded", acknowledged.stoppedBy);
+    assert.deepEqual(acknowledged.protection?.uncovered, [{ customerId: "cust-z", name: "Zed", rows: 1 }]);
+    assert.deepEqual([acknowledged.protectedAccounts, acknowledged.protectedRows], [2, 2]);
+
+    await withdrawAcknowledgement(db, { customerId: "cust-z", by: "an operator" });
+    const withdrawn = await run({ dryRun: true });
+    assert.equal(withdrawn.status, "failed");
   });
 });

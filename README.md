@@ -123,14 +123,15 @@ real adapters. It decides what is built next.
   tsx a failure hangs instead of failing, because Node re-reads the source to
   rebuild the message. Fixed in the enrichment adapter's tests only.
 
-**Protection reads a table built for it, and stops on an account it cannot
-match.** The protected route's freshness reads the time the table was built
-(0019, doctrine 6) — never a time computed when the query runs, which would
-make every read look fresh. Accounts match on their domain or their company
-id, and either is enough (0033). An account with neither — no domain, no
-company id, no identifier — stops every run, because nothing could be
-matched against it: until the source gives such accounts a key, or the
-instance decides they are not protected, no run passes protection.
+**Protection reads a table built for it, and names what it cannot protect.**
+The protected route's freshness reads the time the table was built (0019,
+doctrine 6) — never a time computed when the query runs, which would make
+every read look fresh. Accounts match on their domain or their company id,
+either enough (0033), and are counted by customer. A customer with no key on
+any of its rows is protected by nothing: it stops every run, naming itself,
+until a person acknowledges it with `kernel-acknowledge` — and every run then
+says it is uncovered (0034). Giving it a key upstream is the fix; the
+acknowledgement only makes the hole visible and owned.
 
 #### The objects phase 3 was going to build — what exists, and what is not wired
 

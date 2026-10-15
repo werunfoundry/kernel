@@ -277,7 +277,7 @@ describe("the company pass, before anything is spent", { skip: base ? false : "T
   it("excludes a company protected by its company id alone, and never looks up its people", async () => {
     const id = { kind: "social_company_id", network: "net_a", value: "4242" };
     world.candidates = [{ domain: "open.example.com", identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, id] }, attributes: {} }];
-    world.protected = [{ identity: { subject: "company", keys: [id] }, reason: "customer" }];
+    world.protected = [{ domain: "client.example.net", identity: { subject: "company", keys: [{ kind: "domain", value: "client.example.net" }, id] }, reason: "customer" }];
     const r = await run();
     assert.deepEqual([world.searched, world.completed], [[], []]);
     assert.deepEqual(r.looked.map((l) => [l.pass, l.outcome]), [["company", "protected"]]);

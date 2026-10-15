@@ -55,6 +55,8 @@ import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequence
 import { remainingOf } from "../contracts/sequencer.js";
 import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
 import { enrolment, enrolmentSkip, sourcingResult } from "../db/schema.js";
+import { readAcknowledged } from "./acknowledge.js";
+import type { Protection } from "./protection.js";
 import { readProtection } from "./protection.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
@@ -115,6 +117,11 @@ export interface EnrolReport {
   /** Distinct protected accounts (decision 0033); `protectedRows` counts the source's rows. */
   protectedAccounts: number;
   protectedRows: number;
+  /**
+   * What protection matched on, and the acknowledged customers it could not
+   * protect (0034). Absent when the run stopped before protection was read.
+   */
+  protection?: Pick<Protection, "surface" | "unkeyedRowsOfCoveredCustomers" | "uncovered">;
   enrolled: Enrolled[];
   /**
    * People a previous run wrote to the registry and died before confirming,
@@ -277,11 +284,15 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
   try {
     /* 1. Protection, before anything else ------------------------------ */
 
-    const read = await readProtection(targets, { maxAgeMinutes: request.protectedMaxAgeMinutes, now: now() }, ctx);
+    // The customers a person acknowledged as uncovered (0034): read here,
+    // never written by a run.
+    const acknowledged = await readAcknowledged(deps.db);
+    const read = await readProtection(targets, { maxAgeMinutes: request.protectedMaxAgeMinutes, now: now(), acknowledged }, ctx);
     if (!read.ok) throw new Stop(read.stop);
     const protection = read.protection;
     report.protectedAccounts = protection.accounts;
     report.protectedRows = protection.rows;
+    report.protection = { surface: protection.surface, unkeyedRowsOfCoveredCustomers: protection.unkeyedRowsOfCoveredCustomers, uncovered: protection.uncovered };
     const companyProtected = protection.company;
     const personProtected = protection.person;
 

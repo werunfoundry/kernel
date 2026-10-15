@@ -43,6 +43,13 @@
       "when": 1792093514347,
       "tag": "0005_skip_opted_out",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792096692663,
+      "tag": "0006_protection_acknowledgement",
+      "breakpoints": true
     }
   ]
 }

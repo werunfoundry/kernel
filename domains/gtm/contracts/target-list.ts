@@ -99,6 +99,13 @@ export interface ProtectedAccount {
    * as long as each is in the set.
    */
   identity?: Identity;
+  /**
+   * The customer the account belongs to, when the source groups accounts —
+   * several workspaces of one customer, say. Used to count customers and to
+   * say which customer is uncovered, never to match: a candidate is matched
+   * on keys only (decision 0034).
+   */
+  customerId?: string;
   reason: ProtectionReason;
   /** When the protection began, when the source knows. */
   since?: string;

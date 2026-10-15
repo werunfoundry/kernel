@@ -122,6 +122,88 @@ real adapters. It decides what is built next.
   tsx a failure hangs instead of failing, because Node re-reads the source to
   rebuild the message. Fixed in the enrichment adapter's tests only.
 
+**Protection cannot pass until the accounts table says how old it is.** The
+protected route's freshness reads an extraction column (0019, doctrine 6).
+The first real instance's accounts table is a view with no such column, so
+its protected set has no age, and every enrolment stops before reading a
+candidate — correctly. The column must carry the upstream freshness: when
+the source last extracted the rows. Never a time computed when the query
+runs — `CURRENT_TIMESTAMP` in a view would make every read look fresh, which
+is the cheerful stale answer doctrine 6 exists to refuse. The same view scans
+9.5 GB per read (see the warehouse adapter's README); a table materialised
+from it, with that column, settles both.
+
+#### The objects phase 3 was going to build — what exists, and what is not wired
+
+Most of what the core needs is already in the schema. What is missing is
+whatever writes it, reads it, or connects it to the rest.
+
+**`core.experiment`**
+- *There:* a unique `slug`; `type` as text, from the domains'
+  `experimentTypes`; `status` (`draft`, `running`, `measuring`, `validated`,
+  `killed`); `hypothesis_ref`, the objective that lives elsewhere, as a
+  reference; `lane` and `autonomy_streak`; `targets`; `metric`,
+  `kill_threshold`, `minimum_sample`, `budget_eur`; the run window and the
+  measurement window; `baseline_snapshot`. The domains declare `metrics` and
+  `experimentMetrics`, and `kernel-verify` reports which experiment types the
+  bound metric sources can judge (0018).
+- *Written by:* nobody creates one. `core/runtime/experiment.ts` writes
+  `autonomy_streak` only, on each human review (0027).
+- *Read by:* `laneOf` (lane and streak) and the draft's gate (`status` must be
+  `running` to queue). `gtm.message`, `gtm.draft` and `relations.touch`
+  reference it.
+- *Not wired:* a writer that creates an experiment and checks its `type`
+  against the declared types; the status transitions, enforced in the schema
+  as the draft's are; anything that reads the threshold, the sample, the
+  budget, the windows or `targets`; the link to enrolment — the enrolment path
+  enrols into a `sequenceKey`, the registry (0026) has no experiment, and the
+  provider's campaign is an adapter option, so "the experiment replaces the
+  campaign" is that link, not a new table.
+
+**`core.decision`**
+- *There:* a polymorphic subject (`subject_kind`, `subject_id`), `choice`,
+  `rationale`, `metric_snapshot`, attribution, an index by subject.
+- *Written by:* nobody. *Read by:* nobody.
+- *Not wired:* a writer; append-only in the schema (today it is a comment);
+  freezing the numbers a decision rests on, which means reading them —
+  `readMetric` in `core/manifest/measure.ts` reads one through a source and
+  applies the not-applicable rule (0021), and nothing but its tests calls it;
+  the only metric source bound anywhere is the sandbox, so `verify`'s
+  "measurable" counts a source that measures nothing real; tying a decision to the
+  experiment transition it causes (killed, validated, extended), and writing
+  `baseline_snapshot` when the measurement window opens.
+
+**`core.event`**
+- *There:* the table, unique on the provider and its event id; `processed_at`
+  and an index on what is not processed; `run.event_id`, so a run can say
+  which event triggered it. In `gtm`, the `Inbound` contract — pulled with a
+  cursor (0017) — and `checkInboundEvent`; a CRM inbound adapter and a
+  sandbox. In `relations`, `touch` records the inbound direction and
+  `recordTouch` writes it.
+- *Written by:* nobody. *Read by:* nobody. `openRun` accepts an `eventId`
+  that no caller passes; `recordTouch` has no caller; `Inbound.events` is only
+  ever probed.
+- *Not wired:* the loop that reads each inbound adapter and writes
+  `core.event`; where each adapter's cursor is kept, which 0017 left to its
+  own decision — the core has four tables, so the ten-object rule is not the
+  constraint; whether a cursor belongs to the core or to `gtm`, whose contract
+  `Inbound` is, is the question; the tie to a person. `core.event` cannot
+  reference `relations.person` (the core depends on nothing), so an event's
+  subject is only in its payload: the person-level trace is an inbound
+  `touch`, written beside the event. The reactive lane needs exactly that to
+  stop failing closed (0027).
+
+**Processes**
+- *There:* `run.process_key`, written as free text — `instance.verify`,
+  `gtm.enrol.<sequence>`; `run.trigger`, an enum (`webhook`, `cron`, `cli`,
+  `manual`) of which only `cli` is ever written.
+- *Not there at all:* a process. `core.run`'s comment says a process key
+  matches "a process declared in the manifest", and the manifest has no such
+  field. Nothing declares a process, nothing schedules one, and nothing routes
+  an event to one. 0017 rules out a webhook endpoint in the kernel, so a
+  trigger is a pull on a schedule or a command — and what a process *is* has
+  to be decided before anything triggers it.
+
 ### Set aside, and why
 
 - **Managing a pool of senders** — warm-up, rotation, health — belongs to the

@@ -37,6 +37,20 @@ cpSync(join(root, "template"), to, {
   filter: (src) => !/(^|\/)node_modules(\/|$)/.test(src),
 });
 
+// The example truth is dated the day the instance is made. A fixed date in the
+// template made every new instance report it stale at birth — a warning that
+// says nothing and teaches people to skip warnings. From today it ages like
+// any truth: stale in three months if nobody has replaced it, which is when
+// the warning has something to say.
+const icpPath = join(to, "truths/example-icp.yaml");
+const icp = readFileSync(icpPath, "utf8");
+const dated = icp.replace(/^validatedAt: "[^"]*"$/m, `validatedAt: "${new Date().toISOString().slice(0, 10)}"`);
+if (dated === icp) {
+  console.error("new-instance: truths/example-icp.yaml has no validatedAt line to date — the template changed and this script did not.");
+  process.exit(1);
+}
+writeFileSync(icpPath, dated);
+
 const pkgPath = join(to, "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 for (const [name, spec] of Object.entries(pkg.dependencies ?? {})) {

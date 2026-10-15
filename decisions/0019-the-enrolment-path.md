@@ -1,5 +1,8 @@
 # 0019 — The enrolment path, with protection in it from the start
 
+> Completed by [0026](0026-the-enrolment-registry.md): enrolments and skips
+> are recorded, written before the provider is called.
+
 Completes [0004](0004-protection-is-its-own-route.md), which decided that
 protection is its own route and is re-checked at enrolment, and
 [0012](0012-one-provider-workspace-per-instance.md), which made that check the

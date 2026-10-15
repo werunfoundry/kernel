@@ -99,6 +99,10 @@ async function main(): Promise<number> {
     );
     console.log(`  ${report.dryRun ? "would enrol" : "enrolled"}: ${report.enrolled.length}`);
     for (const e of report.enrolled) console.log(`    + ${e.person.keys[0]?.value} (${e.state})`);
+    if (report.reconciled.length > 0) {
+      console.log(`  reconciled, enrolled by an earlier run that stopped before recording it: ${report.reconciled.length}`);
+      for (const e of report.reconciled) console.log(`    = ${e.person.keys[0]?.value} (${e.state})`);
+    }
     const reasons = ["protected", "capacity", "duplicate", "unreachable"] as const;
     for (const reason of reasons) {
       const these = report.skipped.filter((s) => s.reason === reason);

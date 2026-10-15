@@ -70,7 +70,8 @@ Next:
 **Withdrawing someone whose account becomes protected later.** The protected
 set is read whole and fresh before anyone is enrolled (0019). `suppress`
 exists on every sequencer (0014), but nothing yet calls it when an account
-becomes protected after enrolment.
+becomes protected after enrolment. The registry (0026) is what makes it
+answerable: it records the company each person was enrolled through.
 
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
@@ -115,7 +116,6 @@ real adapters. It decides what is built next.
 
 - The loop that reads inbound events into `core.event`: it needs a table for
   each adapter's cursor, which is a new core object (0017).
-- Per-person enrolment outcomes are returned and printed, not stored (0019).
 - A target list may return a company's keys, its networked id included; the
   enrolment path still finds people by domain (0024).
 - A rolling window is approximated by a closed one, and the engine plans

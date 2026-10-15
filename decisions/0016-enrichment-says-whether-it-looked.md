@@ -1,6 +1,8 @@
 # 0016 — Enrichment says whether it looked
 
 > Superseded in part by [0022](0022-a-completion-carries-what-was-attested.md): a completion carries only what the provider attests, and is accepted only on an immutable key.
+>
+> Superseded in part by [0030](0030-sources-in-sequence-by-what-they-find.md): finding people (`people_source`) and completing an identity (`enrichment`) are two contracts.
 
 ## Decided
 

@@ -52,6 +52,13 @@
  *   provider returns the profile, and with it the network's numeric id —
  *   the immutable key 0022 needs. Without that id in the answer, the
  *   contract rejects the completion: a handle can change hands.
+ * - **The URL's field name is the one thing the reference contradicts
+ *   itself on** — `linkedin_url` in the schema, `professional_network_url`
+ *   in one example. This sends the schema's, and the first real call
+ *   settles it. A wrong name is safe by construction: the provider ignores
+ *   it, its answer carries no profile, so no profile id, and the contract
+ *   rejects every completion. A wrong name is a loud refusal, never a wrong
+ *   key.
  * - **An address the provider marks `INVALID` or `INVALID_DOMAIN` is not
  *   returned.** The provider disavows it, so it does not attest it. Every
  *   other address is returned with the provider's status in `said` —

@@ -42,7 +42,7 @@ scripts/              checks that make the doctrine enforceable
 | Boot | written; resolves every name from the instance (0007) |
 | End to end | in CI, a generated instance migrates, verifies and runs the enrolment path — dry, live and replayed (0019) |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
-| Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a sandbox for every contract; an API example to copy |
+| Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
 
 ## Where the work is

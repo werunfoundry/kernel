@@ -118,12 +118,18 @@ real adapters. It decides what is built next.
   against the approximation (0020).
 - A profile handle is not only mutable, it is reassignable: released by one
   person, it can be taken by another. The enrichment adapter's `complete`
-  builds its lookup from the handle, so it must check that the profile it read
-  carries the attested `social_profile_id` before accepting the result, or it
-  attaches someone else's address to the original identity. Today it returns
-  the provider's id when the provider sends one, and `acceptCompletion`
-  rejects a mismatch; nothing checks when the id is absent, and the adapter
-  does not refuse on its own.
+  builds its lookup from the handle, and accepts whatever address comes back
+  unless the provider's answer carries a different profile id. When the
+  answer carries no id at all, the result is accepted — with the attested id
+  in the identity or without it — because the adapter echoes every key it was
+  given, as the `Enrichment` contract requires, so `acceptCompletion`'s
+  "a key asked about is missing" check can never fire. Run against a fake
+  provider that answers another person's address and no id, both cases
+  attach that address to the original identity. Possible remedies, not built:
+  the adapter refuses an answer without the provider's own profile id, and
+  refuses a handle-only identity, as it refuses a domain-only company; or the
+  contract distinguishes the keys a provider attested in its answer from the
+  keys it was handed.
 - `assert.ok(expr)` without a message, in the rest of the test suite: under
   tsx a failure hangs instead of failing, because Node re-reads the source to
   rebuild the message. Fixed in the enrichment adapter's tests only.

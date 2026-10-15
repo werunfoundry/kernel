@@ -134,6 +134,8 @@ try {
   expect(migrated.status === 0, `kernel-migrate exited ${migrated.status}`);
   const again = await bin("kernel-migrate");
   expect(again.status === 0, `kernel-migrate, run twice, exited ${again.status}`);
+  expect(/core: applied \d+ migration/.test(migrated.stdout), "the first migrate did not say it applied the core's migrations");
+  expect(!/applied \d+ migration/.test(again.stdout) && /nothing to apply/.test(again.stdout), "the second migrate did not say it applied nothing");
 
   // Every adapter the kernel ships, by the name a binding gives it (0023),
   // loaded by the instance's own Node from the installed pack: a published

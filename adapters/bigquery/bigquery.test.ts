@@ -486,15 +486,53 @@ describe("protectedAccounts", () => {
   it("reads the customer table on its active values — not a status on the target table", async () => {
     const r = await adapter().protectedAccounts({}, ctx());
     assert.ok(r.ok, JSON.stringify(r));
+    const keys = (domain: string) => ({ subject: "company", keys: [{ kind: "domain", value: domain }] });
     assert.deepEqual(r.value.items, [
-      { externalId: "c-1", name: "Client", domain: "client.example.org", reason: "customer" },
-      { externalId: "c-2", name: "Trial", domain: "trial.example.org", reason: "customer" },
+      { externalId: "c-1", name: "Client", domain: "client.example.org", identity: keys("client.example.org"), reason: "customer" },
+      { externalId: "c-2", name: "Trial", domain: "trial.example.org", identity: keys("trial.example.org"), reason: "customer" },
     ]);
     const body = posted()[0]!;
     assert.match(String(body.query), /FROM `proj-fixture`\.`warehouse`\.`customers` WHERE CAST\(`sub` AS STRING\) IN UNNEST\(@active\) OR `sub` IS NULL$/);
     assert.deepEqual(body.queryParameters, [
       { name: "active", parameterType: { type: "ARRAY", arrayType: { type: "STRING" } }, parameterValue: { arrayValues: [{ value: "active" }, { value: "trialing" }] } },
     ]);
+  });
+
+  it("returns the account's company id on the network as a key, beside its domain", async () => {
+    state.customers = [{ sub: "active", dom: "client.example.org", pcid: "4242", cust: null, nm: null }];
+    const r = await adapter({ "protected.companyIdColumn": "pcid" }).protectedAccounts({}, ctx());
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.deepEqual(r.value.items.map((a) => a.identity?.keys), [
+      [{ kind: "domain", value: "client.example.org" }, { kind: "social_company_id", value: "4242", network: "net_a" }],
+    ]);
+    assert.match(String(posted()[0]?.query), /CAST\(`pcid` AS STRING\) AS company_id/);
+  });
+
+  // Several companies can share a domain upstream, each build picking one id:
+  // the adapter does not choose, merge or refuse — protection counts.
+  it("returns every row as the table has it: one domain with two company ids is two rows", async () => {
+    state.customers = [
+      { sub: "active", dom: "shared.example.org", pcid: "1", cust: null, nm: null },
+      { sub: "active", dom: "shared.example.org", pcid: "2", cust: null, nm: null },
+    ];
+    const r = await adapter({ "protected.companyIdColumn": "pcid" }).protectedAccounts({}, ctx());
+    assert.ok(r.ok && r.value.items.length === 2, JSON.stringify(r));
+  });
+
+  it("returns the customer an account belongs to, to count by — never as a key", async () => {
+    state.customers = [
+      { sub: "active", dom: "one.example.org", owner: "cust-1", cust: null, nm: null },
+      { sub: "active", dom: null, owner: "cust-1", cust: null, nm: null },
+    ];
+    const r = await adapter({ "protected.customerColumn": "owner" }).protectedAccounts({}, ctx());
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.deepEqual(r.value.items.map((a) => [a.customerId, a.identity?.keys.length ?? 0]), [["cust-1", 1], ["cust-1", 0]]);
+    assert.match(String(posted()[0]?.query), /CAST\(`owner` AS STRING\) AS customer_id/);
+  });
+
+  it("refuses a protected company id column with no network", async () => {
+    const r = await adapter({ "protected.companyIdColumn": "pcid", "candidates.companyIdColumn": undefined, network: undefined }).protectedAccounts({}, ctx());
+    assert.ok(!r.ok && r.error.code === "invalid" && /protected\.companyIdColumn needs network/.test(r.error.message), JSON.stringify(r));
   });
 
   it("refuses an empty set by default: a misspelt active value looks exactly like it", async () => {
@@ -623,10 +661,10 @@ describe("the columns each query reads", () => {
     assert.deepEqual(columns(candidatesSql({ ...route, statusColumn: "st", companyId: "cid", id: "tid", name: "nm" })), ["cid", "dom", "nm", "st", "tid"]);
   });
 
-  it("the protected set reads active, domain, and the optional id and name", () => {
+  it("the protected set reads active, domain, and the optional company id, customer, id and name", () => {
     assert.deepEqual(
-      columns(protectedSql({ ...route, activeColumn: "sub", activeValues: ["a"], reason: "customer", allowEmpty: false, id: "cust", name: "nm" })),
-      ["cust", "dom", "nm", "sub"],
+      columns(protectedSql({ ...route, activeColumn: "sub", activeValues: ["a"], reason: "customer", allowEmpty: false, companyId: "pcid", customer: "owner", id: "cust", name: "nm" })),
+      ["cust", "dom", "nm", "owner", "pcid", "sub"],
     );
   });
 });

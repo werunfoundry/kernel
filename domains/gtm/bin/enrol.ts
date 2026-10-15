@@ -104,7 +104,15 @@ async function main(): Promise<number> {
       (s.person ? shown(s.person) : undefined) ?? s.company.domain ?? s.company.name ?? "?";
     console.log(`run: ${report.runId} — ${report.dryRun ? "dry run" : "live"} — ${report.status}`);
     if (report.stoppedBy) console.log(`  stopped: ${report.stoppedBy}`);
-    console.log(`  protected accounts read: ${report.protectedAccounts}`);
+    console.log(`  protected accounts read: ${report.protectedAccounts} distinct, from ${report.protectedRows} rows`);
+    if (report.protection) {
+      const p = report.protection;
+      console.log(`    matched on ${p.surface.domains} domains and ${p.surface.companyIds} company ids; ${p.unkeyedRowsOfCoveredCustomers} rows with no key, of customers protected through another row`);
+      if (p.uncovered.length > 0) {
+        console.log(`    ! protected by nothing, acknowledged as uncovered: ${p.uncovered.length}`);
+        for (const u of p.uncovered) console.log(`      - ${u.customerId}${u.name ? ` (${u.name})` : ""}: ${u.rows} row${u.rows === 1 ? "" : "s"}, no key`);
+      }
+    }
     console.log(
       `  capacity: ${report.capacity.checked ? `budget ${report.capacity.budget}` : `not checked — ${report.capacity.why}`}`,
     );

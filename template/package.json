@@ -13,6 +13,7 @@
     "verify": "kernel-verify",
     "enrol": "kernel-enrol",
     "source": "kernel-source",
+    "acknowledge": "kernel-acknowledge",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

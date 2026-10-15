@@ -436,3 +436,54 @@ export const sourcingResult = gtm.table(
     check("sourcing_result_company_pass_check", sql`${t.pass} = 'person' or ${t.person} is null`),
   ],
 );
+
+/**
+ * Customers a person has acknowledged as uncovered (decision 0034): the
+ * protected set holds them, and none of their rows carries a key, so nothing
+ * protects them. A run that finds an uncovered customer stops unless it is
+ * acknowledged here; one that finds acknowledged ones goes on and says so.
+ *
+ * Written only by `kernel-acknowledge`, by a person, each acknowledgement
+ * and each withdrawal in its own recorded run. A run reads it and never
+ * writes it. Withdrawn rows stay: who acknowledged what, and when it ended,
+ * is the record.
+ */
+export const protectionAcknowledgement = gtm.table(
+  "protection_acknowledgement",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    /** The customer as the protected set names it. Never matched against a candidate. */
+    customerId: text("customer_id").notNull(),
+    /** Why the customer may stay uncovered, in the person's words. */
+    note: text("note").notNull(),
+
+    /** Doctrine 5. A person, always: the check below refuses anything else. */
+    actorType: actorType("actor_type").notNull(),
+    actorId: text("actor_id").notNull(),
+    /** Restrict: the run that acknowledged is the evidence, and is not quietly deleted. */
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => run.id, { onDelete: "restrict" }),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }).notNull().defaultNow(),
+
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+    withdrawnBy: text("withdrawn_by"),
+    withdrawnRunId: uuid("withdrawn_run_id").references(() => run.id, { onDelete: "restrict" }),
+  },
+  (t) => [
+    /**
+     * One standing acknowledgement per customer. It protects the write path
+     * of `kernel-acknowledge`: acknowledging a customer twice keeps one.
+     * Also serves `readAcknowledged()` — the standing set, read by every run
+     * before protection.
+     */
+    uniqueIndex("protection_acknowledgement_standing_uidx").on(t.customerId).where(sql`${t.withdrawnAt} is null`),
+
+    check("protection_acknowledgement_human_check", sql`${t.actorType} = 'human'`),
+    check(
+      "protection_acknowledgement_withdrawal_check",
+      sql`(${t.withdrawnAt} is null) = (${t.withdrawnBy} is null) and (${t.withdrawnAt} is null) = (${t.withdrawnRunId} is null)`,
+    ),
+  ],
+);

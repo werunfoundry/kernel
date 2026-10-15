@@ -56,6 +56,8 @@ import { findPerson, recordCompany, recordPerson } from "@werunfoundry/relations
 
 import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
 import { sourcingResult } from "../db/schema.js";
+import { readAcknowledged } from "./acknowledge.js";
+import type { Protection } from "./protection.js";
 import { readProtection } from "./protection.js";
 
 /** The contract names this path asks the registry for. */
@@ -102,7 +104,14 @@ export interface SourceReport {
   /** "succeeded", "partial" (stopped after keeping someone), or "failed". */
   status: "succeeded" | "partial" | "failed";
   stoppedBy?: string;
+  /** Distinct protected accounts (decision 0033); `protectedRows` counts the source's rows. */
   protectedAccounts: number;
+  protectedRows: number;
+  /**
+   * What protection matched on, and the acknowledged customers it could not
+   * protect (0034). Absent when the run stopped before protection was read.
+   */
+  protection?: Pick<Protection, "surface" | "unkeyedRowsOfCoveredCustomers" | "uncovered">;
   candidates: number;
   /** Every company and person looked at, in order. */
   looked: Looked[];
@@ -187,6 +196,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
     dryRun: request.dryRun,
     status: "succeeded",
     protectedAccounts: 0,
+    protectedRows: 0,
     candidates: 0,
     looked: [],
     peopleSearches: 0,
@@ -210,7 +220,15 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
         outcome: l.outcome,
         detail: l.detail.slice(0, 500),
         ...(l.person ? { person: l.person } : {}),
-        company: { ...(l.company.domain ? { domain: l.company.domain } : {}), ...(l.company.externalId ? { externalId: l.company.externalId } : {}), ...(l.company.name ? { name: l.company.name } : {}) },
+        // The company's keys too: an enrolment reading this run back checks
+        // protection again, and matches on the company id as well as the
+        // domain (decision 0033).
+        company: {
+          ...(l.company.domain ? { domain: l.company.domain } : {}),
+          ...(l.company.externalId ? { externalId: l.company.externalId } : {}),
+          ...(l.company.name ? { name: l.company.name } : {}),
+          ...(l.company.identity ? { identity: l.company.identity } : {}),
+        },
         ...(l.personId ? { personId: l.personId } : {}),
         ...(l.said ? { said: l.said } : {}),
         ...(l.cost ? { cost: l.cost } : {}),
@@ -225,10 +243,15 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
   try {
     /* 1. Protection ---------------------------------------------------- */
 
-    const read = await readProtection(targets, { maxAgeMinutes: request.protectedMaxAgeMinutes, now: now() }, ctx);
+    // The customers a person acknowledged as uncovered (0034): read here,
+    // never written by a run.
+    const acknowledged = await readAcknowledged(deps.db);
+    const read = await readProtection(targets, { maxAgeMinutes: request.protectedMaxAgeMinutes, now: now(), acknowledged }, ctx);
     if (!read.ok) throw new Stop(read.stop);
     const protection = read.protection;
     report.protectedAccounts = protection.accounts;
+    report.protectedRows = protection.rows;
+    report.protection = { surface: protection.surface, unkeyedRowsOfCoveredCustomers: protection.unkeyedRowsOfCoveredCustomers, uncovered: protection.uncovered };
 
     /* 2. The company pass, before anything is spent ----------------------- */
 

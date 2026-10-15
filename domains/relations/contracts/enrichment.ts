@@ -49,8 +49,33 @@ import { compareIdentities, normalizeIdentity } from "@werunfoundry/core/identit
  * corroborated.
  */
 export type Completion =
-  | { found: false; asOf: string }
-  | { found: true; attested: Identity; asOf: string };
+  | { found: false; asOf: string; cost?: Cost }
+  | { found: true; attested: Identity; asOf: string; said?: KeyStatus[]; cost?: Cost };
+
+/**
+ * What the provider said about a key it attests, in its own words — an
+ * address whose server accepts everything, for one, so that delivery cannot
+ * be confirmed. Passed through, never judged: whether to send to it is the
+ * sending policy's decision, not the adapter's (0016, "no verdict on a key").
+ *
+ * The one judgement an adapter does make is the provider's own: a key the
+ * provider itself marks as wrong — an address it says is invalid — is not
+ * attested, so it is not returned at all.
+ */
+export interface KeyStatus {
+  key: IdentityKey;
+  status: string;
+}
+
+/**
+ * What answering cost, as the provider counts it — `{ amount: 1, unit:
+ * "credits" }`. Absent when the provider does not say, never zero for
+ * "unknown".
+ */
+export interface Cost {
+  amount: number;
+  unit: string;
+}
 
 /**
  * An adapter declares the key kinds it can attest in `finds` (0030): an
@@ -121,11 +146,19 @@ export interface EnrichmentSource {
 export interface SequenceStep {
   provider: string;
   asked: string[];
-  outcome: "added" | "not found" | "rejected";
+  /**
+   * `simulated`: a dry run, and the source stopped before a call it counts as
+   * a write — a paid submission. The kind stays missing; nothing was learnt.
+   */
+  outcome: "added" | "not found" | "rejected" | "simulated";
   /** The kinds of the keys it added, when it added some. */
   added?: string[];
   /** Why the answer was not taken, when it was not. */
   rejected?: string;
+  /** What the provider said about the keys it added, when it said anything. */
+  said?: KeyStatus[];
+  /** What the answer cost, when the provider said. */
+  cost?: Cost;
 }
 
 export type SequenceResult =
@@ -174,17 +207,35 @@ export async function completeInSequence(
     if (asked.length === 0) continue;
     const answer = await source.adapter.complete({ identity, want: asked }, ctx);
     if (!answer.ok) return { ok: false, provider: source.provider, error: answer.error, steps };
+    const cost = answer.value.cost ? { cost: answer.value.cost } : {};
+    if (answer.simulated) {
+      steps.push({ provider: source.provider, asked, outcome: "simulated" });
+      continue;
+    }
     if (!answer.value.found) {
-      steps.push({ provider: source.provider, asked, outcome: "not found" });
+      steps.push({ provider: source.provider, asked, outcome: "not found", ...cost });
       continue;
     }
     const taken = acceptCompletion(identity, answer.value, vocabulary);
     if ("rejected" in taken) {
-      steps.push({ provider: source.provider, asked, outcome: "rejected", rejected: taken.rejected });
+      steps.push({ provider: source.provider, asked, outcome: "rejected", rejected: taken.rejected, ...cost });
       continue;
     }
     identity = taken.accepted;
-    steps.push({ provider: source.provider, asked, outcome: "added", added: [...new Set(taken.added.map((k) => k.kind))] });
+    // Only what was said about a key this answer added: a status about a key
+    // the subject already had, or one the contract did not take, describes
+    // nothing that is now on the identity.
+    const same = (a: IdentityKey, b: IdentityKey) => a.kind === b.kind && (a.network ?? "") === (b.network ?? "") && a.value === b.value;
+    const normalised = (answer.value.said ?? []).map((s) => ({ ...s, key: normalizeIdentity({ subject: identity.subject, keys: [s.key] }, vocabulary).keys[0] ?? s.key }));
+    const said = normalised.filter((s) => taken.added.some((k) => same(k, s.key)));
+    steps.push({
+      provider: source.provider,
+      asked,
+      outcome: "added",
+      added: [...new Set(taken.added.map((k) => k.kind))],
+      ...(said.length > 0 ? { said } : {}),
+      ...cost,
+    });
   }
   return { ok: true, identity, missing: missing(), steps };
 }

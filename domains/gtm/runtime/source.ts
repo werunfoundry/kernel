@@ -11,8 +11,10 @@
  * 1. **Protection**, read whole and fresh (0019). Unreadable stops the run.
  * 2. **The company pass**, over every candidate before anything is spent: a
  *    protected company, or one the CRM already knows, is excluded, and its
- *    people are never looked up. A CRM that cannot answer stops the run here
- *    — before any money is spent, not halfway through.
+ *    people are never looked up. The CRM is asked about every remaining
+ *    domain at once, in as few requests as its adapter can make. A CRM that
+ *    cannot answer stops the run here — before any money is spent, not
+ *    halfway through.
  * 3. **People**, from the people source, up to the run's ceiling.
  * 4. **Completion**, through the enrichment sources in sequence (0030). Each
  *    person completed counts against `maxPeople`, which is required: a paid
@@ -47,7 +49,7 @@ import { checkIdentity, hostOf, normalizeIdentity } from "@werunfoundry/core/ide
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
-import type { Crm } from "@werunfoundry/relations/contracts/crm";
+import type { Crm, CrmCompany } from "@werunfoundry/relations/contracts/crm";
 import type { Cost, Enrichment, KeyStatus, SequenceStep } from "@werunfoundry/relations/contracts/enrichment";
 import { completeInSequence } from "@werunfoundry/relations/contracts/enrichment";
 import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
@@ -175,6 +177,31 @@ function total(costs: { provider: string; cost: Cost }[]) {
 
 const costsOf = (steps: SequenceStep[]) => steps.flatMap((s) => (s.cost ? [{ provider: s.provider, cost: s.cost }] : []));
 
+/**
+ * What the CRM knows of each domain — in as few requests as its adapter
+ * allows, and one domain at a time from an adapter that cannot answer for
+ * several. Any failure stops the run before anything is spent, and so does
+ * an answer that leaves a domain out: unanswered is not unknown.
+ */
+async function knownToCrm(crm: Crm, hosts: string[], ctx: CallContext): Promise<ReadonlyMap<string, CrmCompany | null>> {
+  const stop = (why: string) => new Stop(`the CRM could not be read, so nothing was spent: ${why}`);
+  if (hosts.length === 0) return new Map();
+  if (crm.findCompaniesByDomains) {
+    const answer = await crm.findCompaniesByDomains(hosts, ctx);
+    if (!answer.ok) throw stop(`${answer.error.code}: ${answer.error.message}`);
+    const unanswered = hosts.filter((h) => answer.value.get(h) === undefined);
+    if (unanswered.length > 0) throw stop(`it gave no answer for ${unanswered.join(", ")}`);
+    return answer.value;
+  }
+  const known = new Map<string, CrmCompany | null>();
+  for (const host of hosts) {
+    const one = await crm.findCompanyByDomain(host, ctx);
+    if (!one.ok) throw stop(`${one.error.code}: ${one.error.message}`);
+    known.set(host, one.value);
+  }
+  return known;
+}
+
 export async function source(deps: SourceDeps, request: SourceRequest): Promise<SourceReport> {
   const now = deps.now ?? (() => new Date());
   const targets = deps.registry.get(SOURCING_CONTRACTS.targetList) as TargetList | undefined;
@@ -274,22 +301,27 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
       report.avoidedByCompanyPass.completionsAtMost += perCompany;
       await note({ pass: "company", outcome, company, detail }, subjectOfCompany(company));
     };
-    for (const company of candidates.value.items) {
-      if (protection.company(company)) {
-        await excludeCompany(company, "protected", "the account is protected");
-        continue;
-      }
+    // What protection and the domain decide comes first, so that the CRM is
+    // asked only about what is left, and about all of it at once.
+    type Pending = { company: TargetCompany } & ({ host: string } | { excluded: { outcome: Outcome; detail: string } });
+    const pending = candidates.value.items.map((company): Pending => {
+      if (protection.company(company)) return { company, excluded: { outcome: "protected", detail: "the account is protected" } };
       const host = company.domain ? hostOf(company.domain) : "";
-      if (!host) {
-        await excludeCompany(company, "unreachable", "no domain: neither the CRM nor protection can recognise it");
+      if (!host) return { company, excluded: { outcome: "unreachable", detail: "no domain: neither the CRM nor protection can recognise it" } };
+      return { company, host };
+    });
+    const known = await knownToCrm(crm, [...new Set(pending.flatMap((p) => ("host" in p ? [p.host] : [])))], ctx);
+
+    for (const p of pending) {
+      const { company } = p;
+      if ("excluded" in p) {
+        await excludeCompany(company, p.excluded.outcome, p.excluded.detail);
         continue;
       }
-      const known = await crm.findCompanyByDomain(host, ctx);
-      if (!known.ok) {
-        throw new Stop(`the CRM could not be read, so nothing was spent: ${known.error.code}: ${known.error.message}`);
-      }
-      if (known.value) {
-        await excludeCompany(company, "known_to_crm", `known to the CRM as ${known.value.ref.externalId}`);
+      const { host } = p;
+      const theirs = known.get(host);
+      if (theirs) {
+        await excludeCompany(company, "known_to_crm", `known to the CRM as ${theirs.ref.externalId}`);
         continue;
       }
       // As the target list attests it (0024, 0029); a key the vocabulary

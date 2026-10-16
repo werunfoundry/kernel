@@ -35,6 +35,8 @@ const state = {
   /** When set, the fake never answers. */
   hang: false,
   forceStatus: 0,
+  /** When set, every company the fake returns says it is on a domain nobody asked about. */
+  misattribute: false,
 };
 let seen: Seen[] = [];
 /** Requests the fake left unanswered on purpose; answered once their test is over. */
@@ -111,8 +113,21 @@ async function handle(req: IncomingMessage, res: import("node:http").ServerRespo
       return reply(200, { data: state.people.filter((x) => x.email === want).map(person) });
     }
     if (req.method === "POST" && p === "/v2/objects/companies/records/query") {
-      const want = (body?.filter as { domains: { domain: { $eq: string } } }).domains.domain.$eq;
-      return reply(200, { data: state.companies.filter((x) => x.domain === want).map(company) });
+      type OnDomain = { domains: { domain: { $eq: string } } };
+      const filter = body?.filter as OnDomain | { $or: OnDomain[] };
+      const wants = ("$or" in filter ? filter.$or : [filter]).map((f) => f.domains.domain.$eq);
+      // As Attio answers a filter with one malformed domain in it: the whole
+      // request is refused, whatever the others are.
+      if (wants.some((w) => !w.includes("."))) {
+        return reply(400, { status_code: 400, type: "invalid_request_error", code: "validation_type", message: "Invalid domain value" });
+      }
+      const limit = Number(body?.limit ?? 500);
+      const offset = Number(body?.offset ?? 0);
+      const data = state.companies
+        .filter((x) => wants.includes(x.domain))
+        .slice(offset, offset + limit)
+        .map((c) => company(state.misattribute ? { ...c, domain: "elsewhere.example.org" } : c));
+      return reply(200, { data });
     }
     if (req.method === "PUT" && p === "/v2/objects/companies/records") {
       const values = (body?.data as { values: { domains: string[]; name?: string } }).values;
@@ -161,12 +176,14 @@ beforeEach(() => {
   state.active = true;
   state.hang = false;
   state.forceStatus = 0;
+  state.misattribute = false;
   seen = [];
 });
 
 const ctx = (dryRun: boolean): CallContext => ({ runId: "00000000-0000-4000-8000-000000000000", actor: { type: "system" }, dryRun });
 const writes = () => seen.filter((s) => s.method === "PUT" || (s.method === "POST" && !s.path.endsWith("/records/query")));
 const crm = (token: string | null = "test-token") => crmFactory({ options: { baseUrl }, env: token === null ? {} : { ATTIO_API_KEY: token } });
+const crmWith = (options: Record<string, string | number | boolean>) => crmFactory({ options: { baseUrl, ...options }, env: { ATTIO_API_KEY: "test-token" } });
 const inbound = (internalDomains = "") => inboundFactory({ options: { baseUrl, internalDomains }, env: { ATTIO_API_KEY: "test-token" } });
 
 describe("the shared client", () => {
@@ -309,6 +326,71 @@ describe("crm", () => {
     it("refuses a reference it did not make", async () => {
       const r = await crm().annotate(note({ subject: { externalId: "p1" } }), ctx(false));
       assert.ok(!r.ok && r.error.code === "invalid");
+    });
+  });
+
+  describe("companies, many domains at a time", () => {
+    const on = (d: string) => ({ domains: { domain: { $eq: d } } });
+
+    it("asks batchSize domains per request with one $or, and answers for each as it was asked", async () => {
+      state.companies.push({ id: "c1", domain: "a.example.com" }, { id: "c2", domain: "b.example.com" });
+      const r = await crmWith({ batchSize: 2 }).findCompaniesByDomains!(["A.example.com", "b.example.com", "nobody.example.org"], ctx(true));
+      assert.ok(r.ok, JSON.stringify(r));
+      assert.deepEqual([...r.value].map(([d, c]) => [d, c?.ref.externalId ?? null]), [
+        ["A.example.com", "companies:c1"],
+        ["b.example.com", "companies:c2"],
+        ["nobody.example.org", null],
+      ]);
+      assert.deepEqual(seen.map((s) => s.body), [
+        { filter: { $or: [on("a.example.com"), on("b.example.com")] }, limit: 3, offset: 0 },
+        { filter: { $or: [on("nobody.example.org")] }, limit: 2, offset: 0 },
+      ]);
+    });
+
+    it("asks nothing for no domains", async () => {
+      const r = await crm().findCompaniesByDomains!([], ctx(true));
+      assert.ok(r.ok && r.value.size === 0);
+      assert.equal(seen.length, 0);
+    });
+
+    // Three companies on one domain fill the first page; the domain behind
+    // them is only on the second. Reading one page would call it unknown.
+    it("reads every page: a domain on a page not read would read as unknown", async () => {
+      state.companies.push({ id: "c1", domain: "a.example.com" }, { id: "c2", domain: "a.example.com" }, { id: "c3", domain: "a.example.com" }, { id: "c4", domain: "b.example.com" });
+      const r = await crm().findCompaniesByDomains!(["a.example.com", "b.example.com"], ctx(true));
+      assert.ok(r.ok, JSON.stringify(r));
+      assert.equal(r.value.get("b.example.com")?.ref.externalId, "companies:c4");
+      assert.equal(seen.length, 2);
+    });
+
+    it("fails, concluding nothing, when a company answers for none of the domains asked", async () => {
+      state.companies.push({ id: "c1", domain: "a.example.com" });
+      state.misattribute = true;
+      const r = await crm().findCompaniesByDomains!(["a.example.com"], ctx(true));
+      assert.ok(!r.ok && r.error.code === "unknown" && /none of the domains asked/.test(r.error.message), JSON.stringify(r));
+    });
+
+    it("splits a request refused for one malformed domain down to it, and fails naming it", async () => {
+      state.companies.push({ id: "c1", domain: "a.example.com" });
+      const r = await crm().findCompaniesByDomains!(["a.example.com", "b.example.com", "c.example.com", "not-a-domain"], ctx(true));
+      assert.ok(!r.ok, "a refused domain was read as an answer");
+      assert.equal(r.error.code, "invalid");
+      assert.match(r.error.message, /^the CRM refused the domain "not-a-domain": .*Invalid domain value/);
+      // The four, then each half, then the refused half's halves.
+      assert.deepEqual(seen.map((s) => (s.body?.filter as { $or: unknown[] }).$or.length), [4, 2, 2, 1, 1]);
+    });
+
+    it("asks a rate-limited request once, without splitting it", async () => {
+      state.forceStatus = 429;
+      const r = await crm().findCompaniesByDomains!(["a.example.com", "b.example.com"], ctx(true));
+      assert.ok(!r.ok && r.error.code === "rate_limited");
+      assert.equal(seen.length, 1);
+    });
+
+    it("refuses at startup a batchSize that is not a positive whole number of domains", () => {
+      for (const batchSize of [0, -1, 2.5, "20", true]) {
+        assert.throws(() => crmWith({ batchSize }), /batchSize must be a positive whole number/, String(batchSize));
+      }
     });
   });
 });

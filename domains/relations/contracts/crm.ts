@@ -97,6 +97,29 @@ export interface Crm extends Contract {
     ctx: CallContext,
   ): Promise<CrmLookup<CrmCompany>>;
 
+  /**
+   * The question `findCompanyByDomain` asks, for many domains at once: a
+   * pass over a few hundred candidates is then a few requests, not a few
+   * hundred.
+   *
+   * Optional, on purpose, as `probe` is: a provider that cannot answer for
+   * several domains in one request has nothing honest to put here, and a
+   * caller without it asks one domain at a time. No adapter is refused for
+   * lacking it.
+   *
+   * The answer has an entry for every domain asked, keyed exactly as it was
+   * asked: the company, or `null` when there is none. It is one result for
+   * the whole call — when the provider could not answer for one domain, the
+   * call fails and nothing is concluded about the others. A domain missing
+   * from the answer is not a domain the CRM does not know, and a caller reads
+   * it as "could not tell". How many domains go in one request is the
+   * adapter's business; the caller passes them all.
+   */
+  findCompaniesByDomains?(
+    domains: readonly string[],
+    ctx: CallContext,
+  ): Promise<CallResult<ReadonlyMap<string, CrmCompany | null>>>;
+
   findPersonByEmail(
     email: string,
     ctx: CallContext,

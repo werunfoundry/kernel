@@ -4,6 +4,8 @@
  *   - contract: crm
  *     adapter: "@werunfoundry/adapters/attio/crm"
  *     env: [ATTIO_API_KEY]
+ *     options:
+ *       batchSize: 20   # domains per company query; see below
  *
  * It lives beside the Attio inbound adapter, so that both share one client and
  * one token: one folder per provider, whichever domains own the contracts it
@@ -13,6 +15,24 @@
  *
  * - **Records are people and companies**, found by the verbose filter
  *   syntax on `email_addresses` and `domains`.
+ * - **Companies are found many domains at a time** (`findCompaniesByDomains`),
+ *   with one `$or` of `$eq` filters on `domains` per request. `$in` is not
+ *   documented for `domains`, and `$or` was checked against a real workspace,
+ *   read-only, on 2026-10-16: two known companies and an invented domain, one
+ *   request, both found and the third not. Each record is attributed back
+ *   through its own `values.domains[].domain`; a record that matches none of
+ *   the domains asked fails the call, because the domain it should have
+ *   answered for would otherwise read as unknown.
+ * - **`batchSize` domains per request, 20 unless the binding says.** No cap
+ *   is published, and record queries count against the workspace's
+ *   score-based limit, which grows with a filter's complexity: 20 keeps one
+ *   request's filter small while a pass over 200 candidates is 10 requests,
+ *   not 200. Raise it once a real 429 has been read.
+ * - **One malformed domain fails a whole request** (400, `Invalid domain
+ *   value`), so a refused request is split in two and each half asked again,
+ *   down to the one domain refused — and then the call fails, naming it.
+ *   Splitting serves only to name the domain: a refusal is never read as
+ *   "unknown", for that domain or for the others.
  * - **A reference is `<object>:<record_id>`.** The contract's `CrmRef` does
  *   not say which object a record belongs to, and Attio needs it to attach a
  *   note; the adapter reads its own references, which the engine never
@@ -67,15 +87,35 @@ const asPerson = (r: AttioRecord): CrmPerson => {
   return { ref: ref("people", r), ...(email ? { email } : {}), ...(fullName ? { fullName } : {}), fields: {} };
 };
 
+/** Every domain a company record holds, as compared: trimmed, lower case. */
+const domainsOf = (r: AttioRecord) =>
+  (r.values?.domains ?? []).flatMap((v) => {
+    const d = (v as { domain?: unknown } | null)?.domain;
+    return typeof d === "string" ? [d.trim().toLowerCase()] : [];
+  });
+
+/** Domains per company query, unless the binding's `batchSize` says (see the header). */
+const BATCH_SIZE = 20;
+
 const factory: AdapterFactory<Crm> = ({ options, env }) => {
   const { call, probe } = client(
     env.ATTIO_API_KEY,
     String(options.baseUrl ?? DEFAULT_BASE_URL),
     typeof options.timeoutMs === "number" ? options.timeoutMs : undefined,
   );
+  // Refused here rather than read as the default: a binding that says
+  // something is not silently overruled, and it fails at startup, not mid-run.
+  const batchSize = options.batchSize ?? BATCH_SIZE;
+  if (typeof batchSize !== "number" || !Number.isInteger(batchSize) || batchSize < 1) {
+    throw new Error(`batchSize must be a positive whole number of domains, not ${JSON.stringify(options.batchSize)}`);
+  }
+
+  /** The one records query every lookup goes through. */
+  const query = (object: "people" | "companies", body: { filter: unknown; limit: number; offset?: number }, ctx: CallContext) =>
+    call<{ data: AttioRecord[] }>("POST", `/v2/objects/${object}/records/query`, ctx, body);
 
   async function findOne(object: "people" | "companies", filter: unknown, ctx: CallContext): Promise<CallResult<AttioRecord | null>> {
-    const found = await call<{ data: AttioRecord[] }>("POST", `/v2/objects/${object}/records/query`, ctx, { filter, limit: 1 });
+    const found = await query(object, { filter, limit: 1 }, ctx);
     if (!found.ok) return found;
     return { ok: true, value: found.value.data[0] ?? null };
   }
@@ -84,6 +124,46 @@ const factory: AdapterFactory<Crm> = ({ options, env }) => {
   const byEmail = (email: string, ctx: CallContext) =>
     findOne("people", { email_addresses: { email_address: { $eq: email.trim().toLowerCase() } } }, ctx);
 
+  /**
+   * The companies on these domains — already normalized, one request's worth
+   * — by the domain each was found on. Every page is read: a page cut short
+   * would leave a domain unread, and an unread domain reads as unknown.
+   */
+  async function companiesOn(domains: string[], ctx: CallContext): Promise<CallResult<Map<string, AttioRecord>>> {
+    const asked = new Set(domains);
+    const filter = { $or: domains.map((d) => ({ domains: { domain: { $eq: d } } })) };
+    // A domain belongs to one company — it is what the upsert below matches
+    // on — so one more than the domains asked is never filled, and a full
+    // page means something unexpected: the next one is read.
+    const limit = domains.length + 1;
+    const found = new Map<string, AttioRecord>();
+    for (let offset = 0; ; offset += limit) {
+      const page = await query("companies", { filter, limit, offset }, ctx);
+      if (!page.ok) return page;
+      for (const r of page.value.data) {
+        const on = domainsOf(r).filter((d) => asked.has(d));
+        if (on.length === 0) {
+          return fail("unknown", `the CRM answered with a company (${r.id.record_id}) on none of the domains asked, so which domain it answered for cannot be told`);
+        }
+        for (const d of on) if (!found.has(d)) found.set(d, r);
+      }
+      if (page.value.data.length < limit) return { ok: true, value: found };
+    }
+  }
+
+  /** `companiesOn`, a refused request split down to the domain refused. */
+  async function lookUp(domains: string[], ctx: CallContext): Promise<CallResult<Map<string, AttioRecord>>> {
+    const r = await companiesOn(domains, ctx);
+    if (r.ok || r.error.code !== "invalid") return r;
+    if (domains.length === 1) return fail("invalid", `the CRM refused the domain "${domains[0]}": ${r.error.message}`);
+    const half = Math.ceil(domains.length / 2);
+    const left = await lookUp(domains.slice(0, half), ctx);
+    if (!left.ok) return left;
+    const right = await lookUp(domains.slice(half), ctx);
+    if (!right.ok) return right;
+    return { ok: true, value: new Map([...left.value, ...right.value]) };
+  }
+
   return {
     provider: "attio",
     probe,
@@ -91,6 +171,25 @@ const factory: AdapterFactory<Crm> = ({ options, env }) => {
     async findCompanyByDomain(domain, ctx) {
       const r = await byDomain(domain, ctx);
       return r.ok ? { ok: true, value: r.value ? asCompany(r.value) : null } : r;
+    },
+
+    async findCompaniesByDomains(domains, ctx) {
+      const normalized = (d: string) => d.trim().toLowerCase();
+      const distinct = [...new Set(domains.map(normalized))];
+      const found = new Map<string, AttioRecord>();
+      for (let i = 0; i < distinct.length; i += batchSize) {
+        const r = await lookUp(distinct.slice(i, i + batchSize), ctx);
+        if (!r.ok) return r;
+        for (const [d, record] of r.value) found.set(d, record);
+      }
+      // Keyed as asked, as the contract says: the caller looks up its own spelling.
+      return {
+        ok: true,
+        value: new Map(domains.map((d) => {
+          const record = found.get(normalized(d));
+          return [d, record ? asCompany(record) : null];
+        })),
+      };
     },
 
     async findPersonByEmail(email, ctx) {

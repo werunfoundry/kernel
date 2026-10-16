@@ -295,6 +295,21 @@ describe("the company pass, before anything is spent", { skip: base ? false : "T
     assert.equal((await runRow(r.runId)).status, "failed");
   });
 
+  it("records a CRM refusal whole in the run, however long: the provider is quoted, not paraphrased", async () => {
+    const verbatim = `rate limited — the provider's response, verbatim: status 429; headers: ${"x-padding: abc; ".repeat(60)}x-query-score: 145; body: {"code":"rate_limit_exceeded"}`;
+    const real = crm.findCompanyByDomain.bind(crm);
+    crm.findCompanyByDomain = async () => ({ ok: false, error: { code: "rate_limited", message: verbatim, retryable: true } });
+    try {
+      const r = await run();
+      assert.equal(r.status, "failed");
+      const recorded = (await runRow(r.runId)).error ?? "";
+      assert.ok(recorded.length > 500, `the run kept ${recorded.length} characters`);
+      assert.ok(recorded.endsWith(verbatim), "the run did not keep the provider's answer whole");
+    } finally {
+      crm.findCompanyByDomain = real;
+    }
+  });
+
   it("stops before asking the CRM or anyone when protection cannot be read", async () => {
     world.failing.add("protected");
     const r = await run();

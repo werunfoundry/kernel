@@ -150,6 +150,14 @@ export interface SourceDeps {
 
 class Stop extends Error {}
 
+/**
+ * What is kept of a sentence the run records — a stop, an exclusion's
+ * detail. Long enough for a provider's answer quoted verbatim (a 429 with
+ * its headers and body); a bound, not a summary, and it says when it cut.
+ */
+const RECORDED = 8_000;
+const bounded = (s: string) => (s.length <= RECORDED ? s : `${s.slice(0, RECORDED)} …(cut at ${RECORDED} characters)`);
+
 const keysOf = (p: Identity) => p.keys.map((k) => `${k.kind}:${k.network ?? ""}:${k.value}`).sort();
 const subjectOfPerson = (p: Identity) => `person:${createHash("sha256").update(keysOf(p).join("\n")).digest("hex").slice(0, 32)}`;
 const subjectOfCompany = (c: TargetCompany) => `company:${c.domain ?? c.externalId ?? c.name ?? JSON.stringify(c)}`;
@@ -218,7 +226,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
         runId: open.id,
         pass: l.pass,
         outcome: l.outcome,
-        detail: l.detail.slice(0, 500),
+        detail: bounded(l.detail),
         ...(l.person ? { person: l.person } : {}),
         // The company's keys too: an enrolment reading this run back checks
         // protection again, and matches on the company id as well as the
@@ -443,7 +451,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
   } catch (thrown) {
     if (!(thrown instanceof Stop)) {
       await open
-        .finish({ status: "failed", error: (thrown instanceof Error ? thrown.message : String(thrown)).slice(0, 500) })
+        .finish({ status: "failed", error: bounded(thrown instanceof Error ? thrown.message : String(thrown)) })
         .catch(() => {});
       throw thrown;
     }
@@ -455,7 +463,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
 
   try {
     await open.finish(
-      report.status === "succeeded" ? { status: "succeeded" } : { status: report.status, error: (report.stoppedBy ?? "").slice(0, 500) },
+      report.status === "succeeded" ? { status: "succeeded" } : { status: report.status, error: bounded(report.stoppedBy ?? "") },
     );
     report.recorded = true;
   } catch (error) {

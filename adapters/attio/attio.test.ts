@@ -93,7 +93,15 @@ async function handle(req: IncomingMessage, res: import("node:http").ServerRespo
       hung.push(res); // never answers while the test runs
       return;
     }
-    if (state.forceStatus === 429) return reply(429, { message: "slow down" }, { "retry-after": new Date(Date.now() + 30_000).toUTCString() });
+    if (state.forceStatus === 429) {
+      // The shape Attio documents for a rate-limited request, and the score
+      // header its record queries carry.
+      return reply(
+        429,
+        { status_code: 429, type: "rate_limit_error", code: "rate_limit_exceeded", message: "Rate limit exceeded, please try again later" },
+        { "retry-after": new Date(Date.now() + 30_000).toUTCString(), "x-attio-record-query-score": "145" },
+      );
+    }
     if (state.forceStatus) return reply(state.forceStatus, { message: "forced" });
 
     const p = url.pathname;
@@ -180,6 +188,21 @@ describe("the shared client", () => {
     assert.ok(!r.ok && r.error.code === "rate_limited" && r.error.retryable);
     if (!r.ok) assert.ok((r.error.retryAfterMs ?? 0) > 20_000 && (r.error.retryAfterMs ?? 0) <= 30_000, String(r.error.retryAfterMs));
     assert.equal(retryAfterMs("Tue, 23 May 2023 14:42:01 GMT", Date.parse("Tue, 23 May 2023 14:42:00 GMT")), 1000);
+  });
+
+  it("keeps a 429 whole — status, every header, body — and asks once, never again", async () => {
+    state.forceStatus = 429;
+    const before = seen.length;
+    const r = await crm().findCompanyByDomain("example.com", ctx(true));
+    assert.ok(!r.ok, JSON.stringify(r));
+    if (r.ok) return;
+    assert.equal(r.error.code, "rate_limited");
+    assert.equal(r.error.providerCode, "rate_limit_exceeded");
+    assert.match(r.error.message, /^rate limited — the provider's response, verbatim: status 429; headers: /);
+    assert.match(r.error.message, /retry-after: [A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT/);
+    assert.match(r.error.message, /x-attio-record-query-score: 145/);
+    assert.ok(r.error.message.endsWith('body: {"status_code":429,"type":"rate_limit_error","code":"rate_limit_exceeded","message":"Rate limit exceeded, please try again later"}'), r.error.message);
+    assert.equal(seen.length - before, 1, "a rate-limited request was sent again");
   });
 
   it("gives up on a provider that never answers, rather than hanging the run", async () => {

@@ -12,7 +12,15 @@
  *   401 is not listed in the document and is handled anyway.
  * - Rate limits are 100 reads and 25 writes a second. A limited request is
  *   always 429, with a `Retry-After` that is an HTTP **date**, not a number of
- *   seconds.
+ *   seconds. Record queries also count against a score-based limit over a
+ *   10-second window, summed across every app and token of the workspace;
+ *   its budget is not published.
+ *
+ * **A 429 is kept whole.** Its status, every header and its body go into the
+ * error's message verbatim, because which limit was hit is only in the
+ * provider's own answer — and a guard that stops a run must be able to quote
+ * the provider, not paraphrase it. Nothing here retries or paces: what to
+ * pace against is decided once a real 429 has been read.
  */
 
 import type { CallContext, CallError, CallResult } from "@werunfoundry/core/contracts/types";
@@ -52,6 +60,26 @@ function errorForThrown(thrown: unknown, timeoutMs: number): CallError {
   return { code: "unavailable", message: thrown instanceof Error ? thrown.message : String(thrown), retryable: true, retryAfterMs: 5_000 };
 }
 
+/**
+ * The 429 as the provider sent it: status, every header, the body — in the
+ * message, so it reaches the run's record and its report unchanged. The
+ * provider's own error code, when its body names one, is `providerCode`.
+ */
+function verbatim(error: CallError, response: Response, body: string): CallError {
+  const headers = [...response.headers].map(([k, v]) => `${k}: ${v}`).join("; ");
+  let code: string | undefined;
+  try {
+    code = (JSON.parse(body) as { code?: unknown }).code as string | undefined;
+  } catch {
+    /* not JSON: the body is quoted as it is */
+  }
+  return {
+    ...error,
+    message: `rate limited — the provider's response, verbatim: status ${response.status}; headers: ${headers}; body: ${body}`,
+    ...(typeof code === "string" ? { providerCode: code } : {}),
+  };
+}
+
 export type Call = <T>(method: "GET" | "POST" | "PUT", path: string, ctx: CallContext, body?: unknown) => Promise<CallResult<T>>;
 
 /**
@@ -79,7 +107,10 @@ export function client(
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       const text = await response.text();
-      if (!response.ok) return { ok: false, error: errorFor(response.status, text, response.headers.get("retry-after")) };
+      if (!response.ok) {
+        const error = errorFor(response.status, text, response.headers.get("retry-after"));
+        return { ok: false, error: response.status === 429 ? verbatim(error, response, text) : error };
+      }
       return { ok: true, value: (text ? JSON.parse(text) : undefined) as never };
     } catch (thrown) {
       return { ok: false, error: errorForThrown(thrown, timeoutMs) };

@@ -2,6 +2,9 @@
 
 > Completed by [0041](0041-which-fact-governs-a-guard.md): the opt-out stays
 > global, and closes rather than serves.
+>
+> Completed by [0042](0042-a-reactive-reply-is-licensed-by-the-persons-inbound-touch.md):
+> `lane:reactive` is accepted on the same license.
 
 Completes [0027](0027-a-draft-waits-on-its-lane.md), whose gate is on the
 draft.

@@ -1,5 +1,8 @@
 # 0017 — What comes back is pulled
 
+> Completed by [0039](0039-events-are-pulled-and-kept-decisions-are-a-persons.md):
+> the loop, its cursor and the event's write path.
+
 ## Decided
 
 `gtm` gains an `Inbound` contract for the events it already declares —

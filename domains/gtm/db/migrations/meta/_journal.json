@@ -85,6 +85,13 @@
       "when": 1792128070044,
       "tag": "0011_template",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792128178202,
+      "tag": "0012_inbound_cursor",
+      "breakpoints": true
     }
   ]
 }

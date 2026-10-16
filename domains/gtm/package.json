@@ -16,6 +16,7 @@
     "./contracts/inbound": "./contracts/inbound.ts",
     "./runtime/enrol": "./runtime/enrol.ts",
     "./runtime/draft": "./runtime/draft.ts",
+    "./runtime/inbound": "./runtime/inbound.ts",
     "./runtime/stage": "./runtime/stage.ts",
     "./db/migrations/*": "./db/migrations/*"
   },
@@ -63,6 +64,10 @@
         "types": "./dist/runtime/draft.d.ts",
         "default": "./dist/runtime/draft.js"
       },
+      "./runtime/inbound": {
+        "types": "./dist/runtime/inbound.d.ts",
+        "default": "./dist/runtime/inbound.js"
+      },
       "./runtime/stage": {
         "types": "./dist/runtime/stage.d.ts",
         "default": "./dist/runtime/stage.js"
@@ -72,7 +77,8 @@
     "bin": {
       "kernel-enrol": "./dist/bin/enrol.js",
       "kernel-source": "./dist/bin/source.js",
-      "kernel-acknowledge": "./dist/bin/acknowledge.js"
+      "kernel-acknowledge": "./dist/bin/acknowledge.js",
+      "kernel-inbound": "./dist/bin/inbound.js"
     }
   },
   "dependencies": {
@@ -96,6 +102,7 @@
   "bin": {
     "kernel-enrol": "./bin/enrol.ts",
     "kernel-source": "./bin/source.ts",
-    "kernel-acknowledge": "./bin/acknowledge.ts"
+    "kernel-acknowledge": "./bin/acknowledge.ts",
+    "kernel-inbound": "./bin/inbound.ts"
   }
 }

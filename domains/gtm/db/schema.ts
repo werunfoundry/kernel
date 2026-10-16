@@ -545,3 +545,25 @@ export const protectionAcknowledgement = gtm.table(
     ),
   ],
 );
+
+/**
+ * Where each inbound source was last read up to (decision 0039): one row per
+ * source, as its adapter names itself. The bookkeeping of reading through
+ * this domain's `Inbound` contract, so it is here and not in the core, which
+ * records work, not how a domain reads its sources.
+ *
+ * It is also how a source has one writer: `pullInbound` holds the row locked
+ * for the whole read, so two pulls of one source wait for each other. The
+ * cursor advances in the transaction that stores the page it covers — a
+ * crash replays a page, stored once by `core.event`'s key, and never skips
+ * one.
+ */
+export const inboundCursor = gtm.table("inbound_cursor", {
+  /** The source, as its adapter names itself — the `provider` of its events. */
+  provider: text("provider").primaryKey(),
+  /** Opaque: the adapter's. Absent until a first page is stored. */
+  cursor: text("cursor"),
+  /** The run that last advanced it. Attribution: losing the run keeps the cursor. */
+  runId: uuid("run_id").references(() => run.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

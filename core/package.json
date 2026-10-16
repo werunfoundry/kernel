@@ -17,6 +17,8 @@
     "./runtime/resolve": "./runtime/resolve.ts",
     "./runtime/run": "./runtime/run.ts",
     "./runtime/experiment": "./runtime/experiment.ts",
+    "./runtime/event": "./runtime/event.ts",
+    "./runtime/decision": "./runtime/decision.ts",
     "./runtime/verify": "./runtime/verify.ts",
     "./identity": "./identity/index.ts",
     "./db/migrations/*": "./db/migrations/*",
@@ -73,6 +75,14 @@
       "./runtime/experiment": {
         "types": "./dist/runtime/experiment.d.ts",
         "default": "./dist/runtime/experiment.js"
+      },
+      "./runtime/event": {
+        "types": "./dist/runtime/event.d.ts",
+        "default": "./dist/runtime/event.js"
+      },
+      "./runtime/decision": {
+        "types": "./dist/runtime/decision.d.ts",
+        "default": "./dist/runtime/decision.js"
       },
       "./runtime/verify": {
         "types": "./dist/runtime/verify.d.ts",

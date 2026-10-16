@@ -117,8 +117,6 @@ real adapters. It decides what is built next.
 
 ### Not built yet, and recorded where it was decided
 
-- The loop that reads inbound events into `core.event`: it needs a table for
-  each adapter's cursor, which is a new core object (0017).
 - A rolling window is approximated by a closed one, and the engine plans
   against the approximation (0020).
 - `assert.ok(expr)` without a message, in the rest of the test suite: under
@@ -164,37 +162,32 @@ whatever writes it, reads it, or connects it to the rest.
   campaign" is that link, not a new table.
 
 **`core.decision`**
-- *There:* a polymorphic subject (`subject_kind`, `subject_id`), `choice`,
-  `rationale`, `metric_snapshot`, attribution, an index by subject.
-- *Written by:* nobody. *Read by:* nobody.
-- *Not wired:* a writer; append-only in the schema (today it is a comment);
-  freezing the numbers a decision rests on, which means reading them —
-  `readMetric` in `core/manifest/measure.ts` reads one through a source and
-  applies the not-applicable rule (0021), and nothing but its tests calls it;
-  the only metric source bound anywhere is the sandbox, so `verify`'s
-  "measurable" counts a source that measures nothing real; tying a decision to the
+- *There:* one line a person writes about an experiment (0039): the
+  experiment, the conclusion, why, and the `readings` it rested on, frozen as
+  read. Append-only and a person's, in the schema.
+- *Written by:* `recordDecision` (`core/runtime/decision.ts`), each in its
+  own run. *Read by:* nobody yet.
+- *Not wired:* reading the figures — `readMetric` in
+  `core/manifest/measure.ts` reads one through a source and applies the
+  not-applicable rule (0021), and nothing but its tests calls it; the only
+  metric source bound anywhere is the sandbox; tying a decision to the
   experiment transition it causes (killed, validated, extended), and writing
   `baseline_snapshot` when the measurement window opens.
 
 **`core.event`**
-- *There:* the table, unique on the provider and its event id; `processed_at`
-  and an index on what is not processed; `run.event_id`, so a run can say
-  which event triggered it. In `gtm`, the `Inbound` contract — pulled with a
-  cursor (0017) — and `checkInboundEvent`; a CRM inbound adapter and a
-  sandbox. In `relations`, `touch` records the inbound direction and
-  `recordTouch` writes it.
-- *Written by:* nobody. *Read by:* nobody. `openRun` accepts an `eventId`
-  that no caller passes; `recordTouch` has no caller; `Inbound.events` is only
-  ever probed.
-- *Not wired:* the loop that reads each inbound adapter and writes
-  `core.event`; where each adapter's cursor is kept, which 0017 left to its
-  own decision — the core has four tables, so the ten-object rule is not the
-  constraint; whether a cursor belongs to the core or to `gtm`, whose contract
-  `Inbound` is, is the question; the tie to a person. `core.event` cannot
-  reference `relations.person` (the core depends on nothing), so an event's
-  subject is only in its payload: the person-level trace is an inbound
-  `touch`, written beside the event. The reactive lane needs exactly that to
-  stop failing closed (0027).
+- *There:* appended and never updated (0039), unique on the source and its
+  event id, with when it happened and the run that read it. Whether an event
+  was handled is a run naming it (`run.event_id`).
+- *Written by:* `recordEvent` (`core/runtime/event.ts`), which refuses an
+  undeclared type, called by `kernel-inbound`: each source bound to `gtm`'s
+  `Inbound` is read after its cursor (`gtm.inbound_cursor`, locked for the
+  read: one writer per source), and each event is stored once, with an
+  inbound `touch` when it names a recorded person and a declared channel,
+  and the opt-out applied for `gtm.unsubscribe`.
+- *Read by:* nobody yet.
+- *Not wired:* the reactive lane's check, whose trace — an inbound touch by
+  person and channel — now exists (0027); a metric source over the event
+  record; a process an event triggers.
 
 **Processes**
 - *There:* `run.process_key`, written as free text — `instance.verify`,

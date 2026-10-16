@@ -193,3 +193,18 @@ export async function recordTouch(db: Database, input: TouchInput): Promise<{ re
     .returning({ id: touch.id });
   return { recorded: inserted.length === 1 };
 }
+
+/**
+ * Records that a person asked to stop, from the moment they did (decision
+ * 0039: an unsubscribe read from a source is applied, not only stored). An
+ * opt-out already recorded is kept as it is — the first moment stands — and
+ * nothing here ever clears one.
+ */
+export async function recordOptOut(db: Database, personId: string, at: Date): Promise<{ recorded: boolean }> {
+  const changed = await db
+    .update(person)
+    .set({ optedOutAt: at, updatedAt: new Date() })
+    .where(and(eq(person.id, personId), isNull(person.optedOutAt)))
+    .returning({ id: person.id });
+  return { recorded: changed.length === 1 };
+}

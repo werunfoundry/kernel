@@ -56,7 +56,7 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  if (client) await client.query("truncate relations.person, relations.company, relations.audience, core.experiment, core.run cascade");
+  if (client) await client.query("truncate relations.person, relations.company, relations.list, core.experiment, core.run cascade");
 });
 
 const rows = async (sql: string, params: unknown[] = []) => (await client.query(sql, params)).rows;
@@ -66,12 +66,17 @@ async function someone(): Promise<string> {
   const [{ id }] = await rows("insert into relations.person (email, full_name) values ('ada@example.com', 'Ada') returning id");
   const [{ id: e }] = await rows("insert into core.experiment (slug, type, hypothesis_ref) values ('e', 'campaign', 'https://example.com/h') returning id");
   const [{ id: run }] = await rows("insert into core.run (process_key, trigger, actor_type) values ('t', 'cli', 'system') returning id");
-  const [{ id: a }] = await rows("insert into relations.audience (key, kind) values ('a', 'include') returning id");
-  await client.query("insert into relations.audience_member (audience_id, person_id, source) values ($1, $2, 'test')", [a, id]);
-  await client.query("insert into relations.touch (person_id, channel, direction, sender, provider, provider_event_id, occurred_at, actor_type) values ($1, 'email', 'outbound', 'a mailbox', 'memory', 't1', now(), 'system')", [id]);
+  const [{ id: human }] = await rows("insert into core.run (process_key, trigger, actor_type, actor_id) values ('t', 'manual', 'human', 'an operator') returning id");
+  // A list takes its members before its seal; the seal is set after.
+  const [{ id: l }] = await rows("insert into relations.list (key, query, actor_type, run_id) values ('l', '{}', 'agent', $1) returning id", [run]);
+  await client.query("insert into relations.list_member (list_id, person_id) values ($1, $2)", [l, id]);
+  await client.query("update relations.list set sealed_at = now() where id = $1", [l]);
+  await client.query("insert into relations.relationship (person_id, status, at, actor_type, actor_id, run_id) values ($1, 'customer', now(), 'human', 'an operator', $2)", [id, human]);
+  await client.query("insert into relations.message (key, person_id, channel, body, unsolicited, actor_type) values ('m1', $1, 'email', 'Hello', false, 'human')", [id]);
+  await client.query("insert into relations.touch (person_id, channel, direction, unsolicited, sender, provider, provider_event_id, occurred_at, actor_type) values ($1, 'email', 'outbound', true, 'a mailbox', 'memory', 't1', now(), 'system')", [id]);
   await client.query("insert into relations.signal (person_id, kind, source, content_hash, occurred_at) values ($1, 'k', 's', 'h', now())", [id]);
   await client.query("insert into gtm.draft (experiment_id, person_id, step, rendered_body) values ($1, $2, 1, 'Hello')", [e, id]);
-  await client.query("insert into gtm.person_state (person_id) values ($1)", [id]);
+  await client.query("insert into gtm.person_state (person_id, stage, at, actor_type, actor_id, run_id) values ($1, 'engaged', now(), 'human', 'an operator', $2)", [id, human]);
   await client.query("insert into gtm.enrolment (person_id, sequence_key, channel, idempotency_key, provider, actor_type) values ($1, 's', 'email', 'k', 'memory', 'system')", [id]);
   await client.query("insert into gtm.sourcing_result (run_id, pass, outcome, detail, company, person_id, subject) values ($1, 'person', 'kept', 'd', '{}', $2, 's')", [run, id]);
   return id;
@@ -79,7 +84,8 @@ async function someone(): Promise<string> {
 
 const total = async (personId: string) =>
   (await rows(
-    `select (select count(*) from relations.audience_member where person_id = $1) + (select count(*) from relations.touch where person_id = $1)
+    `select (select count(*) from relations.list_member where person_id = $1) + (select count(*) from relations.touch where person_id = $1)
+      + (select count(*) from relations.relationship where person_id = $1) + (select count(*) from relations.message where person_id = $1)
       + (select count(*) from relations.signal where person_id = $1) + (select count(*) from gtm.draft where person_id = $1)
       + (select count(*) from gtm.person_state where person_id = $1) + (select count(*) from gtm.enrolment where person_id = $1)
       + (select count(*) from gtm.sourcing_result where person_id = $1) as n`,
@@ -115,9 +121,9 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
     const plan = await planErasure(db, [relations, gtm], id);
     assert.deepEqual(plan.map((s) => `${s.domain}.${s.table}:${s.rows}`), [
       "gtm.draft:1", "gtm.person_state:1", "gtm.enrolment:1", "gtm.sourcing_result:1",
-      "relations.audience_member:1", "relations.touch:1", "relations.signal:1", "relations.person:1",
+      "relations.list_member:1", "relations.relationship:1", "relations.message:1", "relations.touch:1", "relations.signal:1", "relations.person:1",
     ]);
-    assert.equal(await total(id), "7");
+    assert.equal(await total(id), "9");
   });
 
   it("takes the person's own row last, in whatever order its domain lists it", async () => {
@@ -150,6 +156,6 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
     // An answer the schema refuses — touches are append-only — fails the whole erasure.
     const wrong: DomainManifest = { ...relations, erasure: relations.erasure!.map((r) => (r.table === "touch" ? { table: "touch", column: "person_id", do: "anonymise", columns: ["sender"] } : r)) };
     await assert.rejects(erase(db, [wrong, gtm], { subjectId: id, by: "an operator", processKey: "relations.person.erase" }), (e: Error) => /append-only/.test(String((e.cause as Error | undefined)?.message ?? e.message)));
-    assert.equal(await total(id), "7");
+    assert.equal(await total(id), "9");
   });
 });

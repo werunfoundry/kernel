@@ -12,7 +12,7 @@
  * conversation starts, never when a contact is sourced. A contract with
  * `importMany()` in it makes the wrong thing the easy thing; the only write
  * here takes one subject and a reason. Sourced contacts live in `relations`
- * tables and in audiences, where they belong, and cost nothing per seat.
+ * tables and in lists, where they belong, and cost nothing per seat.
  *
  * **Reads return a reference and the provider's own fields, nothing more.**
  * The CRM owns those fields (doctrine 3). The engine keeps the reference and

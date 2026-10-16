@@ -146,10 +146,16 @@ export async function recordPerson(
   return settled;
 }
 
-export interface TouchInput {
+/**
+ * Outbound says whether the person asked for it, with no default (decision
+ * 0036): a support answer is solicited, a sales follow-up is not, and only
+ * the unsolicited count against a cap. Inbound is the person's own act.
+ */
+export type TouchDirection = { direction: "outbound"; unsolicited: boolean } | { direction: "inbound" };
+
+export type TouchInput = TouchDirection & {
   personId: string;
   channel: string;
-  direction: "outbound" | "inbound";
   provider: string;
   providerEventId: string;
   occurredAt: Date;
@@ -158,7 +164,7 @@ export interface TouchInput {
   experimentId?: string;
   actor: { type: ActorKind; id?: string };
   runId?: string;
-}
+};
 
 /**
  * Appends one touch. A provider event already recorded is not a second touch:
@@ -172,6 +178,7 @@ export async function recordTouch(db: Database, input: TouchInput): Promise<{ re
       personId: input.personId,
       channel: input.channel,
       direction: input.direction,
+      unsolicited: input.direction === "outbound" ? input.unsolicited : false,
       provider: input.provider,
       providerEventId: input.providerEventId,
       occurredAt: input.occurredAt,
@@ -185,4 +192,19 @@ export async function recordTouch(db: Database, input: TouchInput): Promise<{ re
     .onConflictDoNothing({ target: [touch.provider, touch.providerEventId] })
     .returning({ id: touch.id });
   return { recorded: inserted.length === 1 };
+}
+
+/**
+ * Records that a person asked to stop, from the moment they did (decision
+ * 0039: an unsubscribe read from a source is applied, not only stored). An
+ * opt-out already recorded is kept as it is — the first moment stands — and
+ * nothing here ever clears one.
+ */
+export async function recordOptOut(db: Database, personId: string, at: Date): Promise<{ recorded: boolean }> {
+  const changed = await db
+    .update(person)
+    .set({ optedOutAt: at, updatedAt: new Date() })
+    .where(and(eq(person.id, personId), isNull(person.optedOutAt)))
+    .returning({ id: person.id });
+  return { recorded: changed.length === 1 };
 }

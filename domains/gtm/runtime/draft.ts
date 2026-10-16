@@ -41,7 +41,7 @@ export interface DraftInput {
   experimentId: string;
   personId: string;
   step: number;
-  messageId?: string;
+  templateId?: string;
   renderedSubject?: string;
   renderedBody: string;
   sender?: string;
@@ -117,7 +117,7 @@ export async function propose(db: Database, input: DraftInput, by: Attribution, 
         .set({
           renderedSubject: input.renderedSubject ?? null,
           renderedBody: input.renderedBody,
-          messageId: input.messageId ?? null,
+          templateId: input.templateId ?? null,
           sender: input.sender ?? null,
           state: earned ? "approved" : "awaiting_review",
           ...(earned ? { decidedBy: DECIDED_BY_LANE, decidedAt: now } : {}),
@@ -134,7 +134,7 @@ export async function propose(db: Database, input: DraftInput, by: Attribution, 
         experimentId: input.experimentId,
         personId: input.personId,
         step: input.step,
-        ...(input.messageId ? { messageId: input.messageId } : {}),
+        ...(input.templateId ? { templateId: input.templateId } : {}),
         ...(input.renderedSubject !== undefined ? { renderedSubject: input.renderedSubject } : {}),
         renderedBody: input.renderedBody,
         ...(input.sender ? { sender: input.sender } : {}),

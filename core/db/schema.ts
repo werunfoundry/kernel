@@ -1,18 +1,21 @@
 /**
  * core — governance. Contains no business word (doctrine 1).
  *
- * Four tables: what happened, what ran, what was decided, what is being tried.
+ * Four tables: what was observed, what ran, what was concluded, what is being
+ * tried.
  * Everything else comes from a domain.
  *
  * The core never references a domain. That is why `experiment.targets` is a
  * list of typed references rather than a foreign key: a foreign key into
- * `relations.audience` would make the bottom layer depend on the one above it
+ * `relations.list` would make the bottom layer depend on the one above it
  * (doctrine 2).
  */
 
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -60,11 +63,15 @@ export const experimentStatus = core.enum("experiment_status", [
 ]);
 
 /**
- * Something that happened, typed by a domain: `<domain>.<verb>`.
+ * Something observed, typed by a domain: `<domain>.<verb>` (decision 0039).
  *
- * One endpoint accepts these and routes to a process. The unique index is the
- * whole reason that endpoint is safe to expose: providers retry, and a retried
- * delivery must be a no-op rather than a second run.
+ * Appended, never updated — a trigger refuses it. Whether an event was
+ * handled is a run that names it (`run.event_id`), not a column that
+ * changes. Written only through `recordEvent` (`runtime/event.ts`), which
+ * refuses a type no enabled domain declares.
+ *
+ * The subject is in the payload: the core references no domain, so the
+ * person-level trace is a touch written beside the event (0017).
  */
 export const event = core.table(
   "event",
@@ -72,22 +79,30 @@ export const event = core.table(
     id: uuid("id").defaultRandom().primaryKey(),
 
     kind: text("kind").notNull(),
+    /** The source, as its adapter names itself. With the source's own id, the key. */
     provider: text("provider").notNull(),
     providerEventId: text("provider_event_id").notNull(),
 
     payload: jsonb("payload").notNull(),
 
+    /** When it happened at the source — what a measurement window is about. */
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
-    /** Null means not yet handled. The retry sweep reads exactly this. */
-    processedAt: timestamp("processed_at", { withTimezone: true }),
+
+    /** The run that read it. Restrict: the reading is the evidence the event was seen. */
+    runId: uuid("run_id")
+      .notNull()
+      .references((): AnyPgColumn => run.id, { onDelete: "restrict" }),
   },
   (t) => [
+    /**
+     * Sources deliver at least once (0017): an event read twice is stored
+     * once. Protects `recordEvent`, and the replay of a page after a crash.
+     */
     uniqueIndex("event_provider_event_uidx").on(t.provider, t.providerEventId),
 
-    /** `listUnprocessedEvents` — the sweep that catches a failed trigger. */
-    index("event_unprocessed_idx")
-      .on(t.receivedAt)
-      .where(sql`${t.processedAt} is null`),
+    /** `listEvents(kind, from, to)` — what a measurement window reads. */
+    index("event_kind_occurred_at_idx").on(t.kind, t.occurredAt),
   ],
 );
 
@@ -165,7 +180,7 @@ export const experiment = core.table(
 
     /**
      * Typed references to what this experiment acts on, e.g.
-     * `[{ kind: "relations.audience", id: "…" }]`. Not a foreign key: the core
+     * `[{ kind: "relations.list", id: "…" }]`. Not a foreign key: the core
      * does not depend on a domain (doctrine 2).
      */
     targets: jsonb("targets").notNull().default(sql`'[]'::jsonb`),
@@ -200,35 +215,47 @@ export const experiment = core.table(
 );
 
 /**
- * A decision and the number it rested on.
+ * A decision (decision 0039): on this date, this person concluded this, on
+ * this experiment, having read these figures. One line, written by a person,
+ * never computed, never edited — a trigger refuses an update, and a check
+ * any actor but a person.
  *
  * This is the whole metrics story (doctrine 3). Rates are read from their
  * source when someone needs them; the only figures kept are those a decision
- * used, frozen at the moment it was taken.
+ * rested on, frozen as they were read.
  */
 export const decision = core.table(
   "decision",
   {
     id: uuid("id").defaultRandom().primaryKey(),
 
-    /** Polymorphic by design: a decision can be about anything, in any domain. */
-    subjectKind: text("subject_kind").notNull(),
-    subjectId: uuid("subject_id"),
+    /** Restrict: an experiment with a decision on it is not quietly deleted. */
+    experimentId: uuid("experiment_id")
+      .notNull()
+      .references(() => experiment.id, { onDelete: "restrict" }),
 
-    choice: text("choice").notNull(),
+    /** What was concluded, in the person's words. */
+    conclusion: text("conclusion").notNull(),
     rationale: text("rationale"),
 
-    /** As read at decision time. Never recomputed. */
-    metricSnapshot: jsonb("metric_snapshot"),
+    /** The figures it rested on, as they were read — each with its metric and when. Never recomputed. */
+    readings: jsonb("readings").notNull(),
 
+    /** Doctrine 5. A person, always: the check below. */
     actorType: actorType("actor_type").notNull(),
-    actorId: text("actor_id"),
-    runId: uuid("run_id").references(() => run.id, { onDelete: "set null" }),
+    actorId: text("actor_id").notNull(),
+    /** Restrict: the run that recorded it is the evidence. */
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => run.id, { onDelete: "restrict" }),
 
     decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    /** `listDecisionsForSubject` on a debrief. */
-    index("decision_subject_idx").on(t.subjectKind, t.subjectId),
+    /** `listDecisions(experimentId)` on a debrief. */
+    index("decision_experiment_idx").on(t.experimentId, t.decidedAt),
+
+    check("decision_human_check", sql`${t.actorType} = 'human'`),
+    check("decision_readings_check", sql`jsonb_typeof(${t.readings}) = 'array'`),
   ],
 );

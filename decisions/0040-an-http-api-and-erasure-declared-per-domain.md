@@ -73,11 +73,11 @@ do — and does not carry it out, for the reason above.
 
 ## Not done here
 
-- **Routes for what is not on `main`.** Lists, messages, events and states
-  (0036–0039) are added to the document and the server as each lands; those
-  only a person may write stay off.
+- **Routes for 0036–0039.** States, lists, messages, events and decisions
+  are in the schema, and not yet served: each is added to the document and
+  the server in its own change. Those only a person may write stay off.
 - **Rows that name a person by keys, not by id** — a skip, an excluded
-  sourcing result — are not reached by an erasure by id. Matching on keys is
+  sourcing result, an event's payload — are not reached by an erasure by id. Matching on keys is
   not built; until it is, those rows are what an erasure leaves.
 - **No domain keeps anything yet.** The two domains delete; `keep` exists for
   the domain that will carry an obligation, such as one that invoices.

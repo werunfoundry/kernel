@@ -1,6 +1,6 @@
 name: relations
 version: 0.0.0
-description: The shared record — people, companies, audiences, interactions, signals.
+description: The shared record — people, companies, lists, interactions, signals.
 schema: relations
 dependsOn: []
 channels: []
@@ -49,7 +49,9 @@ identityKeys:
 # domain that has it. The person's own row goes last; if a row another domain
 # keeps still points at it, it is emptied of what identifies them instead.
 erasure:
-  - { table: audience_member, column: person_id, do: delete }
+  - { table: list_member, column: person_id, do: delete }
+  - { table: relationship, column: person_id, do: delete }
+  - { table: message, column: person_id, do: delete }
   - { table: touch, column: person_id, do: delete }
   - { table: signal, column: person_id, do: delete }
   - { table: person, column: id, do: delete, ifStillNamed: [email, full_name, title, external_id, record_id] }

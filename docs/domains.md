@@ -19,19 +19,15 @@
 
 ## Tensions with existing doctrine
 
-Three places where this projection disagrees with what is decided today.
-None blocks anything — nothing in this file is built — and each says what
+Three places where this projection disagreed with what is decided. None
+blocks anything — nothing in this file is built — and each says what
 will close it. Until then, **the decision wins over this file.**
 
 1. **The lane's gate — constraint 1 against
-   [0027](../decisions/0027-a-draft-waits-on-its-lane.md).** Constraint 1
-   puts a gate on writing the message; 0027 puts the gate on the draft.
-   *Why it does not block:* they are not the same question. The draft asks
-   whether the content is approved; writing the message asks whether
-   sending is lawful — consent, cadence, channel. The two add up, and a
-   domain that makes no draft still goes through the second. *What closes
-   it:* resolved in principle; to be written in the decision that moves
-   `message`.
+   [0027](../decisions/0027-a-draft-waits-on-its-lane.md).** *Closed* by
+   [0038](../decisions/0038-a-message-is-recorded-in-relations-behind-its-own-gate.md):
+   writing the message is a gate of its own — consent, cadence, lane —
+   beside the draft's, and the two add up.
 2. **Consent per purpose — constraint 2 against the global opt-out of
    [0032](../decisions/0032-enrolment-reads-what-sourcing-kept.md).**
    Constraint 2 makes consent per purpose; today `relations.person` carries
@@ -41,10 +37,10 @@ will close it. Until then, **the decision wins over this file.**
    and the existing rows migrate without loss. *What closes it:* resolved in
    principle; to be written when consent is built.
 3. **`audience` reserved for `publishing` — against the table
-   `relations.audience`**, which exists today for a set of identified
-   people. *Why it does not block:* nothing writes that table yet. *What
-   closes it:* the rename to `list` is planned in the decision that builds
-   selection. Waiting for that decision.
+   `relations.audience`.** *Closed* by
+   [0037](../decisions/0037-a-list-is-frozen-and-is-not-a-permission.md):
+   the table is `relations.list`, frozen when it is constituted, and
+   `audience` is free.
 
 ## The core
 
@@ -91,11 +87,14 @@ and nothing else that is recorded.
 
 **What the two existing domains hold today**, for comparison:
 
-- `relations`: `person`, `company`, `audience`, `audience_member`, `touch`,
-  `signal`. No `list`, no `consent` table (the opt-out is a column on
-  `person`), and `message` lives in the addressing domain.
-- the addressing domain: `message`, `draft`, `person_state`,
-  `company_state`, `enrolment`, `enrolment_skip`, `sourcing_result`,
+- `relations`: `person`, `company`, `list`, `list_member` (frozen when
+  constituted — 0037), `touch` (which says whether it was solicited),
+  `signal`, `relationship` (customer or former customer, declared — 0036),
+  `message` (what was sent, behind its own gate — 0038). No `consent`
+  table (the opt-out is a column on `person`).
+- the addressing domain: `template` (the copy, with no recipient), `draft`,
+  `person_state`, `company_state` (stages declared and kept as a history —
+  0036), `enrolment`, `enrolment_skip`, `sourcing_result`,
   `protection_acknowledgement`.
 
 ## The boundaries, and why

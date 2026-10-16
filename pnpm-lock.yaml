@@ -39,6 +39,21 @@ importers:
         specifier: workspace:*
         version: link:../domains/relations
 
+  api:
+    dependencies:
+      '@werunfoundry/core':
+        specifier: workspace:*
+        version: link:../core
+      '@werunfoundry/gtm':
+        specifier: workspace:*
+        version: link:../domains/gtm
+      '@werunfoundry/relations':
+        specifier: workspace:*
+        version: link:../domains/relations
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.4(@types/pg@8.23.1)(pg@8.23.1)
+
   core:
     dependencies:
       drizzle-orm:

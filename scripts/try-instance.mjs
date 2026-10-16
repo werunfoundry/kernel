@@ -37,7 +37,9 @@
  */
 
 import { execFileSync, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +55,7 @@ if (!url) {
   process.exit(2);
 }
 
-const PACKAGES = ["core", "domains/relations", "domains/gtm", "adapters"];
+const PACKAGES = ["core", "domains/relations", "domains/gtm", "api", "adapters"];
 const SCHEMAS = ["gtm", "relations", "core", "drizzle"];
 
 const work = mkdtempSync(join(tmpdir(), "try-instance-"));
@@ -101,6 +103,8 @@ try {
   // The template binds no shipped adapter, so it does not depend on them; the
   // instance here does, so that every one is loaded below by its published name.
   pkg.dependencies["@werunfoundry/adapters"] = `file:${tarballs["@werunfoundry/adapters"]}`;
+  // The API is the instance's choice to serve (0040); here it is installed to be started once.
+  pkg.dependencies["@werunfoundry/api"] = `file:${tarballs["@werunfoundry/api"]}`;
   // Both homes for overrides: pnpm 9 reads package.json, pnpm 10 onwards
   // reads pnpm-workspace.yaml, and outside this repository nothing pins which
   // pnpm runs.
@@ -228,6 +232,39 @@ try {
       JSON.stringify(await skipsOf(replay.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }, { reason: "duplicate", n: 3 }]),
       "the replay's skips were not kept with their reasons",
     );
+
+    // The API (0040), from the pack, on plain Node: the token or nothing.
+    step("api");
+    const port = await new Promise((done) => {
+      const probe = createServer().listen(0, "127.0.0.1", () => {
+        const p = probe.address().port;
+        probe.close(() => done(p));
+      });
+    });
+    const apiToken = randomBytes(24).toString("hex");
+    const api = spawn(join(root, "node_modules/.bin", "kernel-api"), [], { cwd: root, env: { ...env, KERNEL_API_TOKEN: apiToken, KERNEL_API_PORT: String(port) } });
+    try {
+      await new Promise((ready, fail) => {
+        let out = "";
+        const timer = setTimeout(() => fail(new Error(`kernel-api did not start: ${out}`)), 20000);
+        const read = (b) => {
+          out += b;
+          if (/listening on/.test(out)) {
+            clearTimeout(timer);
+            ready();
+          }
+        };
+        api.stdout.on("data", read);
+        api.stderr.on("data", read);
+        api.on("exit", (code) => fail(new Error(`kernel-api exited ${code}: ${out}`)));
+      });
+      const health = (auth) => fetch(`http://127.0.0.1:${port}/v1/health`, { headers: auth ? { authorization: `Bearer ${auth}` } : {} });
+      expect((await health(apiToken)).status === 200, "kernel-api did not answer with its token");
+      expect((await health(undefined)).status === 401, "kernel-api answered without a token");
+      console.log(`kernel-api answered on ${port}, with the token and only with it`);
+    } finally {
+      api.kill();
+    }
 
     // The sourcing path (0031): the protected account and the one the CRM
     // holds are excluded before anyone there is looked up; Bo, whom the CRM

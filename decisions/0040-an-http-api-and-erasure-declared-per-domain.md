@@ -76,6 +76,11 @@ do — and does not carry it out, for the reason above.
 - **Routes for what is not on `main`.** Lists, messages, events and states
   (0036–0039) are added to the document and the server as each lands; those
   only a person may write stay off.
+- **Rows that name a person by keys, not by id** — a skip, an excluded
+  sourcing result — are not reached by an erasure by id. Matching on keys is
+  not built; until it is, those rows are what an erasure leaves.
+- **No domain keeps anything yet.** The two domains delete; `keep` exists for
+  the domain that will carry an obligation, such as one that invoices.
 - **A skill, and a process as data.** The kernel has no `skill` object — the
   word appears nowhere — and `process` exists only as a string key on a
   run. These are the two pieces a domain would need to bring a way of working

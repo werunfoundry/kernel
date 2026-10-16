@@ -44,3 +44,12 @@ identityKeys:
     subject: company
     immutable: true
     networked: true
+# What erasing a person does here (decision 0040). Nothing in this domain is
+# kept under a legal basis: an obligation that outlives erasure belongs to the
+# domain that has it. The person's own row goes last; if a row another domain
+# keeps still points at it, it is emptied of what identifies them instead.
+erasure:
+  - { table: audience_member, column: person_id, do: delete }
+  - { table: touch, column: person_id, do: delete }
+  - { table: signal, column: person_id, do: delete }
+  - { table: person, column: id, do: delete, ifStillNamed: [email, full_name, title, external_id, record_id] }

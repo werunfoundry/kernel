@@ -1,5 +1,8 @@
 # 0038 — A message is recorded in `relations`, behind a gate of its own
 
+> Completed by [0041](0041-which-fact-governs-a-guard.md): the opt-out stays
+> global, and closes rather than serves.
+
 Completes [0027](0027-a-draft-waits-on-its-lane.md), whose gate is on the
 draft.
 

@@ -1,5 +1,8 @@
 # 0036 — A state is declared by a person, and kept
 
+> Completed by [0041](0041-which-fact-governs-a-guard.md): protection reads
+> the source, never the declaration.
+
 ## Decided
 
 **What is declared.** A person — never a run, never an agent — declares

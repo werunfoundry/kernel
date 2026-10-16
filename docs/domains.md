@@ -35,7 +35,10 @@ will close it. Until then, **the decision wins over this file.**
    *Why it does not block:* it generalises the opt-out rather than
    contradicting it — the existing opt-out becomes a purpose named "all",
    and the existing rows migrate without loss. *What closes it:* resolved in
-   principle; to be written when consent is built.
+   principle; to be written when consent is built. Until then the opt-out
+   stays global on purpose, and refuses even a contractual message —
+   [0041](../decisions/0041-which-fact-governs-a-guard.md) writes what that
+   costs.
 3. **`audience` reserved for `publishing` — against the table
    `relations.audience`.** *Closed* by
    [0037](../decisions/0037-a-list-is-frozen-and-is-not-a-permission.md):

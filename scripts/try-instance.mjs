@@ -229,6 +229,30 @@ try {
       "the replay's skips were not kept with their reasons",
     );
 
+    // Inbound (0039): pulled after a cursor, stored once, nothing written by a dry run.
+    const events = async () => (await client.query("select kind, count(*)::int as n from core.event group by 1 order by 1")).rows;
+    step("inbound, dry run");
+    const inDry = await bin("kernel-inbound", ["--pages", "5"]);
+    show(inDry);
+    expect(inDry.status === 0, `the inbound dry run exited ${inDry.status}`);
+    expect(/events read: 2/.test(inDry.stdout), "the inbound dry run did not read the sandbox's two events");
+    expect(JSON.stringify(await events()) === "[]", "the inbound dry run stored events");
+
+    step("inbound, live");
+    const inLive = await bin("kernel-inbound", ["--pages", "5", "--live"]);
+    show(inLive);
+    expect(inLive.status === 0, `the inbound live run exited ${inLive.status}`);
+    expect(/recorded: 2, already stored: 0/.test(inLive.stdout), "the inbound live run did not store the two events");
+    expect(
+      JSON.stringify(await events()) === JSON.stringify([{ kind: "gtm.meeting_booked", n: 1 }, { kind: "gtm.reply", n: 1 }]),
+      `core.event reads ${JSON.stringify(await events())}`,
+    );
+
+    step("inbound, again");
+    const inAgain = await bin("kernel-inbound", ["--pages", "5", "--live"]);
+    show(inAgain);
+    expect(/recorded: 0/.test(inAgain.stdout), "the second pull stored events again: the cursor did not hold");
+
     // The sourcing path (0031): the protected account and the one the CRM
     // holds are excluded before anyone there is looked up; Bo, whom the CRM
     // knows by address, after; Ada is kept.

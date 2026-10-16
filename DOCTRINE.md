@@ -9,10 +9,26 @@ something, somewhere. Where a rule can be checked by a machine, it is — see
 
 ## 1. The core decides, domains describe
 
-The core holds governance: what is being tried, what was decided, what ran. A
-domain holds a line of business: its entity types, its event types, its
-experiment types, its capabilities.
+The core holds the record of work: who acted, what is being tried, what ran,
+what was observed, what was concluded. A domain holds what its verbs need: its
+entity types, its event types, its experiment types, its capabilities.
 
+- **A domain is a set of verbs on the record, plus the objects only those
+  verbs touch.** Never a team, never a function on an org chart. Two teams
+  that perform the same verbs are one domain. A new domain exists when it
+  brings verbs the record has never seen, carrying objects no other domain
+  needs.
+- **An object's membership test is who owns the fact, not who reads it.** It
+  moves down when its fact would be true even if the domain maintaining it
+  did not exist. It stays, behind a view its domain publishes, when it only
+  makes sense inside that domain's motion. "This person is a customer" moves
+  down; "this person is at the opportunity stage" stays.
+- **The core is a record of work, in five parts** — who acted, what is being
+  tried, what ran, what was observed, what was concluded: attribution on
+  every row (§5), then the experiment, the run, the event, the decision.
+  **It is not a record of people.** People are a domain.
+- **A channel is not a domain**: it tells means apart within the same verbs.
+  **A domain may depend on no other.**
 - **The core contains no business word.** No lead, no campaign, no feature.
 - **A domain never adds a core object.** It adds its own types.
 - **If the core grows past ten objects, the overflow moves into a domain.**
@@ -26,9 +42,10 @@ domain only by declaring it in its `domain.yaml`.
   sideways, never upward.
 - A sideways read goes through a view the owning domain publishes, never
   through a foreign key into its tables.
-- **When two domains need the same concept, it moves down — not sideways.**
-  Two domains needing the same thing is the signal that it belongs to the layer
-  beneath them.
+- **When two domains need the same fact, it moves down — not sideways.** A
+  fact that would be true without the domain that maintains it belongs to the
+  layer beneath both. A state that only means something inside one domain's
+  motion stays there, and the other reads it through that domain's view (§1).
 - A domain never writes into another domain's entities. To extend an entity of
   a domain it depends on, it adds a table of its own in its own schema.
 

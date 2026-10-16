@@ -9,12 +9,14 @@
  * paid for:
  *
  * 1. **Protection**, read whole and fresh (0019). Unreadable stops the run.
- * 2. **The company pass**, over every candidate before anything is spent: a
- *    protected company, or one the CRM already knows, is excluded, and its
- *    people are never looked up. The CRM is asked about every remaining
- *    domain at once, in as few requests as its adapter can make. A CRM that
- *    cannot answer stops the run here — before any money is spent, not
- *    halfway through.
+ * 2. **The company pass**, before anything is spent, and only as far as the
+ *    run needs (decision 0043): candidates are read in batches of twenty,
+ *    skipping what a previous live run already examined; a protected
+ *    company, or one the CRM already knows, is excluded, and its people are
+ *    never looked up. The pass stops once enough companies survive for
+ *    `maxPeople` at `peoplePerCompany`, with a margin, or when the candidates
+ *    run out, and says which. A CRM that cannot answer stops the run here —
+ *    before any money is spent, not halfway through.
  * 3. **People**, from the people source, up to the run's ceiling.
  * 4. **Completion**, through the enrichment sources in sequence (0030). Each
  *    person completed counts against `maxPeople`, which is required: a paid
@@ -34,16 +36,22 @@
  * same failure would spend again for nothing. Nothing is retried.
  *
  * Every company and person looked at gets a row in `sourcing_result`, kept
- * or excluded, dry run or not. A dry run writes its run and those rows, and
+ * or excluded, dry run or not — **except when the company pass fails**: its
+ * rows are written only once it has finished, so a CRM that cannot answer
+ * leaves no company row at all, rather than a partial set that would read as
+ * a complete pass (0043). A dry run writes its run and those rows, and
  * nothing else: no person, no company, and no paid submission — a completion
  * stopped by the dry run is `simulated`, and nothing after it is decided.
+ * Rows from live runs are the cursor: what they examined is not asked about
+ * again (0043).
  */
 
 import { createHash } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
+import { run as runTable } from "@werunfoundry/core/db/schema";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
 import { checkIdentity, hostOf, normalizeIdentity } from "@werunfoundry/core/identity";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
@@ -115,6 +123,13 @@ export interface SourceReport {
    */
   protection?: Pick<Protection, "surface" | "unkeyedRowsOfCoveredCustomers" | "uncovered">;
   candidates: number;
+  /**
+   * How far the company pass went (0043): the companies it wanted to
+   * survive, those that did, how many candidates it examined, how many it
+   * skipped because a previous live run had examined them, and whether the
+   * candidates ran out before enough survived.
+   */
+  companyPass: { wanted: number; survived: number; examined: number; skippedAsExamined: number; exhausted: boolean };
   /** Every company and person looked at, in order. */
   looked: Looked[];
   /** People searches made, one per company sourced. */
@@ -175,6 +190,36 @@ function total(costs: { provider: string; cost: Cost }[]) {
   return [...sums.values()];
 }
 
+/** Candidates read per batch of the company pass (0043). */
+export const COMPANY_BATCH = 20;
+
+/**
+ * The companies a run wants to survive the company pass (0043): what the
+ * ceiling needs at `perCompany` people each, plus a quarter of that again,
+ * at least one — a surviving company may yield nobody, or only people the
+ * person pass excludes.
+ */
+export function companiesWanted(maxPeople: number, perCompany: number): number {
+  const need = Math.ceil(maxPeople / perCompany);
+  return need + Math.max(1, Math.ceil(need / 4));
+}
+
+/**
+ * The cursor (0043): every domain a previous live run examined — any row but
+ * `not_reached`, which the ceiling stopped before examining. A dry run's rows
+ * do not count: what it decided is not acted on. A set, not a position: a
+ * target list's order and page tokens do not outlive a run.
+ */
+async function examinedBefore(db: Database): Promise<Set<string>> {
+  const domain = sql<string | null>`${sourcingResult.company}->>'domain'`;
+  const rows = await db
+    .selectDistinct({ domain })
+    .from(sourcingResult)
+    .innerJoin(runTable, eq(runTable.id, sourcingResult.runId))
+    .where(and(eq(runTable.dryRun, false), ne(sourcingResult.outcome, "not_reached")));
+  return new Set(rows.flatMap((r) => (r.domain ? [hostOf(r.domain)] : [])).filter((h) => h !== ""));
+}
+
 const costsOf = (steps: SequenceStep[]) => steps.flatMap((s) => (s.cost ? [{ provider: s.provider, cost: s.cost }] : []));
 
 /**
@@ -233,6 +278,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
     protectedAccounts: 0,
     protectedRows: 0,
     candidates: 0,
+    companyPass: { wanted: 0, survived: 0, examined: 0, skippedAsExamined: 0, exhausted: false },
     looked: [],
     peopleSearches: 0,
     peopleTaken: 0,
@@ -301,42 +347,69 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
       report.avoidedByCompanyPass.completionsAtMost += perCompany;
       await note({ pass: "company", outcome, company, detail }, subjectOfCompany(company));
     };
-    // What protection and the domain decide comes first, so that the CRM is
-    // asked only about what is left, and about all of it at once.
-    type Pending = { company: TargetCompany } & ({ host: string } | { excluded: { outcome: Outcome; detail: string } });
-    const pending = candidates.value.items.map((company): Pending => {
-      if (protection.company(company)) return { company, excluded: { outcome: "protected", detail: "the account is protected" } };
-      const host = company.domain ? hostOf(company.domain) : "";
-      if (!host) return { company, excluded: { outcome: "unreachable", detail: "no domain: neither the CRM nor protection can recognise it" } };
-      return { company, host };
-    });
-    const known = await knownToCrm(crm, [...new Set(pending.flatMap((p) => ("host" in p ? [p.host] : [])))], ctx);
+    // Written once the pass has finished, never before: a CRM that fails in
+    // a later batch leaves no company row, not a partial set (0043).
+    const excluded: { company: TargetCompany; outcome: Outcome; detail: string }[] = [];
 
-    for (const p of pending) {
-      const { company } = p;
-      if ("excluded" in p) {
-        await excludeCompany(company, p.excluded.outcome, p.excluded.detail);
-        continue;
+    const wanted = companiesWanted(request.maxPeople, perCompany);
+    const examined = await examinedBefore(deps.db);
+    const items = candidates.value.items;
+    report.companyPass.wanted = wanted;
+    let next = 0;
+    // Batch by batch, and only while too few have survived (0043).
+    while (kept.length < wanted && next < items.length) {
+      const batch: TargetCompany[] = [];
+      while (batch.length < COMPANY_BATCH && next < items.length) {
+        const company = items[next++]!;
+        const host = company.domain ? hostOf(company.domain) : "";
+        if (host && examined.has(host)) {
+          report.companyPass.skippedAsExamined++;
+          continue;
+        }
+        batch.push(company);
       }
-      const { host } = p;
-      const theirs = known.get(host);
-      if (theirs) {
-        await excludeCompany(company, "known_to_crm", `known to the CRM as ${theirs.ref.externalId}`);
-        continue;
+      report.companyPass.examined += batch.length;
+      // What protection and the domain decide comes first, so that the CRM
+      // is asked only about what is left of the batch, and about all of it
+      // at once.
+      type Pending = { company: TargetCompany } & ({ host: string } | { excluded: { outcome: Outcome; detail: string } });
+      const pending = batch.map((company): Pending => {
+        if (protection.company(company)) return { company, excluded: { outcome: "protected", detail: "the account is protected" } };
+        const host = company.domain ? hostOf(company.domain) : "";
+        if (!host) return { company, excluded: { outcome: "unreachable", detail: "no domain: neither the CRM nor protection can recognise it" } };
+        return { company, host };
+      });
+      const known = await knownToCrm(crm, [...new Set(pending.flatMap((p) => ("host" in p ? [p.host] : [])))], ctx);
+
+      for (const p of pending) {
+        const { company } = p;
+        if ("excluded" in p) {
+          excluded.push({ company, ...p.excluded });
+          continue;
+        }
+        const { host } = p;
+        const theirs = known.get(host);
+        if (theirs) {
+          excluded.push({ company, outcome: "known_to_crm", detail: `known to the CRM as ${theirs.ref.externalId}` });
+          continue;
+        }
+        // As the target list attests it (0024, 0029); a key the vocabulary
+        // refuses is not passed on as if it were good.
+        const identity = normalizeIdentity(
+          { subject: "company", keys: [{ kind: "domain", value: host }, ...(company.identity?.keys.filter((k) => k.kind !== "domain") ?? [])] },
+          deps.identity,
+        );
+        const malformed = checkIdentity(identity, deps.identity).filter((i) => i.severity === "error");
+        if (malformed.length > 0) {
+          excluded.push({ company, outcome: "unreachable", detail: `the target list's keys for it are not valid: ${malformed.map((i) => i.message).join("; ")}` });
+          continue;
+        }
+        kept.push({ company, identity });
       }
-      // As the target list attests it (0024, 0029); a key the vocabulary
-      // refuses is not passed on as if it were good.
-      const identity = normalizeIdentity(
-        { subject: "company", keys: [{ kind: "domain", value: host }, ...(company.identity?.keys.filter((k) => k.kind !== "domain") ?? [])] },
-        deps.identity,
-      );
-      const malformed = checkIdentity(identity, deps.identity).filter((i) => i.severity === "error");
-      if (malformed.length > 0) {
-        await excludeCompany(company, "unreachable", `the target list's keys for it are not valid: ${malformed.map((i) => i.message).join("; ")}`);
-        continue;
-      }
-      kept.push({ company, identity });
     }
+    report.companyPass.survived = kept.length;
+    report.companyPass.exhausted = kept.length < wanted;
+    for (const e of excluded) await excludeCompany(e.company, e.outcome, e.detail);
 
     /* 3–6. People, completion, the person pass, recording ------------------ */
 
@@ -351,6 +424,13 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
       report.peopleSearches++;
       if (!page.ok) {
         await note({ pass: "company", outcome: "unreachable", company, detail: `its people could not be looked up: ${page.error.code}: ${page.error.message}` }, subjectOfCompany(company));
+        continue;
+      }
+
+      // Searched and empty is still examined: without a row, the cursor would
+      // not see it, and every run would search it again (0043).
+      if (page.value.items.length === 0) {
+        await note({ pass: "company", outcome: "kept", company, detail: "kept by the company pass; the people source found nobody there" }, subjectOfCompany(company));
         continue;
       }
 

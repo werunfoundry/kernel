@@ -2,6 +2,9 @@
 
 > Completed by [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md):
 > writing the message is a second gate, beside this one.
+>
+> Completed by [0042](0042-a-reactive-reply-is-licensed-by-the-persons-inbound-touch.md):
+> the reactive lane is licensed by the person's inbound touch.
 
 ## Decided
 

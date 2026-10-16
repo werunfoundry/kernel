@@ -50,7 +50,7 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  if (client) await client.query("truncate relations.message, relations.person, core.experiment, core.run cascade");
+  if (client) await client.query("truncate relations.message, relations.touch, relations.person, core.experiment, core.run cascade");
 });
 
 const rows = async (sql: string, params: unknown[] = []) => (await client.query(sql, params)).rows;
@@ -133,10 +133,36 @@ describe("writing a message", { skip: base ? false : "TEST_DATABASE_URL is not s
     assert.match((await refusal(send()))[0]!, /needs the experiment/);
   });
 
-  it("lane: a reactive approval is refused until inbound can be verified", async () => {
-    const experimentId = await anExperiment("reactive", "running");
-    const [r] = await refusal(writeMessage(db, input(await aPerson(), { actor: { type: "agent" }, approvedBy: "lane:reactive", experimentId })));
-    assert.match(r!, /reactive reply/);
+  const reactive = async (opts: { lane?: string; status?: string; touched?: boolean } = {}) => {
+    // Its own person each time: a test may set up more than one case.
+    const [{ id: personId }] = await rows("insert into relations.person (email) values (gen_random_uuid()::text || '@example.com') returning id");
+    const experimentId = await anExperiment(opts.lane ?? "reactive", opts.status ?? "running");
+    if (opts.touched ?? true) {
+      await client.query(
+        "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type) values ($1, 'email', 'inbound', false, 'memory', gen_random_uuid()::text, now() - interval '5 minutes', 'system')",
+        [personId],
+      );
+    }
+    return (over: Partial<MessageInput> = {}) =>
+      writeMessage(db, input(personId, { actor: { type: "agent" }, approvedBy: "lane:reactive", experimentId, reactiveWithinMinutes: 60, ...over }));
+  };
+
+  it("lane: a reactive approval stands on the person's inbound touch, on this channel, inside the window", async () => {
+    assert.ok((await (await reactive())()).ok);
+  });
+
+  it("lane: a reactive approval is refused without the person's inbound touch on this channel", async () => {
+    assert.match((await refusal((await reactive({ touched: false }))()))[0]!, /has not reached us on email in the last 60 minutes/);
+    assert.match((await refusal((await reactive())({ channel: "social_message" })))[0]!, /has not reached us on social_message/);
+  });
+
+  it("lane: a reactive approval needs a window, with no default", async () => {
+    assert.match((await refusal((await reactive())({ reactiveWithinMinutes: undefined })))[0]!, /needs a window/);
+  });
+
+  it("lane: a reactive approval needs a running experiment whose lane is reactive", async () => {
+    assert.match((await refusal((await reactive({ lane: "reviewed" }))()))[0]!, /lane is reviewed, not reactive/);
+    assert.match((await refusal((await reactive({ status: "killed" }))()))[0]!, /killed, not running/);
   });
 
   it("refuses all at once, and writes nothing", async () => {

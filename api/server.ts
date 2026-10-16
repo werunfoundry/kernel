@@ -109,7 +109,7 @@ export const routes: { method: string; path: string; handler: Handler }[] = [
     path: "/v1/drafts",
     handler: async ({ db }, { body }) => {
       const b = object(body);
-      const allowed = new Set(["experimentId", "personId", "step", "renderedSubject", "renderedBody", "sender", "autonomyAfter", "actor", "runId"]);
+      const allowed = new Set(["experimentId", "personId", "step", "templateId", "renderedSubject", "renderedBody", "sender", "autonomyAfter", "reactiveWithinMinutes", "actor", "runId"]);
       for (const k of Object.keys(b)) if (!allowed.has(k)) throw new BadRequest(`${k} is not a field of this operation`);
       const actor = actorOf(b.actor);
       if ("status" in actor) return actor;
@@ -119,12 +119,16 @@ export const routes: { method: string; path: string; handler: Handler }[] = [
           experimentId: uuid(b.experimentId, "experimentId"),
           personId: uuid(b.personId, "personId"),
           step: integer(b.step, "step", 0),
+          ...(b.templateId !== undefined ? { templateId: uuid(b.templateId, "templateId") } : {}),
           renderedBody: text(b.renderedBody, "renderedBody"),
           ...(b.renderedSubject !== undefined ? { renderedSubject: text(b.renderedSubject, "renderedSubject") } : {}),
           ...(b.sender !== undefined ? { sender: text(b.sender, "sender") } : {}),
         },
         { actor, ...(b.runId !== undefined ? { runId: uuid(b.runId, "runId") } : {}) },
-        { autonomyAfter: integer(b.autonomyAfter, "autonomyAfter", 1) },
+        {
+          autonomyAfter: integer(b.autonomyAfter, "autonomyAfter", 1),
+          ...(b.reactiveWithinMinutes !== undefined ? { reactiveWithinMinutes: integer(b.reactiveWithinMinutes, "reactiveWithinMinutes", 1) } : {}),
+        },
       );
       if (!proposed.ok) return { status: 422, body: { refused: proposed.refused } };
       return { status: 201, body: { outcome: proposed.outcome, draft: draftView(proposed.draft) } };

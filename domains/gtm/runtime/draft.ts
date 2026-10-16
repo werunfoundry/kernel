@@ -16,11 +16,10 @@
  *   number the caller must give, because there is no default at which an
  *   agent's work is good enough. Earned, a new draft is approved by the lane.
  *   An edit or a drop sets the streak back to zero (core/runtime/experiment).
- * - **reactive** — without a human only in reply to an inbound event from the
- *   same person, inside a window the caller gives (no default), on a channel
- *   that person has engaged on. Nothing records inbound events against a
- *   person yet (0017), so that cannot be verified, and the lane fails closed:
- *   it requires a human, as `reviewed` does (decision 0027).
+ * - **reactive** — without a human only in reply to the person's own act: an
+ *   inbound touch from them, on the draft's channel — its template's — inside
+ *   a window the caller gives, with no default (decision 0042). No window, no
+ *   template, or no such touch, and a human approves, as on `reviewed`.
  *
  * Whatever the lane, a person who opted out is never queued, and a draft is
  * queued only while its experiment is running.
@@ -32,8 +31,9 @@ import { laneOf, recordReview } from "@werunfoundry/core/runtime/experiment";
 import { experiment } from "@werunfoundry/core/db/schema";
 import type { ActorKind, Database } from "@werunfoundry/core/runtime/run";
 import { person } from "@werunfoundry/relations/db/schema";
+import { engagedSince } from "@werunfoundry/relations/runtime/record";
 
-import { draft } from "../db/schema.js";
+import { draft, template } from "../db/schema.js";
 
 export type Draft = typeof draft.$inferSelect;
 
@@ -55,6 +55,12 @@ export interface Attribution {
 export interface Gate {
   /** Consecutive clean human approvals after which an autonomous lane approves on its own. */
   autonomyAfter: number;
+  /**
+   * How recent the person's inbound touch must be, in minutes, for a reactive
+   * lane to approve a reply on its own (0042). No default: without it, a
+   * human approves.
+   */
+  reactiveWithinMinutes?: number;
 }
 
 export type Proposed =
@@ -64,6 +70,7 @@ export type Proposed =
 export type Decided = { ok: true; draft: Draft; autonomyStreak?: number } | { ok: false; refused: string };
 
 const DECIDED_BY_LANE = "lane:autonomous";
+const DECIDED_BY_REACTION = "lane:reactive";
 const UNDECIDED = new Set(["drafting", "awaiting_review"]);
 
 const attributed = (a: Attribution) => ({
@@ -71,6 +78,18 @@ const attributed = (a: Attribution) => ({
   actorId: a.actor.id ?? null,
   ...(a.runId ? { runId: a.runId } : {}),
 });
+
+/**
+ * The reactive lane's license (0042): an inbound touch from the person, on
+ * the channel of the draft's template, inside the caller's window. Without a
+ * window or a template there is nothing to check against, and no license.
+ */
+async function reactiveLicense(db: Database, input: DraftInput, gate: Gate, now: Date): Promise<boolean> {
+  if (gate.reactiveWithinMinutes === undefined || !input.templateId) return false;
+  const [t] = await db.select({ channel: template.channel }).from(template).where(eq(template.id, input.templateId));
+  if (!t) return false;
+  return engagedSince(db, input.personId, t.channel, new Date(now.getTime() - gate.reactiveWithinMinutes * 60_000));
+}
 
 async function optedOut(db: Database, personId: string): Promise<boolean | undefined> {
   const [row] = await db.select({ optedOutAt: person.optedOutAt }).from(person).where(eq(person.id, personId));
@@ -94,6 +113,9 @@ export async function propose(db: Database, input: DraftInput, by: Attribution, 
   if (!Number.isInteger(gate.autonomyAfter) || gate.autonomyAfter < 1) {
     throw new Error("autonomyAfter must be a whole number of approvals, at least 1");
   }
+  if (gate.reactiveWithinMinutes !== undefined && !(Number.isFinite(gate.reactiveWithinMinutes) && gate.reactiveWithinMinutes > 0)) {
+    throw new Error("reactiveWithinMinutes, when given, is a number of minutes above zero");
+  }
   return db.transaction(async (tx) => {
     const lane = await laneOf(tx, input.experimentId);
     if (!lane) return { ok: false, refused: "no such experiment" };
@@ -109,8 +131,14 @@ export async function propose(db: Database, input: DraftInput, by: Attribution, 
     if (existing && !UNDECIDED.has(existing.state)) return { ok: true, draft: existing, outcome: "kept" };
 
     // New, or undecided and regenerated: the lane is applied to the text as it now is.
-    const earned = lane.lane === "autonomous" && lane.autonomyStreak >= gate.autonomyAfter;
     const now = new Date();
+    const decidedByLane =
+      lane.lane === "autonomous" && lane.autonomyStreak >= gate.autonomyAfter
+        ? DECIDED_BY_LANE
+        : lane.lane === "reactive" && (await reactiveLicense(tx, input, gate, now))
+          ? DECIDED_BY_REACTION
+          : undefined;
+    const earned = decidedByLane !== undefined;
     if (existing) {
       const [updated] = await tx
         .update(draft)
@@ -120,7 +148,7 @@ export async function propose(db: Database, input: DraftInput, by: Attribution, 
           templateId: input.templateId ?? null,
           sender: input.sender ?? null,
           state: earned ? "approved" : "awaiting_review",
-          ...(earned ? { decidedBy: DECIDED_BY_LANE, decidedAt: now } : {}),
+          ...(earned ? { decidedBy: decidedByLane, decidedAt: now } : {}),
           ...attributed(by),
         })
         .where(eq(draft.id, existing.id))
@@ -139,7 +167,7 @@ export async function propose(db: Database, input: DraftInput, by: Attribution, 
         renderedBody: input.renderedBody,
         ...(input.sender ? { sender: input.sender } : {}),
         state: earned ? "approved" : "awaiting_review",
-        ...(earned ? { decidedBy: DECIDED_BY_LANE, decidedAt: now } : {}),
+        ...(earned ? { decidedBy: decidedByLane, decidedAt: now } : {}),
         ...attributed(by),
       })
       .returning();

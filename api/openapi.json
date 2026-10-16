@@ -104,7 +104,7 @@
       },
       "post": {
         "operationId": "proposeDraft",
-        "summary": "Propose a draft. It waits on its experiment's lane (decision 0027); approving it is a person's act and is not on this API.",
+        "summary": "Propose a draft. It waits on its experiment's lane (decisions 0027, 0042); approving it is a person's act and is not on this API.",
         "requestBody": {
           "required": true,
           "content": {
@@ -116,10 +116,12 @@
                   "experimentId": { "type": "string", "format": "uuid" },
                   "personId": { "type": "string", "format": "uuid" },
                   "step": { "type": "integer", "minimum": 0 },
+                  "templateId": { "type": "string", "format": "uuid", "description": "The template rendered. Its channel is the draft's: what a reactive lane checks the person's inbound touch against (decision 0042)." },
                   "renderedSubject": { "type": "string" },
                   "renderedBody": { "type": "string" },
                   "sender": { "type": "string" },
                   "autonomyAfter": { "type": "integer", "minimum": 1, "description": "No default: consecutive clean human approvals after which an autonomous lane approves." },
+                  "reactiveWithinMinutes": { "type": "integer", "minimum": 1, "description": "No default: how recent the person's inbound touch must be for a reactive lane to approve on its own (decision 0042). Without it, a person approves." },
                   "actor": { "$ref": "#/components/schemas/Actor" },
                   "runId": { "type": "string", "format": "uuid" }
                 },

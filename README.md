@@ -184,10 +184,12 @@ whatever writes it, reads it, or connects it to the rest.
   read: one writer per source), and each event is stored once, with an
   inbound `touch` when it names a recorded person and a declared channel,
   and the opt-out applied for `gtm.unsubscribe`.
-- *Read by:* nobody yet.
-- *Not wired:* the reactive lane's check, whose trace — an inbound touch by
-  person and channel — now exists (0027); a metric source over the event
-  record; a process an event triggers.
+- *Read by:* nobody directly. The inbound touch written beside it is read
+  by the reactive lane, in the draft's gate and the message's: a touch from
+  the person, on the channel, inside the caller's window, licenses a reply
+  (0042).
+- *Not wired:* a metric source over the event record; a process an event
+  triggers.
 
 **Processes**
 - *There:* `run.process_key`, written as free text — `instance.verify`,

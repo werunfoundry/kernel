@@ -135,7 +135,7 @@ describe("the lane's gate", { skip: base ? false : "TEST_DATABASE_URL is not set
     assert.ok(after.ok && after.outcome === "awaiting_review", JSON.stringify(after));
   });
 
-  it("reactive: with no way yet to verify the person's inbound event, it fails closed and requires a human", async () => {
+  it("reactive: with no inbound touch from the person, it requires a human", async () => {
     await setLane("reactive", 50);
     const p = await propose(db, input(), agent, GATE);
     assert.ok(p.ok && p.outcome === "awaiting_review", JSON.stringify(p));
@@ -249,5 +249,73 @@ describe("the gate in the schema", { skip: base ? false : "TEST_DATABASE_URL is 
   it("refuses a drop without a reason", async () => {
     const id = await awaiting();
     await assert.rejects(client.query("update gtm.draft set state = 'dropped', decided_by = 'x', decided_at = now() where id = $1", [id]), /draft_dropped_has_reason/);
+  });
+});
+
+describe("the reactive lane, licensed by the person's inbound touch (decision 0042)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const WINDOW = { autonomyAfter: 2, reactiveWithinMinutes: 60 };
+  let templateId = "";
+  let n = 0;
+  const touch = (who: string, opts: { channel?: string; direction?: string; minutesAgo?: number } = {}) =>
+    client.query(
+      "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type) values ($1, $2, $3, false, 'memory', $4, now() - ($5 || ' minutes')::interval, 'system')",
+      [who, opts.channel ?? "email", opts.direction ?? "inbound", `t${++n}`, String(opts.minutesAgo ?? 5)],
+    );
+  const reply = (over: Partial<ReturnType<typeof input> & { templateId: string }> = {}) => ({ ...input(), templateId, ...over });
+
+  beforeEach(async () => {
+    if (!client) return;
+    await setLane("reactive");
+    templateId = (await client.query("insert into gtm.template (experiment_id, variant, step, channel, body) values ($1, 'a', 1, 'email', 'Hello') returning id", [experimentId])).rows[0].id;
+  });
+
+  it("approves a reply on its own when the person reached us on the template's channel inside the window", async () => {
+    await touch(personId);
+    const p = await propose(db, reply(), agent, WINDOW);
+    assert.ok(p.ok && p.outcome === "approved_by_lane" && p.draft.decidedBy === "lane:reactive", JSON.stringify(p));
+    assert.equal(await streak(), 0);
+  });
+
+  it("requires a human without a window, whatever the touch", async () => {
+    await touch(personId);
+    const p = await propose(db, reply(), agent, GATE);
+    assert.ok(p.ok && p.outcome === "awaiting_review", JSON.stringify(p));
+  });
+
+  it("requires a human when the touch is older than the window", async () => {
+    await touch(personId, { minutesAgo: 120 });
+    const p = await propose(db, reply(), agent, WINDOW);
+    assert.ok(p.ok && p.outcome === "awaiting_review", JSON.stringify(p));
+  });
+
+  it("requires a human when the touch was on another channel", async () => {
+    await touch(personId, { channel: "social_message" });
+    const p = await propose(db, reply(), agent, WINDOW);
+    assert.ok(p.ok && p.outcome === "awaiting_review", JSON.stringify(p));
+  });
+
+  it("requires a human when the touch was ours, not the person's", async () => {
+    await client.query(
+      "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type) values ($1, 'email', 'outbound', true, 'memory', 'ours', now(), 'system')",
+      [personId],
+    );
+    const p = await propose(db, reply(), agent, WINDOW);
+    assert.ok(p.ok && p.outcome === "awaiting_review", JSON.stringify(p));
+  });
+
+  it("requires a human when the touch is someone else's", async () => {
+    await touch(otherPeople[0]!);
+    const p = await propose(db, reply(), agent, WINDOW);
+    assert.ok(p.ok && p.outcome === "awaiting_review", JSON.stringify(p));
+  });
+
+  it("requires a human for a draft with no template: it has no channel to check", async () => {
+    await touch(personId);
+    const p = await propose(db, input(), agent, WINDOW);
+    assert.ok(p.ok && p.outcome === "awaiting_review", JSON.stringify(p));
+  });
+
+  it("refuses a window that is not one rather than choosing one", async () => {
+    await assert.rejects(propose(db, reply(), agent, { autonomyAfter: 2, reactiveWithinMinutes: 0 }), /above zero/);
   });
 });

@@ -1,6 +1,6 @@
 {
-  "id": "f1bd5334-db73-409b-809f-803b0da75188",
-  "prevId": "5bbbf1de-7201-4b41-b64c-ed1be0ef4fca",
+  "id": "92abee57-68fe-4032-9ab9-fb3163cb1741",
+  "prevId": "3e1c4ddc-a7ad-4c78-bdf8-3d0227cb1592",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -78,26 +78,26 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"relations\".\"company\".\"external_id\" is not null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "company_domain_lower_uidx": {
           "name": "company_domain_lower_uidx",
           "columns": [
             {
               "expression": "lower(\"domain\")",
-              "isExpression": true,
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"relations\".\"company\".\"domain\" is not null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "company_research_fetched_at_idx": {
           "name": "company_research_fetched_at_idx",
@@ -110,9 +110,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -120,274 +120,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "relations.list": {
-      "name": "list",
-      "schema": "relations",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "query": {
-          "name": "query",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sealed_at": {
-          "name": "sealed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_type": {
-          "name": "actor_type",
-          "type": "actor_type",
-          "typeSchema": "core",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "list_key_uidx": {
-          "name": "list_key_uidx",
-          "columns": [
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "list_run_id_run_id_fk": {
-          "name": "list_run_id_run_id_fk",
-          "tableFrom": "list",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "tableTo": "run",
-          "schemaTo": "core",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "relations.list_member": {
-      "name": "list_member",
-      "schema": "relations",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "list_id": {
-          "name": "list_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "list_member_company_uidx": {
-          "name": "list_member_company_uidx",
-          "columns": [
-            {
-              "expression": "list_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "where": "\"relations\".\"list_member\".\"company_id\" is not null",
-          "concurrently": false
-        },
-        "list_member_person_uidx": {
-          "name": "list_member_person_uidx",
-          "columns": [
-            {
-              "expression": "list_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "where": "\"relations\".\"list_member\".\"person_id\" is not null",
-          "concurrently": false
-        },
-        "list_member_person_idx": {
-          "name": "list_member_person_idx",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "list_member_company_idx": {
-          "name": "list_member_company_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "list_member_list_id_list_id_fk": {
-          "name": "list_member_list_id_list_id_fk",
-          "tableFrom": "list_member",
-          "columnsFrom": [
-            "list_id"
-          ],
-          "tableTo": "list",
-          "schemaTo": "relations",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "list_member_company_id_company_id_fk": {
-          "name": "list_member_company_id_company_id_fk",
-          "tableFrom": "list_member",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "tableTo": "company",
-          "schemaTo": "relations",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "list_member_person_id_person_id_fk": {
-          "name": "list_member_person_id_person_id_fk",
-          "tableFrom": "list_member",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "tableTo": "person",
-          "schemaTo": "relations",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "list_member_one_subject": {
-          "name": "list_member_one_subject",
-          "value": "num_nonnulls(\"relations\".\"list_member\".\"company_id\", \"relations\".\"list_member\".\"person_id\") = 1"
-        }
-      },
       "isRLSEnabled": false
     },
     "relations.person": {
@@ -478,26 +210,26 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"relations\".\"person\".\"external_id\" is not null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "person_email_lower_uidx": {
           "name": "person_email_lower_uidx",
           "columns": [
             {
               "expression": "lower(\"email\")",
-              "isExpression": true,
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"relations\".\"person\".\"email\" is not null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "person_company_id_idx": {
           "name": "person_company_id_idx",
@@ -510,31 +242,259 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "person_company_id_company_id_fk": {
           "name": "person_company_id_company_id_fk",
           "tableFrom": "person",
+          "tableTo": "company",
+          "schemaTo": "relations",
           "columnsFrom": [
             "company_id"
           ],
-          "tableTo": "company",
-          "schemaTo": "relations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "relations.relationship": {
+      "name": "relationship",
+      "schema": "relations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "relationship_status",
+          "typeSchema": "relations",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "relationship_company_uidx": {
+          "name": "relationship_company_uidx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"relations\".\"relationship\".\"company_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "relationship_person_uidx": {
+          "name": "relationship_person_uidx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"relations\".\"relationship\".\"person_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "relationship_company_at_idx": {
+          "name": "relationship_company_at_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"at\" desc",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "relationship_person_at_idx": {
+          "name": "relationship_person_at_idx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"at\" desc",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "relationship_company_id_company_id_fk": {
+          "name": "relationship_company_id_company_id_fk",
+          "tableFrom": "relationship",
+          "tableTo": "company",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "relationship_person_id_person_id_fk": {
+          "name": "relationship_person_id_person_id_fk",
+          "tableFrom": "relationship",
+          "tableTo": "person",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "relationship_run_id_run_id_fk": {
+          "name": "relationship_run_id_run_id_fk",
+          "tableFrom": "relationship",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "relationship_one_subject": {
+          "name": "relationship_one_subject",
+          "value": "num_nonnulls(\"relations\".\"relationship\".\"company_id\", \"relations\".\"relationship\".\"person_id\") = 1"
+        },
+        "relationship_human_check": {
+          "name": "relationship_human_check",
+          "value": "\"relations\".\"relationship\".\"actor_type\" = 'human'"
+        }
+      },
       "isRLSEnabled": false
     },
     "relations.signal": {
@@ -616,9 +576,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "signal_expires_at_idx": {
           "name": "signal_expires_at_idx",
@@ -631,39 +591,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "signal_company_id_company_id_fk": {
           "name": "signal_company_id_company_id_fk",
           "tableFrom": "signal",
+          "tableTo": "company",
+          "schemaTo": "relations",
           "columnsFrom": [
             "company_id"
           ],
-          "tableTo": "company",
-          "schemaTo": "relations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "signal_person_id_person_id_fk": {
           "name": "signal_person_id_person_id_fk",
           "tableFrom": "signal",
+          "tableTo": "person",
+          "schemaTo": "relations",
           "columnsFrom": [
             "person_id"
           ],
-          "tableTo": "person",
-          "schemaTo": "relations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -731,6 +691,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "unsolicited": {
+          "name": "unsolicited",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
         "outcome": {
           "name": "outcome",
           "type": "text",
@@ -788,9 +754,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "touch_person_occurred_at_idx": {
           "name": "touch_person_occurred_at_idx",
@@ -803,15 +769,15 @@
             },
             {
               "expression": "\"occurred_at\" desc",
-              "isExpression": true,
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "touch_sender_occurred_at_idx": {
           "name": "touch_sender_occurred_at_idx",
@@ -824,65 +790,70 @@
             },
             {
               "expression": "\"occurred_at\" desc",
-              "isExpression": true,
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "touch_person_id_person_id_fk": {
           "name": "touch_person_id_person_id_fk",
           "tableFrom": "touch",
+          "tableTo": "person",
+          "schemaTo": "relations",
           "columnsFrom": [
             "person_id"
           ],
-          "tableTo": "person",
-          "schemaTo": "relations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "touch_experiment_id_experiment_id_fk": {
           "name": "touch_experiment_id_experiment_id_fk",
           "tableFrom": "touch",
+          "tableTo": "experiment",
+          "schemaTo": "core",
           "columnsFrom": [
             "experiment_id"
           ],
-          "tableTo": "experiment",
-          "schemaTo": "core",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "touch_run_id_run_id_fk": {
           "name": "touch_run_id_run_id_fk",
           "tableFrom": "touch",
+          "tableTo": "run",
+          "schemaTo": "core",
           "columnsFrom": [
             "run_id"
           ],
-          "tableTo": "run",
-          "schemaTo": "core",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "touch_inbound_not_unsolicited": {
+          "name": "touch_inbound_not_unsolicited",
+          "value": "\"relations\".\"touch\".\"direction\" = 'outbound' or not \"relations\".\"touch\".\"unsolicited\""
+        }
+      },
       "isRLSEnabled": false
     }
   },
@@ -905,15 +876,71 @@
         "catch_all",
         "invalid"
       ]
+    },
+    "relations.relationship_status": {
+      "name": "relationship_status",
+      "schema": "relations",
+      "values": [
+        "customer",
+        "former_customer",
+        "none"
+      ]
     }
   },
   "schemas": {
     "relations": "relations"
   },
-  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
+  "views": {
+    "relations.relationship_current": {
+      "columns": {
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "relationship_status",
+          "typeSchema": "relations",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select distinct on (coalesce(company_id, person_id)) company_id, person_id, status, at, reason, actor_id from relations.relationship order by coalesce(company_id, person_id), at desc, created_at desc",
+      "name": "relationship_current",
+      "schema": "relations",
+      "isExisting": false,
+      "materialized": false
+    }
+  },
   "_meta": {
     "columns": {},
     "schemas": {},

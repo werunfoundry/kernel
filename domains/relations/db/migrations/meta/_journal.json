@@ -26,22 +26,36 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1792124529302,
-      "tag": "0003_audience_becomes_list",
+      "when": 1792124099733,
+      "tag": "0003_declared_relationship",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1792124550819,
-      "tag": "0004_lists_are_frozen",
+      "when": 1792124113928,
+      "tag": "0004_relationship_append_only",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1792124551646,
-      "tag": "0005_list_is_sealed",
+      "when": 1792127949647,
+      "tag": "0005_audience_becomes_list",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792127950466,
+      "tag": "0006_lists_are_frozen",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792127951208,
+      "tag": "0007_list_is_sealed",
       "breakpoints": true
     }
   ]

@@ -137,8 +137,9 @@ describe("the migration that replaces audience", { skip: base ? false : "TEST_DA
   it("refuses to drop an audience something wrote, and goes through once there is none", async () => {
     old = await connect(name);
     const relations = migrationsOf("..");
-    const at = relations.findIndex((m) => m.name.startsWith("0003_"));
-    assert.ok(at > 0 && relations[at]!.sql.includes("audience"), "the migration that replaces audience is not found");
+    // By name, not number: a migration's number is wherever it landed.
+    const at = relations.findIndex((m) => m.name.includes("audience_becomes_list"));
+    assert.ok(at > 0, "the migration that replaces audience is not found");
     for (const m of migrationsOf("../../../core")) await old.query(m.sql);
     for (const m of relations.slice(0, at)) await old.query(m.sql);
 

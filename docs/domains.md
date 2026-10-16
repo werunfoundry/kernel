@@ -92,10 +92,13 @@ and nothing else that is recorded.
 **What the two existing domains hold today**, for comparison:
 
 - `relations`: `person`, `company`, `list`, `list_member` (frozen when
-  constituted — 0037), `touch`, `signal`. No `consent` table (the opt-out is a column on
-  `person`), and `message` lives in the addressing domain.
+  constituted — 0037), `touch` (which says whether it was solicited),
+  `signal`, `relationship` (customer or former customer, declared — 0036).
+  No `consent` table (the opt-out is a column on `person`), and `message`
+  lives in the addressing domain.
 - the addressing domain: `message`, `draft`, `person_state`,
-  `company_state`, `enrolment`, `enrolment_skip`, `sourcing_result`,
+  `company_state` (stages declared and kept as a history — 0036),
+  `enrolment`, `enrolment_skip`, `sourcing_result`,
   `protection_acknowledgement`.
 
 ## The boundaries, and why

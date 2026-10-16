@@ -62,3 +62,11 @@ experimentMetrics:
   channel_test: [gtm.enrolled, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]
   signal_play: [gtm.enrolled, gtm.replied, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]
   offer_test: [gtm.enrolled, gtm.replied, gtm.meetings_booked, gtm.bounced, gtm.unsubscribed]
+# What erasing a person does here (decision 0040). A row that names a person
+# by keys rather than by id — enrolment_skip, and sourcing_result's excluded
+# rows — is not reached by an erasure by id: matching on keys is not built.
+erasure:
+  - { table: draft, column: person_id, do: delete }
+  - { table: person_state, column: person_id, do: delete }
+  - { table: enrolment, column: person_id, do: delete }
+  - { table: sourcing_result, column: person_id, do: delete }

@@ -63,6 +63,9 @@
         "default": "./dist/runtime/message.js"
       },
       "./db/migrations/*": "./db/migrations/*"
+    },
+    "bin": {
+      "kernel-erase": "./dist/bin/erase.js"
     }
   },
   "dependencies": {
@@ -81,5 +84,8 @@
     "domain.yaml",
     "db/migrations",
     "!dist/*.tsbuildinfo"
-  ]
+  ],
+  "bin": {
+    "kernel-erase": "./bin/erase.ts"
+  }
 }

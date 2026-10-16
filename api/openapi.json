@@ -1,0 +1,152 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "kernel",
+    "version": "0.1.0",
+    "description": "The kernel's HTTP API (decision 0040). One bearer token per instance; it says the caller holds it, not who acts. An actor is declared, as attribution, and may not be a person: what only a person may do is not on this API."
+  },
+  "security": [{ "instanceToken": [] }],
+  "components": {
+    "securitySchemes": {
+      "instanceToken": { "type": "http", "scheme": "bearer", "description": "The instance's token, at least 32 characters." }
+    },
+    "schemas": {
+      "Actor": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "enum": ["agent", "system"], "description": "Never `human`: a token cannot say a person acts." },
+          "id": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "Refused": {
+        "type": "object",
+        "required": ["refused"],
+        "properties": { "refused": { "type": "string" } }
+      },
+      "Run": {
+        "type": "object",
+        "required": ["id", "processKey", "status", "actorType", "dryRun", "startedAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "processKey": { "type": "string" },
+          "status": { "type": "string", "enum": ["running", "succeeded", "partial", "failed", "cancelled"] },
+          "actorType": { "type": "string", "enum": ["human", "agent", "system"] },
+          "actorId": { "type": ["string", "null"] },
+          "dryRun": { "type": "boolean" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "finishedAt": { "type": ["string", "null"], "format": "date-time" },
+          "error": { "type": ["string", "null"] }
+        }
+      },
+      "Draft": {
+        "type": "object",
+        "required": ["id", "experimentId", "personId", "step", "state"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "experimentId": { "type": "string", "format": "uuid" },
+          "personId": { "type": "string", "format": "uuid" },
+          "step": { "type": "integer" },
+          "state": { "type": "string", "enum": ["drafting", "awaiting_review", "approved", "dropped", "queued", "sent", "failed"] },
+          "renderedSubject": { "type": ["string", "null"] },
+          "renderedBody": { "type": ["string", "null"] },
+          "decidedBy": { "type": ["string", "null"] }
+        }
+      },
+      "ErasureStep": {
+        "type": "object",
+        "required": ["domain", "table", "column", "do", "rows"],
+        "properties": {
+          "domain": { "type": "string" },
+          "table": { "type": "string" },
+          "column": { "type": "string" },
+          "do": { "type": "string", "enum": ["delete", "anonymise", "keep"] },
+          "rows": { "type": "integer" },
+          "basis": { "type": "string" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "The API answers, and the token is the instance's.",
+        "responses": {
+          "200": { "description": "Up.", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "const": true } } } } } },
+          "401": { "description": "No token, or not the instance's." }
+        }
+      }
+    },
+    "/v1/runs/{id}": {
+      "get": {
+        "operationId": "getRun",
+        "summary": "One run, as recorded.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "200": { "description": "The run.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Run" } } } },
+          "401": { "description": "No token, or not the instance's." },
+          "404": { "description": "No such run." }
+        }
+      }
+    },
+    "/v1/drafts": {
+      "get": {
+        "operationId": "listDrafts",
+        "summary": "Drafts in one state, oldest first, at most 100.",
+        "parameters": [{ "name": "state", "in": "query", "required": true, "schema": { "type": "string", "enum": ["drafting", "awaiting_review", "approved", "dropped", "queued", "sent", "failed"] } }],
+        "responses": {
+          "200": { "description": "The drafts.", "content": { "application/json": { "schema": { "type": "object", "properties": { "drafts": { "type": "array", "items": { "$ref": "#/components/schemas/Draft" } } } } } } },
+          "400": { "description": "No state, or not one." },
+          "401": { "description": "No token, or not the instance's." }
+        }
+      },
+      "post": {
+        "operationId": "proposeDraft",
+        "summary": "Propose a draft. It waits on its experiment's lane (decision 0027); approving it is a person's act and is not on this API.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["experimentId", "personId", "step", "renderedBody", "autonomyAfter", "actor"],
+                "properties": {
+                  "experimentId": { "type": "string", "format": "uuid" },
+                  "personId": { "type": "string", "format": "uuid" },
+                  "step": { "type": "integer", "minimum": 0 },
+                  "renderedSubject": { "type": "string" },
+                  "renderedBody": { "type": "string" },
+                  "sender": { "type": "string" },
+                  "autonomyAfter": { "type": "integer", "minimum": 1, "description": "No default: consecutive clean human approvals after which an autonomous lane approves." },
+                  "actor": { "$ref": "#/components/schemas/Actor" },
+                  "runId": { "type": "string", "format": "uuid" }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Proposed: awaiting review, approved by its lane, or kept as it was.", "content": { "application/json": { "schema": { "type": "object", "properties": { "outcome": { "type": "string" }, "draft": { "$ref": "#/components/schemas/Draft" } } } } } },
+          "400": { "description": "The body is not what this operation takes." },
+          "401": { "description": "No token, or not the instance's." },
+          "403": { "description": "A person was named as the actor.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refused" } } } },
+          "422": { "description": "The gate refused it.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refused" } } } }
+        }
+      }
+    },
+    "/v1/people/{id}/erasure": {
+      "get": {
+        "operationId": "planErasure",
+        "summary": "What erasing this person would do, as each domain declares it (decision 0040). Changes nothing; erasing is a person's act, at a terminal.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "200": { "description": "The plan.", "content": { "application/json": { "schema": { "type": "object", "properties": { "steps": { "type": "array", "items": { "$ref": "#/components/schemas/ErasureStep" } } } } } } },
+          "401": { "description": "No token, or not the instance's." }
+        }
+      }
+    }
+  }
+}

@@ -19,6 +19,7 @@
     "./runtime/experiment": "./runtime/experiment.ts",
     "./runtime/event": "./runtime/event.ts",
     "./runtime/decision": "./runtime/decision.ts",
+    "./runtime/erase": "./runtime/erase.ts",
     "./runtime/verify": "./runtime/verify.ts",
     "./identity": "./identity/index.ts",
     "./db/migrations/*": "./db/migrations/*",
@@ -83,6 +84,10 @@
       "./runtime/decision": {
         "types": "./dist/runtime/decision.d.ts",
         "default": "./dist/runtime/decision.js"
+      },
+      "./runtime/erase": {
+        "types": "./dist/runtime/erase.d.ts",
+        "default": "./dist/runtime/erase.js"
       },
       "./runtime/verify": {
         "types": "./dist/runtime/verify.d.ts",

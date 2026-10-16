@@ -1,3 +1,11 @@
+-- HAND-CORRECTED: this file is not what `drizzle-kit generate` writes.
+-- The generator writes only the statements after the DO block below: it
+-- drops gtm.person_state and gtm.company_state, with whatever rows they hold,
+-- without a word.
+-- The DO block is added by hand so that it stops instead. Regenerating this
+-- migration loses it; re-add it, and its test in the domain refuses the
+-- migration on a database holding rows until it is back.
+--
 -- Decision 0036: a stage is a declaration kept as a history, and being a
 -- customer leaves this domain. The two state tables were one row per subject
 -- and nothing in the engine wrote them, so they are replaced rather than

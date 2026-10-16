@@ -1,3 +1,15 @@
+-- HAND-CORRECTED: this file is not what `drizzle-kit generate` writes.
+-- Where it has `relations.touch` gain `unsolicited`, the generator writes one
+-- statement:
+--
+--   ALTER TABLE "relations"."touch" ADD COLUMN "unsolicited" boolean NOT NULL;
+--
+-- which fails on any database that has a touch, since existing rows have no
+-- value. It is replaced by hand with the five statements below: add the
+-- column nullable, lift the append-only trigger, backfill, put the trigger
+-- back, set NOT NULL. Regenerating this migration loses them; the backfill
+-- test in `runtime/relationship.test.ts` fails until they are back.
+--
 CREATE TYPE "relations"."relationship_status" AS ENUM('customer', 'former_customer', 'none');--> statement-breakpoint
 CREATE TABLE "relations"."relationship" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

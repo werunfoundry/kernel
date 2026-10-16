@@ -63,6 +63,15 @@ export interface DomainManifest {
   metrics?: MetricDeclaration[];
 
   /**
+   * What erasing a subject does to each table of this domain that names it
+   * (decision 0040): delete the rows, empty listed columns, or keep them under
+   * a stated legal basis. The core orchestrates; the domain answers. A rule on
+   * the subject's own row may list `ifStillNamed`: the columns emptied when a
+   * kept row elsewhere still points at it, so it cannot be deleted.
+   */
+  erasure?: ErasureRule[];
+
+  /**
    * For each experiment type, the metrics it is judged on. What gives an
    * experiment type a surface: an instance can tell, before running one,
    * whether its bound sources can measure it.
@@ -217,3 +226,8 @@ export interface ValidationResult {
   ok: boolean;
   issues: ValidationIssue[];
 }
+
+export type ErasureRule =
+  | { table: string; column: string; do: "delete"; ifStillNamed?: string[] }
+  | { table: string; column: string; do: "anonymise"; columns: string[] }
+  | { table: string; column: string; do: "keep"; basis: string };

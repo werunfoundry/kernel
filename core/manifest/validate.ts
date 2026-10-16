@@ -87,6 +87,18 @@ export const domainManifestSchema = z.object({
       }),
     )
     .optional(),
+  // Decision 0040: what erasing a subject does to each table that names it.
+  // `keep` without a basis is refused: a row kept against a right to erasure
+  // says why, or it is not kept.
+  erasure: z
+    .array(
+      z.discriminatedUnion("do", [
+        z.object({ table: identifier, column: identifier, do: z.literal("delete"), ifStillNamed: z.array(identifier).min(1).optional() }).strict(),
+        z.object({ table: identifier, column: identifier, do: z.literal("anonymise"), columns: z.array(identifier).min(1) }).strict(),
+        z.object({ table: identifier, column: identifier, do: z.literal("keep"), basis: z.string().trim().min(1) }).strict(),
+      ]),
+    )
+    .optional(),
 });
 
 export const providerBindingSchema = z.object({

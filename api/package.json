@@ -1,0 +1,43 @@
+{
+  "name": "@werunfoundry/api",
+  "version": "0.1.0",
+  "description": "The kernel over HTTP, described by OpenAPI.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./server.ts",
+    "./openapi.json": "./openapi.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/server.d.ts",
+        "default": "./dist/server.js"
+      },
+      "./openapi.json": "./openapi.json"
+    },
+    "bin": {
+      "kernel-api": "./dist/bin/serve.js"
+    }
+  },
+  "dependencies": {
+    "@werunfoundry/core": "workspace:*",
+    "@werunfoundry/gtm": "workspace:*",
+    "@werunfoundry/relations": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "prepack": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && pnpm build",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "dist",
+    "openapi.json",
+    "!dist/*.tsbuildinfo"
+  ],
+  "bin": {
+    "kernel-api": "./bin/serve.ts"
+  }
+}

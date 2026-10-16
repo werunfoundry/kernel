@@ -22,6 +22,20 @@
       "when": 1792036382018,
       "tag": "0002_touch_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792124902230,
+      "tag": "0003_message",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792124903120,
+      "tag": "0004_message_append_only",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 # 0038 — A message is recorded in `relations`, behind a gate of its own
 
-> Completes [0027](0027-a-draft-waits-on-its-lane.md).
+Completes [0027](0027-a-draft-waits-on-its-lane.md), whose gate is on the
+draft.
 
 ## Decided
 

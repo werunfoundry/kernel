@@ -11,6 +11,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -317,5 +318,71 @@ export const signal = relations.table(
 
     /** `listExpiredSignalsWithoutTouch` on the weekly review. */
     index("signal_expires_at_idx").on(t.expiresAt),
+  ],
+);
+
+/**
+ * What is sent to a person (decision 0038): this content, on this channel,
+ * from this sender, handed over to be sent at this moment. True whichever
+ * domain sends it — a support answer, an announcement, a follow-up — so it is
+ * here, below all of them (0035), and not in the domain that prospects.
+ *
+ * Appended, never updated: what happened to it afterwards — delivered,
+ * bounced, replied — is a touch.
+ *
+ * Writing one is a gate, beside the draft's (0027): `writeMessage` in
+ * `runtime/message.ts` refuses a send that is not lawful — an opted-out
+ * person, an unsolicited message past the caller's cap, a message no person
+ * and no lane approved. The schema holds the lane's half: a message whose
+ * actor is not a person carries an approval, or is refused.
+ */
+export const message = relations.table(
+  "message",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    /** The writer's key for this send, e.g. the draft it comes from. A replayed write is one message. */
+    key: text("key").notNull(),
+
+    /** Restrict: evidence of what was sent is not silently erased, as for a touch. */
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => person.id, { onDelete: "restrict" }),
+
+    /** Attribution: the experiment may be archived, the message remains. */
+    experimentId: uuid("experiment_id").references(() => experiment.id, { onDelete: "set null" }),
+
+    channel: text("channel").notNull(),
+    sender: text("sender"),
+    subject: text("subject"),
+    body: text("body").notNull(),
+
+    /** Whether the person did not ask for it. Only these count against the cap. */
+    unsolicited: boolean("unsolicited").notNull(),
+
+    /**
+     * Who approved sending it, when its writer is not a person: a person's
+     * name, or `lane:autonomous`. Null only for a message a person wrote —
+     * the check below.
+     */
+    approvedBy: text("approved_by"),
+
+    /** Doctrine 5. */
+    actorType: actorType("actor_type").notNull(),
+    actorId: text("actor_id"),
+    runId: uuid("run_id").references(() => run.id, { onDelete: "set null" }),
+
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** `writeMessage` replayed with the same key keeps one message. */
+    uniqueIndex("message_key_uidx").on(t.key),
+
+    /** The cadence check: unsolicited messages to a person inside the cap's window. */
+    index("message_person_unsolicited_idx")
+      .on(t.personId, sql`${t.writtenAt} desc`)
+      .where(sql`${t.unsolicited}`),
+
+    check("message_approved_check", sql`${t.actorType} = 'human' or ${t.approvedBy} is not null`),
   ],
 );

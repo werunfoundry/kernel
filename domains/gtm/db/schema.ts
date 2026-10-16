@@ -75,9 +75,12 @@ export const lifecycleStage = gtm.enum("lifecycle_stage", [
  *
  * Copy is data. A row here and a file in the instance, never a module in the
  * engine.
+ *
+ * A template, not a message: it has no recipient. What is sent to a person
+ * is `relations.message` (decision 0038).
  */
-export const message = gtm.table(
-  "message",
+export const template = gtm.table(
+  "template",
   {
     id: uuid("id").defaultRandom().primaryKey(),
 
@@ -95,8 +98,8 @@ export const message = gtm.table(
     body: text("body").notNull(),
 
     /**
-     * Keys of the manifest truths this message spends. A change to one flags
-     * every message citing it — the drift check a prose context library has
+     * Keys of the manifest truths this template spends. A change to one flags
+     * every template citing it — the drift check a prose context library has
      * never had.
      */
     truthsCited: text("truths_cited").array(),
@@ -106,7 +109,7 @@ export const message = gtm.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("message_experiment_variant_step_uidx").on(
+    uniqueIndex("template_experiment_variant_step_uidx").on(
       t.experimentId,
       t.variant,
       t.step,
@@ -142,7 +145,7 @@ export const draft = gtm.table(
       .notNull()
       .references(() => person.id, { onDelete: "restrict" }),
 
-    messageId: uuid("message_id").references(() => message.id, { onDelete: "set null" }),
+    templateId: uuid("template_id").references(() => template.id, { onDelete: "set null" }),
 
     step: integer("step").notNull(),
     state: draftState("state").notNull().default("drafting"),

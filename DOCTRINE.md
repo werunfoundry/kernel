@@ -10,9 +10,20 @@ something, somewhere. Where a rule can be checked by a machine, it is — see
 ## 1. The core decides, domains describe
 
 The core holds governance: what is being tried, what was decided, what ran. A
-domain holds a line of business: its entity types, its event types, its
+domain holds what its verbs need: its entity types, its event types, its
 experiment types, its capabilities.
 
+- **A domain is a set of verbs on the record, plus the objects only those
+  verbs touch.** Never a team, never a function on an org chart. Two teams
+  that perform the same verbs are one domain. A new domain exists when it
+  brings verbs the record has never seen, carrying objects no other domain
+  needs.
+- **An object's membership test: would a second domain want to read it?** If
+  so, it moves down. If not, it stays.
+- **The core is a record of work** — who acted, what ran, what was observed,
+  what was concluded — **not a record of people.** People are a domain.
+- **A channel is not a domain**: it tells means apart within the same verbs.
+  **A domain may depend on no other.**
 - **The core contains no business word.** No lead, no campaign, no feature.
 - **A domain never adds a core object.** It adds its own types.
 - **If the core grows past ten objects, the overflow moves into a domain.**

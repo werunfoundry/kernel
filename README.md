@@ -1,7 +1,9 @@
 # kernel
 
-A small engine for running a company's operating work: a governance core, and
-domains that describe one line of business each.
+A small engine for running a company's operating work: a core that records the
+work — who acted, what ran, what was observed, what was concluded — and
+domains, each a set of verbs on that record with the objects only those verbs
+touch. Never a team (0035).
 
 **This is not ready.** Nothing here is stable, nothing is versioned, nothing is
 supported. It is public from the first commit so that it stays generic by

@@ -167,7 +167,7 @@ describe("the backfill of touches recorded before 0036", { skip: base ? false : 
   it("makes outbound touches unsolicited and inbound ones not, through the append-only trigger, and leaves it on", async () => {
     old = await connect(name);
     const relations = migrationsOf("..");
-    const at = relations.findIndex((m) => m.name.startsWith("0003_"));
+    const at = relations.findIndex((m) => m.name.includes("declared_relationship"));
     assert.ok(at > 0, "the migration that adds the column is not found");
     for (const m of migrationsOf("../../../core")) await old.query(m.sql);
     for (const m of relations.slice(0, at)) await old.query(m.sql);

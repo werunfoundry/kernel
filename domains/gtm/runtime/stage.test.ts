@@ -133,7 +133,7 @@ describe("the migration that replaces the one-row state tables", { skip: base ? 
   it("refuses to drop a state something wrote, and goes through once there is none", async () => {
     old = await connect(name);
     const gtm = migrationsOf("..");
-    const at = gtm.findIndex((m) => m.name.startsWith("0007_"));
+    const at = gtm.findIndex((m) => m.name.includes("stages_leave_customer"));
     assert.ok(at > 0, "the migration that replaces the state tables is not found");
     for (const layer of ["../../../core", "../../relations"]) for (const m of migrationsOf(layer)) await old.query(m.sql);
     for (const m of gtm.slice(0, at)) await old.query(m.sql);

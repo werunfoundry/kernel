@@ -19,8 +19,8 @@
 
 ## Tensions with existing doctrine
 
-Three places where this projection disagrees with what is decided today.
-None blocks anything — nothing in this file is built — and each says what
+Three places where this projection disagreed with what is decided. None
+blocks anything — nothing in this file is built — and each says what
 will close it. Until then, **the decision wins over this file.**
 
 1. **The lane's gate — constraint 1 against
@@ -41,10 +41,10 @@ will close it. Until then, **the decision wins over this file.**
    and the existing rows migrate without loss. *What closes it:* resolved in
    principle; to be written when consent is built.
 3. **`audience` reserved for `publishing` — against the table
-   `relations.audience`**, which exists today for a set of identified
-   people. *Why it does not block:* nothing writes that table yet. *What
-   closes it:* the rename to `list` is planned in the decision that builds
-   selection. Waiting for that decision.
+   `relations.audience`.** *Closed* by
+   [0037](../decisions/0037-a-list-is-frozen-and-is-not-a-permission.md):
+   the table is `relations.list`, frozen when it is constituted, and
+   `audience` is free.
 
 ## The core
 
@@ -91,11 +91,11 @@ and nothing else that is recorded.
 
 **What the two existing domains hold today**, for comparison:
 
-- `relations`: `person`, `company`, `audience`, `audience_member`, `touch`
-  (which says whether it was solicited), `signal`, `relationship` (customer
-  or former customer, declared — 0036). No `list`, no `consent` table (the
-  opt-out is a column on `person`), and `message` lives in the addressing
-  domain.
+- `relations`: `person`, `company`, `list`, `list_member` (frozen when
+  constituted — 0037), `touch` (which says whether it was solicited),
+  `signal`, `relationship` (customer or former customer, declared — 0036).
+  No `consent` table (the opt-out is a column on `person`), and `message`
+  lives in the addressing domain.
 - the addressing domain: `message`, `draft`, `person_state`,
   `company_state` (stages declared and kept as a history — 0036),
   `enrolment`, `enrolment_skip`, `sourcing_result`,

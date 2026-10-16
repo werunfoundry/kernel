@@ -575,14 +575,15 @@ describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is
     world.protected = [{ domain: "http://", reason: "customer" }];
     const r = await run();
     assert.equal(r.status, "failed");
-    assert.match(r.stoppedBy ?? "", /neither a domain, a company id nor an identifier/);
+    // Not blank, and not a host: refused as such since 0044, no longer read as "no key".
+    assert.match(r.stoppedBy ?? "", /a protected row's domain is not a host: "http:\/\/"/);
     assert.equal(world.enrolCalls, 0);
   });
 
-  it("calls a candidate whose domain names no host unreachable", async () => {
+  it("excludes a candidate whose domain names no host, as an unreadable key (0044)", async () => {
     world.candidates = [{ domain: "http://", attributes: {} }];
     const r = await run();
-    assert.deepEqual(r.skipped.map((s) => [s.reason, s.detail]), [["unreachable", "no domain to find its people by"]]);
+    assert.deepEqual(r.skipped.map((s) => [s.reason, s.detail]), [["unreadable_key", 'its domain is not a host that can be read: "http://"']]);
   });
 });
 

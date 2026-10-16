@@ -110,6 +110,10 @@ async function main(): Promise<number> {
     console.log(`run: ${report.runId} — ${report.dryRun ? "dry run" : "live"} — ${report.status}`);
     if (report.stoppedBy) console.log(`  stopped: ${report.stoppedBy}`);
     console.log(`  protected accounts read: ${report.protectedAccounts} distinct, from ${report.protectedRows} rows`);
+    // What each protected entry excluded in this run (0044): one excluding dozens is the first sign of a bad entry.
+    if (report.protectionHits.length > 0) {
+      console.log(`  protection excluded, by entry: ${report.protectionHits.map((h) => `${h.entry} (${h.candidates})`).join(", ")}`);
+    }
     if (report.protection) {
       const p = report.protection;
       console.log(`    matched on ${p.surface.domains} domains and ${p.surface.companyIds} company ids; ${p.unkeyedRowsOfCoveredCustomers} rows with no key, of customers protected through another row`);
@@ -125,7 +129,7 @@ async function main(): Promise<number> {
         (c.exhausted ? " — the candidates ran out first" : ""),
     );
     console.log(`  company pass, before anything was spent — excluded: ${companyExcluded.length}`);
-    for (const o of ["protected", "known_to_crm", "unreachable"] as const) list(o, by("company", o));
+    for (const o of ["protected", "unreadable_key", "known_to_crm", "unreachable"] as const) list(o, by("company", o));
     const a = report.avoidedByCompanyPass;
     console.log(`    spared: ${a.peopleSearches} people searches, and at most ${a.completionsAtMost} completions`);
     list("not reached, the ceiling came first", by("company", "not_reached"));

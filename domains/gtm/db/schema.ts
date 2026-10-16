@@ -53,8 +53,11 @@ export const enrolmentState = gtm.enum("enrolment_state", [
   "refused", // the provider refused it — invalid, or held under another key
 ]);
 
-/** Why someone was not enrolled. Four, and never folded into one (0019). */
-export const skipReason = gtm.enum("skip_reason", ["protected", "capacity", "duplicate", "unreachable", "opted_out"]);
+/**
+ * Why someone was not enrolled. Never folded into one (0019). A company whose
+ * domain is not a host is `unreadable_key`, not `protected` (0044).
+ */
+export const skipReason = gtm.enum("skip_reason", ["protected", "capacity", "duplicate", "unreachable", "opted_out", "unreadable_key"]);
 
 /**
  * The stages of the addressing motion, and only those (decision 0036). Being
@@ -424,6 +427,8 @@ export const enrolmentSkip = gtm.table(
 export const sourcingOutcome = gtm.enum("sourcing_outcome", [
   "kept",
   "protected",
+  // A domain that is not a host could match nothing: excluded, fail closed (0044).
+  "unreadable_key",
   "known_to_crm",
   "opted_out",
   "duplicate",

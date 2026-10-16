@@ -630,3 +630,21 @@ describe("the company pass asks only what the run needs (decision 0043)", { skip
     assert.deepEqual(await outcomes(r.runId), []);
   });
 });
+
+describe("protection by ancestry, through the company pass (decision 0044)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  it("excludes a protected subdomain and an unreadable domain, each for its reason, and counts the hits", async () => {
+    world.candidates = [
+      { domain: "app.customer.example.org", attributes: {} },
+      { domain: "bad domain.example.com", attributes: {} },
+      { domain: "open.example.com", attributes: {} },
+    ];
+    const r = await run();
+    const company = (d: string) => r.looked.find((l) => l.pass === "company" && l.company.domain === d);
+    assert.deepEqual([company("app.customer.example.org")?.outcome, company("bad domain.example.com")?.outcome], ["protected", "unreadable_key"]);
+    assert.deepEqual(r.protectionHits, [{ entry: "customer.example.org", candidates: 1 }]);
+    assert.deepEqual(
+      (await outcomes(r.runId)).filter((o) => o.pass === "company").map((o) => o.outcome).sort(),
+      ["protected", "unreadable_key"],
+    );
+  });
+});

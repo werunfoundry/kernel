@@ -62,7 +62,7 @@ import { readProtection } from "./protection.js";
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", peopleSource: "people_source", sequencer: "sequencer" } as const;
 
-export type SkipReason = "protected" | "opted_out" | "capacity" | "duplicate" | "unreachable";
+export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable";
 
 export interface EnrolRequest {
   sequenceKey: string;
@@ -117,6 +117,12 @@ export interface EnrolReport {
   /** Distinct protected accounts (decision 0033); `protectedRows` counts the source's rows. */
   protectedAccounts: number;
   protectedRows: number;
+  /**
+   * For each protected entry that matched, how many distinct candidates it
+   * excluded in this run (decision 0044): the guard on the ancestor walk. An
+   * entry excluding far more than its share shows here first.
+   */
+  protectionHits: { entry: string; candidates: number }[];
   /**
    * What protection matched on, and the acknowledged customers it could not
    * protect (0034). Absent when the run stopped before protection was read.
@@ -228,6 +234,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     dryRun: request.dryRun,
     status: "succeeded",
     protectedAccounts: 0,
+    protectionHits: [],
     protectedRows: 0,
     enrolled: [],
     reconciled: [],
@@ -281,6 +288,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       })
       .where(eq(enrolment.id, id));
 
+  /** Read once protection is: what each protected entry excluded (0044). */
+  let hitsOf: Protection["hits"] | undefined;
   try {
     /* 1. Protection, before anything else ------------------------------ */
 
@@ -290,10 +299,17 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     const read = await readProtection(targets, { maxAgeMinutes: request.protectedMaxAgeMinutes, now: now(), acknowledged }, ctx);
     if (!read.ok) throw new Stop(read.stop);
     const protection = read.protection;
+    hitsOf = protection.hits;
     report.protectedAccounts = protection.accounts;
     report.protectedRows = protection.rows;
     report.protection = { surface: protection.surface, unkeyedRowsOfCoveredCustomers: protection.unkeyedRowsOfCoveredCustomers, uncovered: protection.uncovered };
-    const companyProtected = protection.company;
+    // Fail closed (0044): protected, or a domain that is not a host — each said as itself.
+    const companySkip = (company: TargetCompany): { reason: SkipReason; detail: string } | undefined => {
+      const verdict = protection.verdict(company);
+      if (verdict === "protected") return { reason: "protected", detail: "the account is protected" };
+      if (verdict === "unreadable_key") return { reason: "unreadable_key", detail: `its domain is not a host that can be read: "${company.domain}"` };
+      return undefined;
+    };
     const personProtected = protection.person;
 
     /* 2. Capacity, known before the first enrolment, or not checked ---- */
@@ -327,8 +343,9 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       if (fromRun) {
         for (const group of fromRun) {
           const company = group.company;
-          if (companyProtected(company)) {
-            await skip({ reason: "protected", company, detail: "the account is protected" });
+          const refused = companySkip(company);
+          if (refused) {
+            await skip({ ...refused, company });
             continue;
           }
           yield { company, host: company.domain ? domainOf(company.domain) : "", people: group.people };
@@ -338,8 +355,9 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       const candidates = await targets!.candidates(request.query ?? {}, ctx);
       if (!candidates.ok) throw new Stop(`candidates unavailable: ${candidates.error.code}: ${candidates.error.message}`);
       for (const company of candidates.value.items) {
-        if (companyProtected(company)) {
-          await skip({ reason: "protected", company, detail: "the account is protected" });
+        const refused = companySkip(company);
+        if (refused) {
+          await skip({ ...refused, company });
           continue;
         }
         const host = company.domain ? domainOf(company.domain) : "";
@@ -532,6 +550,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     report.stoppedBy = thrown.message;
     report.status = report.enrolled.length === 0 ? "failed" : "partial";
   }
+
+  report.protectionHits = hitsOf?.() ?? [];
 
   try {
     await open.finish(

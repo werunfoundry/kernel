@@ -17,34 +17,64 @@
 >
 > This is neither a decision nor doctrine. It is a reference to argue with.
 
+## Tensions with existing doctrine
+
+Three places where this projection disagrees with what is decided today.
+None blocks anything — nothing in this file is built — and each says what
+will close it. Until then, **the decision wins over this file.**
+
+1. **The lane's gate — constraint 1 against
+   [0027](../decisions/0027-a-draft-waits-on-its-lane.md).** Constraint 1
+   puts a gate on writing the message; 0027 puts the gate on the draft.
+   *Why it does not block:* they are not the same question. The draft asks
+   whether the content is approved; writing the message asks whether
+   sending is lawful — consent, cadence, channel. The two add up, and a
+   domain that makes no draft still goes through the second. *What closes
+   it:* resolved in principle; to be written in the decision that moves
+   `message`.
+2. **Consent per purpose — constraint 2 against the global opt-out of
+   [0032](../decisions/0032-enrolment-reads-what-sourcing-kept.md).**
+   Constraint 2 makes consent per purpose; today `relations.person` carries
+   one global opt-out, and 0032 refuses an opted-out person by every route.
+   *Why it does not block:* it generalises the opt-out rather than
+   contradicting it — the existing opt-out becomes a purpose named "all",
+   and the existing rows migrate without loss. *What closes it:* resolved in
+   principle; to be written when consent is built.
+3. **`audience` reserved for `publishing` — against the table
+   `relations.audience`**, which exists today for a set of identified
+   people. *Why it does not block:* nothing writes that table yet. *What
+   closes it:* the rename to `list` is planned in the decision that builds
+   selection. Waiting for that decision.
+
 ## The core
 
-Three registers, in the projection. The second is not invented: its
-machinery — `truthKinds`, `truthsDir`, `loadTruths` — is already in
-`core/manifest`.
+One record, and one loader.
 
-- **Work** — `experiment`, `run`, `event`, `decision`: what is being tried,
-  what ran, what was observed, what was concluded. Plus attribution
-  (`actorType`, `actorId`, `runId`) carried by every row (doctrine 5), which
-  is not an object.
-- **Method** — `truth`, `skill`, `process`: what is held to be true, what is
-  known how to do, how it is done.
-- **Governance** — `lane`.
+- **The record is work** — `experiment`, `run`, `event`, `decision`: what
+  is being tried, what ran, what was observed, what was concluded — plus
+  attribution (`actorType`, `actorId`, `runId`) carried by every row
+  (doctrine 5), which is not an object. A run is the execution of a
+  process. The experiment's `lane` is a property of the experiment, read by
+  the gate that decides who must approve; it is part of the record, not an
+  object of its own.
+- **The loader is method** — truths today, and tomorrow skills and
+  processes: declared by a domain, as it already declares its `truthKinds`,
+  its `channels` and its `eventTypes`, and loaded from the instance. **The
+  core never records them.** `core/manifest` is loading code, not a table. A
+  process is a definition, not a fact; the run that executes it is the fact.
 
-That is eight objects: four of work, three of method, one of governance.
-A domain declares its `truthKinds` and its `skillKinds` the way it already
-declares its `channels` and its `eventTypes`; the instance carries the
-content.
+That keeps the core what doctrine §1 and 0035 say it is: a record of work,
+and nothing else that is recorded.
 
 **What is real today:**
 
-| Object | State |
+| Piece | State |
 |---|---|
 | `experiment`, `run`, `event`, `decision` | tables in `core`, the four the core has |
-| `truth` | works: files under the instance's `truthsDir`, loaded by `loadTruths`, of kinds a domain declares. One domain uses it. Not a table. |
-| `process` | only a string key on a run (`run.process_key`); nothing declares a process |
-| `skill` | does not exist |
-| `lane` | an enum and a column on `experiment` (`reviewed`, `autonomous`, `reactive`), read by the draft gate (0027); not an object of its own |
+| `lane` | an enum and a column on `experiment` (`reviewed`, `autonomous`, `reactive`), read by the draft gate (0027) |
+| truths | loaded: files under the instance's `truthsDir`, by `loadTruths`, of kinds a domain declares. One domain declares kinds. |
+| processes | not declared anywhere; a run carries only a string key (`run.process_key`) |
+| skills | do not exist |
 
 ## The projected domains
 
@@ -57,7 +87,7 @@ content.
 | `product` | collect, arbitrate, ship | request, feedback, release | relations |
 | `engineering` | plan, build, deploy, handle an incident | change, deployment, incident | — |
 | `finance` | invoice, collect, recognise | invoice, payment, subscription | relations |
-| `team` | recruit, onboard, review | role, candidate, member, review | relations + the addressing domain |
+| `team` | define a role, assess a candidate, hire, onboard, review | role, candidate, member, review | relations + the addressing domain |
 
 **What the two existing domains hold today**, for comparison:
 
@@ -79,9 +109,10 @@ the object model has nothing in common.
 access rights differ. `team` keeps its own register; an employee who is also
 an external contact exists twice, deliberately.
 
-**`team` reuses the addressing domain** to source its candidates: recruiting
-uses the same verbs as prospecting, and only the objects it arrives at
-differ.
+**`team` borrows the addressing domain** to source its candidates and to
+reach them: sourcing and contacting are the same verbs as prospecting, and
+only the objects they arrive at differ. That is why "recruit" is not among
+`team`'s own verbs.
 
 **The newsletter does not create a domain**: same verbs, same objects as
 prospecting. What differs are the guards that fire.
@@ -94,9 +125,10 @@ anonymous segment. A set of identified people is called a `list`.
 Every future implementation must hold to these. Each comes with the case
 that motivates it.
 
-1. **The lane's gate belongs to writing the message, not to the draft
-   factory.** Otherwise a domain that writes a message without going through
-   a draft gets past the human guard.
+1. **Writing the message has a gate of its own, beside the draft's.** The
+   draft's gate asks whether the content is approved; the message's asks
+   whether sending is lawful. Otherwise a domain that writes a message
+   without going through a draft gets past every guard (see *Tensions*, 1).
 2. **Consent is per purpose, and carries a legal basis.** An unsubscribe from
    one kind of communication must not block a contractual one. Purposes are
    declared per domain.

@@ -99,6 +99,11 @@ const world = {
   searched: [] as string[],
   completed: [] as string[],
   crmCalls: 0,
+  /** When set, the CRM answers for many domains at once, and records each batch asked. */
+  crmBatched: false,
+  crmBatches: [] as string[][],
+  /** Domains the batched CRM leaves out of its answer — an adapter's bug, played. */
+  crmUnanswered: new Set<string>(),
 };
 
 const targetList: TargetList = {
@@ -173,8 +178,27 @@ const crm = {
   },
 } as unknown as Crm;
 
+/** The same CRM, able to answer for many domains in one call — and never asked one at a time. */
+const batchedCrm = {
+  ...crm,
+  async findCompanyByDomain() {
+    throw new Error("asked one domain at a time, though it answers for many");
+  },
+  async findCompaniesByDomains(domains: readonly string[]) {
+    world.crmBatches.push([...domains]);
+    if (world.failing.has("crm")) return down("the CRM");
+    return ok(
+      new Map(
+        domains
+          .filter((d) => !world.crmUnanswered.has(d))
+          .map((d) => [d, world.crmCompanies.has(d) ? { ref: { externalId: `crm-${d}` }, domain: d, fields: {} } : null]),
+      ),
+    );
+  },
+} as unknown as Crm;
+
 const registry: Registry = {
-  get: (c) => ({ target_list: targetList, people_source: peopleSource, crm } as Record<string, Contract>)[c],
+  get: (c) => ({ target_list: targetList, people_source: peopleSource, crm: world.crmBatched ? batchedCrm : crm } as Record<string, Contract>)[c],
   require: () => {
     throw new Error("not used");
   },
@@ -229,6 +253,9 @@ beforeEach(async () => {
   world.searched = [];
   world.completed = [];
   world.crmCalls = 0;
+  world.crmBatched = false;
+  world.crmBatches = [];
+  world.crmUnanswered = new Set();
 });
 
 /* -------------------------------------------------------------------------- */
@@ -332,6 +359,57 @@ describe("the company pass, before anything is spent", { skip: base ? false : "T
     } finally {
       crm.findCompanyByDomain = real;
     }
+  });
+});
+
+describe("the company pass, in one read of the CRM", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  beforeEach(() => {
+    world.crmBatched = true;
+  });
+
+  it("asks once about every distinct domain protection left, and excludes the known ones in the candidates' order", async () => {
+    world.candidates.push(
+      { domain: "customer.example.org", attributes: {} },
+      { name: "No Domain", attributes: {} },
+      { domain: "known.example.com", attributes: {} },
+      { domain: "https://www.Known.example.com/about", attributes: {} },
+    );
+    world.crmCompanies.add("known.example.com");
+    const r = await run();
+    assert.equal(r.status, "succeeded", r.stoppedBy);
+    assert.deepEqual(world.crmBatches, [["open.example.com", "known.example.com"]]);
+    assert.deepEqual(r.looked.filter((l) => l.pass === "company").map((l) => [l.outcome, l.company.domain ?? l.company.name]), [
+      ["protected", "customer.example.org"],
+      ["unreachable", "No Domain"],
+      ["known_to_crm", "known.example.com"],
+      ["known_to_crm", "https://www.Known.example.com/about"],
+    ]);
+    assert.deepEqual(world.searched, ["open.example.com"]);
+  });
+
+  it("stops before anything is spent when that read fails", async () => {
+    world.failing.add("crm");
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.match(r.stoppedBy ?? "", /the CRM could not be read, so nothing was spent: unavailable: the CRM is down/);
+    assert.deepEqual([world.searched, world.completed], [[], []]);
+  });
+
+  // open.example.com is neither protected nor known: only the guard on a
+  // missing answer stands between it and a search.
+  it("stops, concluding nothing, when the answer leaves a domain out: unanswered is not unknown", async () => {
+    world.crmUnanswered.add("open.example.com");
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.match(r.stoppedBy ?? "", /gave no answer for open\.example\.com/);
+    assert.deepEqual([world.searched, world.completed], [[], []]);
+  });
+
+  it("asks nothing when protection left no domain to ask about", async () => {
+    world.candidates = [{ domain: "customer.example.org", attributes: {} }];
+    const r = await run();
+    assert.equal(r.status, "succeeded", r.stoppedBy);
+    assert.deepEqual(world.crmBatches, []);
   });
 });
 

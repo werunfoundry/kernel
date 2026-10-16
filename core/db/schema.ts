@@ -7,7 +7,7 @@
  *
  * The core never references a domain. That is why `experiment.targets` is a
  * list of typed references rather than a foreign key: a foreign key into
- * `relations.audience` would make the bottom layer depend on the one above it
+ * `relations.list` would make the bottom layer depend on the one above it
  * (doctrine 2).
  */
 
@@ -180,7 +180,7 @@ export const experiment = core.table(
 
     /**
      * Typed references to what this experiment acts on, e.g.
-     * `[{ kind: "relations.audience", id: "…" }]`. Not a foreign key: the core
+     * `[{ kind: "relations.list", id: "…" }]`. Not a foreign key: the core
      * does not depend on a domain (doctrine 2).
      */
     targets: jsonb("targets").notNull().default(sql`'[]'::jsonb`),

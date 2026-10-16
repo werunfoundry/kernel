@@ -17,6 +17,7 @@
     "./runtime/enrol": "./runtime/enrol.ts",
     "./runtime/draft": "./runtime/draft.ts",
     "./runtime/inbound": "./runtime/inbound.ts",
+    "./runtime/stage": "./runtime/stage.ts",
     "./db/migrations/*": "./db/migrations/*"
   },
   "publishConfig": {
@@ -66,6 +67,10 @@
       "./runtime/inbound": {
         "types": "./dist/runtime/inbound.d.ts",
         "default": "./dist/runtime/inbound.js"
+      },
+      "./runtime/stage": {
+        "types": "./dist/runtime/stage.d.ts",
+        "default": "./dist/runtime/stage.js"
       },
       "./db/migrations/*": "./db/migrations/*"
     },

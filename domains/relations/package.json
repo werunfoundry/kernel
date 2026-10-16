@@ -1,7 +1,7 @@
 {
   "name": "@werunfoundry/relations",
   "version": "0.1.0",
-  "description": "People, companies, audiences, interactions and signals.",
+  "description": "People, companies, lists, interactions and signals.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
@@ -13,6 +13,9 @@
     "./contracts/enrichment": "./contracts/enrichment.ts",
     "./contracts/people-source": "./contracts/people-source.ts",
     "./runtime/record": "./runtime/record.ts",
+    "./runtime/relationship": "./runtime/relationship.ts",
+    "./runtime/list": "./runtime/list.ts",
+    "./runtime/message": "./runtime/message.ts",
     "./db/migrations/*": "./db/migrations/*"
   },
   "publishConfig": {
@@ -46,6 +49,18 @@
       "./runtime/record": {
         "types": "./dist/runtime/record.d.ts",
         "default": "./dist/runtime/record.js"
+      },
+      "./runtime/relationship": {
+        "types": "./dist/runtime/relationship.d.ts",
+        "default": "./dist/runtime/relationship.js"
+      },
+      "./runtime/list": {
+        "types": "./dist/runtime/list.d.ts",
+        "default": "./dist/runtime/list.js"
+      },
+      "./runtime/message": {
+        "types": "./dist/runtime/message.d.ts",
+        "default": "./dist/runtime/message.js"
       },
       "./db/migrations/*": "./db/migrations/*"
     }

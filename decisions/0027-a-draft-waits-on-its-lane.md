@@ -1,5 +1,8 @@
 # 0027 — A draft waits on its lane
 
+> Completed by [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md):
+> writing the message is a second gate, beside this one.
+
 ## Decided
 
 A proposed message is a `gtm.draft` row before anyone sees it, and is sent

@@ -139,6 +139,7 @@ describe("recordTouch", { skip: base ? false : "TEST_DATABASE_URL is not set" },
       provider: "memory",
       providerEventId: "evt-1",
       occurredAt: new Date("2026-06-01T12:00:00Z"),
+      unsolicited: true,
       actor: { type: "system" },
       ...over,
     });

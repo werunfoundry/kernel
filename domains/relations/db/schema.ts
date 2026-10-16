@@ -11,6 +11,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -35,6 +36,13 @@ export const emailStatus = relations.enum("email_status", [
   "catch_all",
   "invalid",
 ]);
+
+/**
+ * A relationship with a subject, true whether or not anyone is prospecting
+ * (decision 0036). `none` is how a mistaken declaration is corrected: by
+ * another, never by an edit.
+ */
+export const relationshipStatus = relations.enum("relationship_status", ["customer", "former_customer", "none"]);
 
 /** Include sets feed sourcing; exclude sets fail closed. */
 export const audienceKind = relations.enum("audience_kind", ["include", "exclude"]);
@@ -263,6 +271,15 @@ export const touch = relations.table(
     provider: text("provider").notNull(),
     providerEventId: text("provider_event_id").notNull(),
 
+    /**
+     * Whether the person did not ask for it (decision 0036). `direction`
+     * cannot say it: an answer to a support question and a sales follow-up
+     * are both outbound. The solicitation cap reads unsolicited touches only,
+     * so a reply is never held back by a cadence. Inbound is never
+     * unsolicited — the check below.
+     */
+    unsolicited: boolean("unsolicited").notNull(),
+
     outcome: text("outcome"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
 
@@ -282,6 +299,9 @@ export const touch = relations.table(
 
     /** `capacityUsed(sender, day)` — the pre-flight check before booking work. */
     index("touch_sender_occurred_at_idx").on(t.sender, sql`${t.occurredAt} desc`),
+
+    /** What the person did is never outreach they did not ask for. */
+    check("touch_inbound_not_unsolicited", sql`${t.direction} = 'outbound' or not ${t.unsolicited}`),
   ],
 );
 
@@ -319,3 +339,82 @@ export const signal = relations.table(
     index("signal_expires_at_idx").on(t.expiresAt),
   ],
 );
+
+/**
+ * A relationship with a person or a company, declared by a person (decision
+ * 0036): customer, former customer, or none. One row per declaration,
+ * appended and never updated — a trigger refuses it — so what the record
+ * said on any date can be read back. The current relationship is the latest
+ * by `at`, read through `relationship_current`.
+ *
+ * Here and not in a domain that prospects, because it is true whether or not
+ * anyone prospects (0035), and support, finance and product read it too.
+ * One day the domain that observes the payment should write `customer`; until
+ * it exists, a person declares it.
+ *
+ * `company` says relationship status is a fact other systems own, read and
+ * never copied (doctrine 3). What this table holds is a person's declaration,
+ * which this system owns; where a CRM holds the status too, there are two,
+ * and which one a reader trusts is not settled (0036, "Tension left open").
+ * The protected set is unchanged: protection reads its own source.
+ */
+export const relationship = relations.table(
+  "relationship",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    /** Exactly one is set — the check below. Cascade: the declaration is about its subject. */
+    companyId: uuid("company_id").references(() => company.id, { onDelete: "cascade" }),
+    personId: uuid("person_id").references(() => person.id, { onDelete: "cascade" }),
+
+    status: relationshipStatus("status").notNull(),
+    /** When it became true, as the person says. Not when it was written: that is `createdAt`. */
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    /** Why, in the person's words. A correction says what it corrects. */
+    reason: text("reason"),
+
+    /** Doctrine 5. A person, always: the check below refuses anything else. */
+    actorType: actorType("actor_type").notNull(),
+    actorId: text("actor_id").notNull(),
+    /** Restrict: the run that declared it is the evidence, and is not quietly deleted. */
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => run.id, { onDelete: "restrict" }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("relationship_one_subject", sql`num_nonnulls(${t.companyId}, ${t.personId}) = 1`),
+    check("relationship_human_check", sql`${t.actorType} = 'human'`),
+
+    /** `declareRelationship` replayed — same subject, status and moment — keeps one row. */
+    uniqueIndex("relationship_company_uidx")
+      .on(t.companyId, t.status, t.at)
+      .where(sql`${t.companyId} is not null`),
+    uniqueIndex("relationship_person_uidx")
+      .on(t.personId, t.status, t.at)
+      .where(sql`${t.personId} is not null`),
+
+    /** `relationship_current` — the latest declaration per subject. */
+    index("relationship_company_at_idx").on(t.companyId, sql`${t.at} desc`),
+    index("relationship_person_at_idx").on(t.personId, sql`${t.at} desc`),
+  ],
+);
+
+/**
+ * The view `relations` publishes of each subject's current relationship:
+ * its latest declaration by `at`, the latest written breaking a tie. A
+ * subject with no declaration has no row — not a `none`.
+ */
+export const relationshipCurrent = relations
+  .view("relationship_current", {
+    companyId: uuid("company_id"),
+    personId: uuid("person_id"),
+    status: relationshipStatus("status").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    reason: text("reason"),
+    actorId: text("actor_id").notNull(),
+  })
+  .as(
+    sql`select distinct on (coalesce(company_id, person_id)) company_id, person_id, status, at, reason, actor_id from relations.relationship order by coalesce(company_id, person_id), at desc, created_at desc`,
+  );

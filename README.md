@@ -151,9 +151,10 @@ whatever writes it, reads it, or connects it to the rest.
   bound metric sources can judge (0018).
 - *Written by:* nobody creates one. `core/runtime/experiment.ts` writes
   `autonomy_streak` only, on each human review (0027).
-- *Read by:* `laneOf` (lane and streak) and the draft's gate (`status` must be
-  `running` to queue). `gtm.message`, `gtm.draft` and `relations.touch`
-  reference it.
+- *Read by:* `laneOf` (lane and streak), the draft's gate (`status` must be
+  `running` to queue) and the message's (`lane` and `status`, for a lane's
+  approval — 0038). `gtm.template`, `gtm.draft`, `relations.message` and
+  `relations.touch` reference it.
 - *Not wired:* a writer that creates an experiment and checks its `type`
   against the declared types; the status transitions, enforced in the schema
   as the draft's are; anything that reads the threshold, the sample, the

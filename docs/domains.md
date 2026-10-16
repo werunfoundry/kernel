@@ -24,14 +24,10 @@ blocks anything — nothing in this file is built — and each says what
 will close it. Until then, **the decision wins over this file.**
 
 1. **The lane's gate — constraint 1 against
-   [0027](../decisions/0027-a-draft-waits-on-its-lane.md).** Constraint 1
-   puts a gate on writing the message; 0027 puts the gate on the draft.
-   *Why it does not block:* they are not the same question. The draft asks
-   whether the content is approved; writing the message asks whether
-   sending is lawful — consent, cadence, channel. The two add up, and a
-   domain that makes no draft still goes through the second. *What closes
-   it:* resolved in principle; to be written in the decision that moves
-   `message`.
+   [0027](../decisions/0027-a-draft-waits-on-its-lane.md).** *Closed* by
+   [0038](../decisions/0038-a-message-is-recorded-in-relations-behind-its-own-gate.md):
+   writing the message is a gate of its own — consent, cadence, lane —
+   beside the draft's, and the two add up.
 2. **Consent per purpose — constraint 2 against the global opt-out of
    [0032](../decisions/0032-enrolment-reads-what-sourcing-kept.md).**
    Constraint 2 makes consent per purpose; today `relations.person` carries
@@ -93,12 +89,12 @@ and nothing else that is recorded.
 
 - `relations`: `person`, `company`, `list`, `list_member` (frozen when
   constituted — 0037), `touch` (which says whether it was solicited),
-  `signal`, `relationship` (customer or former customer, declared — 0036).
-  No `consent` table (the opt-out is a column on `person`), and `message`
-  lives in the addressing domain.
-- the addressing domain: `message`, `draft`, `person_state`,
-  `company_state` (stages declared and kept as a history — 0036),
-  `enrolment`, `enrolment_skip`, `sourcing_result`,
+  `signal`, `relationship` (customer or former customer, declared — 0036),
+  `message` (what was sent, behind its own gate — 0038). No `consent`
+  table (the opt-out is a column on `person`).
+- the addressing domain: `template` (the copy, with no recipient), `draft`,
+  `person_state`, `company_state` (stages declared and kept as a history —
+  0036), `enrolment`, `enrolment_skip`, `sourcing_result`,
   `protection_acknowledgement`.
 
 ## The boundaries, and why

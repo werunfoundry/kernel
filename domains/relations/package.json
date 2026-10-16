@@ -15,6 +15,7 @@
     "./runtime/record": "./runtime/record.ts",
     "./runtime/relationship": "./runtime/relationship.ts",
     "./runtime/list": "./runtime/list.ts",
+    "./runtime/message": "./runtime/message.ts",
     "./db/migrations/*": "./db/migrations/*"
   },
   "publishConfig": {
@@ -56,6 +57,10 @@
       "./runtime/list": {
         "types": "./dist/runtime/list.d.ts",
         "default": "./dist/runtime/list.js"
+      },
+      "./runtime/message": {
+        "types": "./dist/runtime/message.d.ts",
+        "default": "./dist/runtime/message.js"
       },
       "./db/migrations/*": "./db/migrations/*"
     }

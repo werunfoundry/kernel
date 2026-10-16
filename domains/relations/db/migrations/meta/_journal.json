@@ -57,6 +57,20 @@
       "when": 1792127951208,
       "tag": "0007_list_is_sealed",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792128067430,
+      "tag": "0008_message",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792128068202,
+      "tag": "0009_message_append_only",
+      "breakpoints": true
     }
   ]
 }

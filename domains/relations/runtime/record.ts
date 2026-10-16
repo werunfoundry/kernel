@@ -19,7 +19,7 @@
  * not.
  */
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 import type { Identity } from "@werunfoundry/core/identity";
 import { hostOf } from "@werunfoundry/core/identity";
@@ -207,4 +207,19 @@ export async function recordOptOut(db: Database, personId: string, at: Date): Pr
     .where(and(eq(person.id, personId), isNull(person.optedOutAt)))
     .returning({ id: person.id });
   return { recorded: changed.length === 1 };
+}
+
+/**
+ * Whether the person reached us on this channel after `since`: an inbound
+ * touch, their own act (decision 0042). What licenses a reactive reply, read
+ * by the draft's gate and the message's alike. Reads only; served by the
+ * touch index on (person, occurred_at).
+ */
+export async function engagedSince(db: Database, personId: string, channel: string, since: Date): Promise<boolean> {
+  const [row] = await db
+    .select({ id: touch.id })
+    .from(touch)
+    .where(and(eq(touch.personId, personId), eq(touch.channel, channel), eq(touch.direction, "inbound"), gt(touch.occurredAt, since)))
+    .limit(1);
+  return row !== undefined;
 }

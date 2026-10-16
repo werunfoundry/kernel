@@ -18,8 +18,10 @@
  * - **lane** — a message whose writer is not a person and which names no
  *   approval; or the lane's approval where the lane does not give it:
  *   `lane:autonomous` only for an experiment whose lane is autonomous and
- *   which is running, `lane:reactive` not until an inbound event from the
- *   person can be verified (0017).
+ *   which is running; `lane:reactive` only for a running reactive
+ *   experiment, and when the person reached us on this channel inside the
+ *   caller's window — an inbound touch, the same license the draft's gate
+ *   reads (0042).
  *
  * Protection is not part of it: it is a rule of the addressing motion, and an
  * answer to a customer's question must not be refused by it.
@@ -31,6 +33,7 @@ import { experiment } from "@werunfoundry/core/db/schema";
 import type { ActorKind, Database } from "@werunfoundry/core/runtime/run";
 
 import { message, person } from "../db/schema.js";
+import { engagedSince } from "./record.js";
 
 export interface MessageInput {
   /** The writer's key for this send. Writing it again is the same message. */
@@ -45,8 +48,10 @@ export interface MessageInput {
   /** Required when unsolicited: at most `max` unsolicited messages to the person in `withinDays`. */
   cap?: { max: number; withinDays: number };
   experimentId?: string;
-  /** A person's name, or `lane:autonomous`. Required when the writer is not a person. */
+  /** A person's name, `lane:autonomous` or `lane:reactive`. Required when the writer is not a person. */
   approvedBy?: string;
+  /** For `lane:reactive`: how recent the person's inbound touch must be, in minutes. No default. */
+  reactiveWithinMinutes?: number;
   actor: { type: ActorKind; id?: string };
   runId?: string;
 }
@@ -84,8 +89,22 @@ export async function writeMessage(db: Database, input: MessageInput, now = new 
     const approval = input.approvedBy?.trim() || undefined;
     if (input.actor.type !== "human") {
       if (!approval) refused.push("lane: a message not written by a person names who approved it");
-      else if (approval === "lane:reactive") refused.push("lane: a reactive reply is not sent without a person until an inbound event from them can be verified");
-      else if (approval === "lane:autonomous") {
+      else if (approval === "lane:reactive") {
+        const within = input.reactiveWithinMinutes;
+        if (!input.experimentId) refused.push("lane: a reactive approval needs the experiment whose lane gives it");
+        else if (within === undefined || !(within > 0)) refused.push("lane: a reactive approval needs a window, in minutes, and there is no default");
+        else {
+          const [e] = await tx.select({ lane: experiment.lane, status: experiment.status }).from(experiment).where(eq(experiment.id, input.experimentId));
+          if (!e) refused.push("lane: the experiment is not recorded");
+          else {
+            if (e.lane !== "reactive") refused.push(`lane: the experiment's lane is ${e.lane}, not reactive`);
+            if (e.status !== "running") refused.push(`lane: the experiment is ${e.status}, not running`);
+          }
+          if (!(await engagedSince(tx, input.personId, input.channel, new Date(now.getTime() - within * 60_000)))) {
+            refused.push(`lane: the person has not reached us on ${input.channel} in the last ${within} minutes`);
+          }
+        }
+      } else if (approval === "lane:autonomous") {
         if (!input.experimentId) refused.push("lane: an autonomous approval needs the experiment whose lane gives it");
         else {
           const [e] = await tx.select({ lane: experiment.lane, status: experiment.status }).from(experiment).where(eq(experiment.id, input.experimentId));

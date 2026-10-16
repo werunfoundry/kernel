@@ -114,6 +114,19 @@ describe("the API", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () 
     assert.equal(listed.drafts.length, 1);
   });
 
+  it("lets a reactive lane approve an agent's reply when the person reached us inside the window (decision 0042)", async () => {
+    const { personId, experimentId } = await fixtures();
+    await client.query("update core.experiment set lane = 'reactive' where id = $1", [experimentId]);
+    const [{ id: templateId }] = await rows("insert into gtm.template (experiment_id, variant, step, channel, body) values ($1, 'a', 1, 'email', 'Hello') returning id", [experimentId]);
+    await client.query(
+      "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type) values ($1, 'email', 'inbound', false, 'memory', 'r1', now(), 'system')",
+      [personId],
+    );
+    const res = await call("POST", "/v1/drafts", { body: { experimentId, personId, step: 1, templateId, renderedBody: "Thanks", autonomyAfter: 5, reactiveWithinMinutes: 60, actor: { type: "agent" } } });
+    assert.equal(res.status, 201);
+    assert.deepEqual(((await res.json()) as { draft: { decidedBy: string } }).draft.decidedBy, "lane:reactive");
+  });
+
   it("refuses a person as the actor, and writes nothing", async () => {
     const { personId, experimentId } = await fixtures();
     const res = await call("POST", "/v1/drafts", { body: { experimentId, personId, step: 1, renderedBody: "Hello", autonomyAfter: 5, actor: { type: "human", id: "someone" } } });

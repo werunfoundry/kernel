@@ -1,6 +1,10 @@
 # 0031 — The sourcing path, and the CRM as an exclusion source
 
 > Completed by [0032](0032-enrolment-reads-what-sourcing-kept.md): enrolment reads the people a sourcing run kept; the two commands stay two.
+>
+> Superseded in part by [0043](0043-the-company-pass-asks-only-what-the-run-needs.md):
+> the company pass is lazy, bounded by the run, resumes after what earlier
+> runs examined, and leaves no company row when the CRM fails.
 
 Completes [0019](0019-the-enrolment-path.md), which read the people at each
 company inside the enrolment path, and [0030](0030-sources-in-sequence-by-what-they-find.md),

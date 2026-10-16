@@ -54,15 +54,36 @@
     {
       "idx": 7,
       "version": "7",
-      "when": 1792124867350,
-      "tag": "0007_message_becomes_template",
+      "when": 1792124128323,
+      "tag": "0007_stages_leave_customer",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
-      "when": 1792124881523,
-      "tag": "0008_template",
+      "when": 1792124151373,
+      "tag": "0008_stages_are_declared",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792124152364,
+      "tag": "0009_stages_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792128069193,
+      "tag": "0010_message_becomes_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792128070044,
+      "tag": "0011_template",
       "breakpoints": true
     }
   ]

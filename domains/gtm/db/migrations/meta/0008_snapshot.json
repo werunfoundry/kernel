@@ -1,6 +1,6 @@
 {
-  "id": "0a1e0287-4856-49d2-b404-8e8a3e6008a6",
-  "prevId": "77ba70e2-471e-4b20-9528-be27755e9b9c",
+  "id": "88f5fb26-1384-4d60-858d-ae2698535bfc",
+  "prevId": "018abdbc-23ee-418b-b8b2-782f3911f478",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8,34 +8,59 @@
       "name": "company_state",
       "schema": "gtm",
       "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "company_id": {
           "name": "company_id",
           "type": "uuid",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true
         },
-        "lifecycle_stage": {
-          "name": "lifecycle_stage",
+        "stage": {
+          "name": "stage",
           "type": "lifecycle_stage",
           "typeSchema": "gtm",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'unknown'"
+          "notNull": true
         },
-        "stage_changed_at": {
-          "name": "stage_changed_at",
+        "at": {
+          "name": "at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "last_touched_at": {
-          "name": "last_touched_at",
-          "type": "timestamp with time zone",
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "updated_at": {
-          "name": "updated_at",
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -43,26 +68,44 @@
         }
       },
       "indexes": {
-        "company_state_stage_idx": {
-          "name": "company_state_stage_idx",
+        "company_state_declared_uidx": {
+          "name": "company_state_declared_uidx",
           "columns": [
             {
-              "expression": "lifecycle_stage",
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stage",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "company_state_last_touched_idx": {
-          "name": "company_state_last_touched_idx",
+        "company_state_company_at_idx": {
+          "name": "company_state_company_at_idx",
           "columns": [
             {
-              "expression": "\"last_touched_at\" desc nulls last",
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"at\" desc",
               "asc": true,
               "isExpression": true,
               "nulls": "last"
@@ -88,12 +131,31 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "company_state_run_id_run_id_fk": {
+          "name": "company_state_run_id_run_id_fk",
+          "tableFrom": "company_state",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "company_state_human_check": {
+          "name": "company_state_human_check",
+          "value": "\"gtm\".\"company_state\".\"actor_type\" = 'human'"
+        }
+      },
       "isRLSEnabled": false
     },
     "gtm.draft": {
@@ -119,8 +181,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "template_id": {
-          "name": "template_id",
+        "message_id": {
+          "name": "message_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -289,13 +351,13 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "draft_template_id_template_id_fk": {
-          "name": "draft_template_id_template_id_fk",
+        "draft_message_id_message_id_fk": {
+          "name": "draft_message_id_message_id_fk",
           "tableFrom": "draft",
-          "tableTo": "template",
+          "tableTo": "message",
           "schemaTo": "gtm",
           "columnsFrom": [
-            "template_id"
+            "message_id"
           ],
           "columnsTo": [
             "id"
@@ -672,32 +734,79 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "gtm.person_state": {
-      "name": "person_state",
+    "gtm.message": {
+      "name": "message",
       "schema": "gtm",
       "columns": {
-        "person_id": {
-          "name": "person_id",
+        "id": {
+          "name": "id",
           "type": "uuid",
           "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "experiment_id": {
+          "name": "experiment_id",
+          "type": "uuid",
+          "primaryKey": false,
           "notNull": true
         },
-        "lifecycle_stage": {
-          "name": "lifecycle_stage",
-          "type": "lifecycle_stage",
-          "typeSchema": "gtm",
+        "variant": {
+          "name": "variant",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'unknown'"
+          "notNull": true
         },
-        "stage_changed_at": {
-          "name": "stage_changed_at",
-          "type": "timestamp with time zone",
+        "step": {
+          "name": "step",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "angle": {
+          "name": "angle",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "updated_at": {
-          "name": "updated_at",
+        "persona": {
+          "name": "persona",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "truths_cited": {
+          "name": "truths_cited",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delay_days": {
+          "name": "delay_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -705,13 +814,160 @@
         }
       },
       "indexes": {
-        "person_state_stage_idx": {
-          "name": "person_state_stage_idx",
+        "message_experiment_variant_step_uidx": {
+          "name": "message_experiment_variant_step_uidx",
           "columns": [
             {
-              "expression": "lifecycle_stage",
+              "expression": "experiment_id",
               "isExpression": false,
               "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "step",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "message_experiment_id_experiment_id_fk": {
+          "name": "message_experiment_id_experiment_id_fk",
+          "tableFrom": "message",
+          "tableTo": "experiment",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "experiment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "gtm.person_state": {
+      "name": "person_state",
+      "schema": "gtm",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "lifecycle_stage",
+          "typeSchema": "gtm",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "person_state_declared_uidx": {
+          "name": "person_state_declared_uidx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stage",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "person_state_person_at_idx": {
+          "name": "person_state_person_at_idx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"at\" desc",
+              "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],
@@ -735,12 +991,31 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "person_state_run_id_run_id_fk": {
+          "name": "person_state_run_id_run_id_fk",
+          "tableFrom": "person_state",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "person_state_human_check": {
+          "name": "person_state_human_check",
+          "value": "\"gtm\".\"person_state\".\"actor_type\" = 'human'"
+        }
+      },
       "isRLSEnabled": false
     },
     "gtm.protection_acknowledgement": {
@@ -1042,136 +1317,6 @@
         }
       },
       "isRLSEnabled": false
-    },
-    "gtm.template": {
-      "name": "template",
-      "schema": "gtm",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "experiment_id": {
-          "name": "experiment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "variant": {
-          "name": "variant",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "step": {
-          "name": "step",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "angle": {
-          "name": "angle",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "persona": {
-          "name": "persona",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "truths_cited": {
-          "name": "truths_cited",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delay_days": {
-          "name": "delay_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "template_experiment_variant_step_uidx": {
-          "name": "template_experiment_variant_step_uidx",
-          "columns": [
-            {
-              "expression": "experiment_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "variant",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "step",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "template_experiment_id_experiment_id_fk": {
-          "name": "template_experiment_id_experiment_id_fk",
-          "tableFrom": "template",
-          "tableTo": "experiment",
-          "schemaTo": "core",
-          "columnsFrom": [
-            "experiment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
     }
   },
   "enums": {
@@ -1201,12 +1346,9 @@
       "name": "lifecycle_stage",
       "schema": "gtm",
       "values": [
-        "unknown",
         "targeted",
         "engaged",
-        "opportunity",
-        "customer",
-        "lost"
+        "opportunity"
       ]
     },
     "gtm.skip_reason": {
@@ -1242,7 +1384,88 @@
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
+  "views": {
+    "gtm.company_state_current": {
+      "columns": {
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "lifecycle_stage",
+          "typeSchema": "gtm",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select distinct on (company_id) company_id, stage, at, reason, actor_id from gtm.company_state order by company_id, at desc, created_at desc",
+      "name": "company_state_current",
+      "schema": "gtm",
+      "isExisting": false,
+      "materialized": false
+    },
+    "gtm.person_state_current": {
+      "columns": {
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "lifecycle_stage",
+          "typeSchema": "gtm",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select distinct on (person_id) person_id, stage, at, reason, actor_id from gtm.person_state order by person_id, at desc, created_at desc",
+      "name": "person_state_current",
+      "schema": "gtm",
+      "isExisting": false,
+      "materialized": false
+    }
+  },
   "_meta": {
     "columns": {},
     "schemas": {},

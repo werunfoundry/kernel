@@ -56,14 +56,13 @@ export const enrolmentState = gtm.enum("enrolment_state", [
 /** Why someone was not enrolled. Four, and never folded into one (0019). */
 export const skipReason = gtm.enum("skip_reason", ["protected", "capacity", "duplicate", "unreachable", "opted_out"]);
 
-export const lifecycleStage = gtm.enum("lifecycle_stage", [
-  "unknown",
-  "targeted",
-  "engaged",
-  "opportunity",
-  "customer",
-  "lost",
-]);
+/**
+ * The stages of the addressing motion, and only those (decision 0036). Being
+ * a customer, or a former one, is true whether or not anyone prospects: it is
+ * `relations.relationship`. There is no `unknown`: a subject nobody declared
+ * a stage for has no row.
+ */
+export const lifecycleStage = gtm.enum("lifecycle_stage", ["targeted", "engaged", "opportunity"]);
 
 /**
  * An approved template: one step of one variant of one sequence.
@@ -200,50 +199,106 @@ export const draft = gtm.table(
 );
 
 /**
- * Acquisition state of a person. One row per person, owned by this domain.
- * `relations.person` knows nothing about it.
+ * The stage a person reached in the addressing motion, declared by a person
+ * (decision 0036). One row per declaration, appended and never updated — a
+ * trigger refuses it — so where someone stood when an experiment reached them
+ * can be read back. The current stage is the latest by `at`, through
+ * `person_state_current`, the view this domain publishes. `relations.person`
+ * knows nothing about it (doctrine 2).
  */
 export const personState = gtm.table(
   "person_state",
   {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    /** Cascade: a stage is about its subject. */
     personId: uuid("person_id")
-      .primaryKey()
+      .notNull()
       .references(() => person.id, { onDelete: "cascade" }),
 
-    lifecycleStage: lifecycleStage("lifecycle_stage").notNull().default("unknown"),
-    stageChangedAt: timestamp("stage_changed_at", { withTimezone: true }),
+    stage: lifecycleStage("stage").notNull(),
+    /** When it became true, as the person says. When it was written is `createdAt`. */
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    reason: text("reason"),
 
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Doctrine 5. A person, always: the check below refuses anything else. */
+    actorType: actorType("actor_type").notNull(),
+    actorId: text("actor_id").notNull(),
+    /** Restrict: the run that declared it is the evidence. */
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => run.id, { onDelete: "restrict" }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    /** `listPeopleByStage` on the funnel view. */
-    index("person_state_stage_idx").on(t.lifecycleStage),
+    check("person_state_human_check", sql`${t.actorType} = 'human'`),
+
+    /** `declareStage` replayed — same person, stage and moment — keeps one row. */
+    uniqueIndex("person_state_declared_uidx").on(t.personId, t.stage, t.at),
+
+    /** `person_state_current` — the latest declaration per person. */
+    index("person_state_person_at_idx").on(t.personId, sql`${t.at} desc`),
   ],
 );
 
-/** Acquisition state of a company. Same rule as above. */
+/** The same, for a company. */
 export const companyState = gtm.table(
   "company_state",
   {
+    id: uuid("id").defaultRandom().primaryKey(),
+
     companyId: uuid("company_id")
-      .primaryKey()
+      .notNull()
       .references(() => company.id, { onDelete: "cascade" }),
 
-    lifecycleStage: lifecycleStage("lifecycle_stage").notNull().default("unknown"),
-    stageChangedAt: timestamp("stage_changed_at", { withTimezone: true }),
+    stage: lifecycleStage("stage").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    reason: text("reason"),
 
-    /** Last interaction with anyone at this company, maintained by a trigger or a job. */
-    lastTouchedAt: timestamp("last_touched_at", { withTimezone: true }),
+    actorType: actorType("actor_type").notNull(),
+    actorId: text("actor_id").notNull(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => run.id, { onDelete: "restrict" }),
 
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index("company_state_stage_idx").on(t.lifecycleStage),
+    check("company_state_human_check", sql`${t.actorType} = 'human'`),
 
-    /** `listCompaniesUntouchedSince` — account pressure, newest first. */
-    index("company_state_last_touched_idx").on(sql`${t.lastTouchedAt} desc nulls last`),
+    /** `declareStage` replayed keeps one row. */
+    uniqueIndex("company_state_declared_uidx").on(t.companyId, t.stage, t.at),
+
+    /** `company_state_current`. */
+    index("company_state_company_at_idx").on(t.companyId, sql`${t.at} desc`),
   ],
 );
+
+/**
+ * The views this domain publishes of each subject's current stage: its latest
+ * declaration by `at`, the latest written breaking a tie. Another domain
+ * reads a stage here, never in the tables (doctrine 2).
+ */
+export const personStateCurrent = gtm
+  .view("person_state_current", {
+    personId: uuid("person_id").notNull(),
+    stage: lifecycleStage("stage").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    reason: text("reason"),
+    actorId: text("actor_id").notNull(),
+  })
+  .as(sql`select distinct on (person_id) person_id, stage, at, reason, actor_id from gtm.person_state order by person_id, at desc, created_at desc`);
+
+export const companyStateCurrent = gtm
+  .view("company_state_current", {
+    companyId: uuid("company_id").notNull(),
+    stage: lifecycleStage("stage").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    reason: text("reason"),
+    actorId: text("actor_id").notNull(),
+  })
+  .as(sql`select distinct on (company_id) company_id, stage, at, reason, actor_id from gtm.company_state order by company_id, at desc, created_at desc`);
 
 /**
  * The enrolment registry (decision 0026): one row per person per sequence,

@@ -1,6 +1,6 @@
 {
-  "id": "bd9babba-bec9-43d2-95d9-7517279fe524",
-  "prevId": "33b49514-798b-42e0-9d02-a6180c6cc9f4",
+  "id": "3e1c4ddc-a7ad-4c78-bdf8-3d0227cb1592",
+  "prevId": "2b847b4b-18c8-4f55-87ae-b90e1e5a45b8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -421,192 +421,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "relations.message": {
-      "name": "message",
-      "schema": "relations",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "experiment_id": {
-          "name": "experiment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sender": {
-          "name": "sender",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unsolicited": {
-          "name": "unsolicited",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "approved_by": {
-          "name": "approved_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_type": {
-          "name": "actor_type",
-          "type": "actor_type",
-          "typeSchema": "core",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "written_at": {
-          "name": "written_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "message_key_uidx": {
-          "name": "message_key_uidx",
-          "columns": [
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "message_person_unsolicited_idx": {
-          "name": "message_person_unsolicited_idx",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "\"written_at\" desc",
-              "isExpression": true,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "where": "\"relations\".\"message\".\"unsolicited\"",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "message_person_id_person_id_fk": {
-          "name": "message_person_id_person_id_fk",
-          "tableFrom": "message",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "tableTo": "person",
-          "schemaTo": "relations",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "message_experiment_id_experiment_id_fk": {
-          "name": "message_experiment_id_experiment_id_fk",
-          "tableFrom": "message",
-          "columnsFrom": [
-            "experiment_id"
-          ],
-          "tableTo": "experiment",
-          "schemaTo": "core",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
-        },
-        "message_run_id_run_id_fk": {
-          "name": "message_run_id_run_id_fk",
-          "tableFrom": "message",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "tableTo": "run",
-          "schemaTo": "core",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "message_approved_check": {
-          "name": "message_approved_check",
-          "value": "\"relations\".\"message\".\"actor_type\" = 'human' or \"relations\".\"message\".\"approved_by\" is not null"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "relations.person": {
       "name": "person",
       "schema": "relations",
@@ -752,6 +566,234 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "relations.relationship": {
+      "name": "relationship",
+      "schema": "relations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "relationship_status",
+          "typeSchema": "relations",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "relationship_company_uidx": {
+          "name": "relationship_company_uidx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "\"relations\".\"relationship\".\"company_id\" is not null",
+          "concurrently": false
+        },
+        "relationship_person_uidx": {
+          "name": "relationship_person_uidx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "\"relations\".\"relationship\".\"person_id\" is not null",
+          "concurrently": false
+        },
+        "relationship_company_at_idx": {
+          "name": "relationship_company_at_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"at\" desc",
+              "isExpression": true,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "relationship_person_at_idx": {
+          "name": "relationship_person_at_idx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"at\" desc",
+              "isExpression": true,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "relationship_company_id_company_id_fk": {
+          "name": "relationship_company_id_company_id_fk",
+          "tableFrom": "relationship",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "tableTo": "company",
+          "schemaTo": "relations",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "relationship_person_id_person_id_fk": {
+          "name": "relationship_person_id_person_id_fk",
+          "tableFrom": "relationship",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "tableTo": "person",
+          "schemaTo": "relations",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "relationship_run_id_run_id_fk": {
+          "name": "relationship_run_id_run_id_fk",
+          "tableFrom": "relationship",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "relationship_one_subject": {
+          "name": "relationship_one_subject",
+          "value": "num_nonnulls(\"relations\".\"relationship\".\"company_id\", \"relations\".\"relationship\".\"person_id\") = 1"
+        },
+        "relationship_human_check": {
+          "name": "relationship_human_check",
+          "value": "\"relations\".\"relationship\".\"actor_type\" = 'human'"
+        }
+      },
       "isRLSEnabled": false
     },
     "relations.signal": {
@@ -948,6 +990,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "unsolicited": {
+          "name": "unsolicited",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
         "outcome": {
           "name": "outcome",
           "type": "text",
@@ -1099,7 +1147,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "touch_inbound_not_unsolicited": {
+          "name": "touch_inbound_not_unsolicited",
+          "value": "\"relations\".\"touch\".\"direction\" = 'outbound' or not \"relations\".\"touch\".\"unsolicited\""
+        }
+      },
       "isRLSEnabled": false
     }
   },
@@ -1130,12 +1183,68 @@
         "catch_all",
         "invalid"
       ]
+    },
+    "relations.relationship_status": {
+      "name": "relationship_status",
+      "schema": "relations",
+      "values": [
+        "customer",
+        "former_customer",
+        "none"
+      ]
     }
   },
   "schemas": {
     "relations": "relations"
   },
-  "views": {},
+  "views": {
+    "relations.relationship_current": {
+      "name": "relationship_current",
+      "schema": "relations",
+      "columns": {
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "relationship_status",
+          "typeSchema": "relations",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select distinct on (coalesce(company_id, person_id)) company_id, person_id, status, at, reason, actor_id from relations.relationship order by coalesce(company_id, person_id), at desc, created_at desc",
+      "materialized": false,
+      "isExisting": false
+    }
+  },
   "sequences": {},
   "roles": {},
   "policies": {},

@@ -26,15 +26,50 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1792124902230,
-      "tag": "0003_message",
+      "when": 1792124099733,
+      "tag": "0003_declared_relationship",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1792124903120,
-      "tag": "0004_message_append_only",
+      "when": 1792124113928,
+      "tag": "0004_relationship_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792127949647,
+      "tag": "0005_audience_becomes_list",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792127950466,
+      "tag": "0006_lists_are_frozen",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792127951208,
+      "tag": "0007_list_is_sealed",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792128067430,
+      "tag": "0008_message",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792128068202,
+      "tag": "0009_message_append_only",
       "breakpoints": true
     }
   ]

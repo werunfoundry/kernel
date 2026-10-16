@@ -1,101 +1,9 @@
 {
-  "id": "77ba70e2-471e-4b20-9528-be27755e9b9c",
+  "id": "018abdbc-23ee-418b-b8b2-782f3911f478",
   "prevId": "7ed2f9b6-8067-478d-8082-2bc737fc08d3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "gtm.company_state": {
-      "name": "company_state",
-      "schema": "gtm",
-      "columns": {
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "lifecycle_stage": {
-          "name": "lifecycle_stage",
-          "type": "lifecycle_stage",
-          "typeSchema": "gtm",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'unknown'"
-        },
-        "stage_changed_at": {
-          "name": "stage_changed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_touched_at": {
-          "name": "last_touched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "company_state_stage_idx": {
-          "name": "company_state_stage_idx",
-          "columns": [
-            {
-              "expression": "lifecycle_stage",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "company_state_last_touched_idx": {
-          "name": "company_state_last_touched_idx",
-          "columns": [
-            {
-              "expression": "\"last_touched_at\" desc nulls last",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "company_state_company_id_company_id_fk": {
-          "name": "company_state_company_id_company_id_fk",
-          "tableFrom": "company_state",
-          "tableTo": "company",
-          "schemaTo": "relations",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "gtm.draft": {
       "name": "draft",
       "schema": "gtm",
@@ -118,6 +26,12 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "step": {
           "name": "step",
@@ -281,6 +195,20 @@
             "id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "draft_message_id_message_id_fk": {
+          "name": "draft_message_id_message_id_fk",
+          "tableFrom": "draft",
+          "tableTo": "message",
+          "schemaTo": "gtm",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "draft_run_id_run_id_fk": {
@@ -652,32 +580,79 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "gtm.person_state": {
-      "name": "person_state",
+    "gtm.message": {
+      "name": "message",
       "schema": "gtm",
       "columns": {
-        "person_id": {
-          "name": "person_id",
+        "id": {
+          "name": "id",
           "type": "uuid",
           "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "experiment_id": {
+          "name": "experiment_id",
+          "type": "uuid",
+          "primaryKey": false,
           "notNull": true
         },
-        "lifecycle_stage": {
-          "name": "lifecycle_stage",
-          "type": "lifecycle_stage",
-          "typeSchema": "gtm",
+        "variant": {
+          "name": "variant",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'unknown'"
+          "notNull": true
         },
-        "stage_changed_at": {
-          "name": "stage_changed_at",
-          "type": "timestamp with time zone",
+        "step": {
+          "name": "step",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "angle": {
+          "name": "angle",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "updated_at": {
-          "name": "updated_at",
+        "persona": {
+          "name": "persona",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "truths_cited": {
+          "name": "truths_cited",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delay_days": {
+          "name": "delay_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -685,30 +660,42 @@
         }
       },
       "indexes": {
-        "person_state_stage_idx": {
-          "name": "person_state_stage_idx",
+        "message_experiment_variant_step_uidx": {
+          "name": "message_experiment_variant_step_uidx",
           "columns": [
             {
-              "expression": "lifecycle_stage",
+              "expression": "experiment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "step",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
       "foreignKeys": {
-        "person_state_person_id_person_id_fk": {
-          "name": "person_state_person_id_person_id_fk",
-          "tableFrom": "person_state",
-          "tableTo": "person",
-          "schemaTo": "relations",
+        "message_experiment_id_experiment_id_fk": {
+          "name": "message_experiment_id_experiment_id_fk",
+          "tableFrom": "message",
+          "tableTo": "experiment",
+          "schemaTo": "core",
           "columnsFrom": [
-            "person_id"
+            "experiment_id"
           ],
           "columnsTo": [
             "id"
@@ -1051,12 +1038,9 @@
       "name": "lifecycle_stage",
       "schema": "gtm",
       "values": [
-        "unknown",
         "targeted",
         "engaged",
-        "opportunity",
-        "customer",
-        "lost"
+        "opportunity"
       ]
     },
     "gtm.skip_reason": {

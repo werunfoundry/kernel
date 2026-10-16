@@ -31,7 +31,7 @@ import type { PeopleSource } from "@werunfoundry/relations/contracts/people-sour
 
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
 import type { SourceRequest } from "./source.js";
-import { source } from "./source.js";
+import { companiesWanted, source } from "./source.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_source_${process.pid}`;
@@ -492,6 +492,8 @@ describe("what is paid for", { skip: base ? false : "TEST_DATABASE_URL is not se
   it("counts as sent to a source only the people a source was asked about", async () => {
     const r = await run({ want: ["social_profile_id"] });
     assert.deepEqual([r.peopleTaken, r.completions], [2, 0]);
+    // A fresh cursor: otherwise the second run skips what the first examined (0043).
+    await client.query("truncate gtm.sourcing_result");
     const paid = await run();
     assert.deepEqual([paid.peopleTaken, paid.completions], [2, 2]);
   });
@@ -533,5 +535,98 @@ describe("a dry run", { skip: base ? false : "TEST_DATABASE_URL is not set" }, (
     assert.deepEqual([world.completed, await recorded()], [[], []]);
     assert.deepEqual((await outcomes(r.runId)).map((o) => o.outcome), ["simulated", "simulated"]);
     assert.equal((await runRow(r.runId)).dry_run, true);
+  });
+});
+
+describe("the company pass asks only what the run needs (decision 0043)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const open = (n: number, from = 0) => Array.from({ length: n }, (_, i) => ({ domain: `c${from + i}.example.com`, attributes: {} }));
+  const asked = () => world.crmBatches.flat();
+
+  beforeEach(() => {
+    world.crmBatched = true;
+    world.crmBatches = [];
+    world.crmUnanswered = new Set();
+    world.people = new Map();
+  });
+
+  it("wants what the ceiling needs, plus a quarter again, at least one", () => {
+    assert.deepEqual([companiesWanted(10, 1), companiesWanted(2, 1), companiesWanted(10, 5), companiesWanted(1, 5)], [13, 3, 3, 2]);
+  });
+
+  it("stops after the batch in which enough companies survived", async () => {
+    world.candidates = open(60);
+    const r = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.deepEqual(r.companyPass, { wanted: 3, survived: 20, examined: 20, skippedAsExamined: 0, exhausted: false });
+    assert.equal(asked().length, 20);
+  });
+
+  it("reads another batch while too few have survived", async () => {
+    world.candidates = open(60);
+    for (const c of open(20)) world.crmCompanies.add(c.domain);
+    const r = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.deepEqual([r.companyPass.examined, r.companyPass.survived, world.crmBatches.length], [40, 20, 2]);
+  });
+
+  it("stops when the candidates run out first, says so, and goes on with what survived", async () => {
+    world.candidates = open(5);
+    for (const c of open(4)) world.crmCompanies.add(c.domain);
+    const r = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.deepEqual(r.companyPass, { wanted: 3, survived: 1, examined: 5, skippedAsExamined: 0, exhausted: true });
+    assert.deepEqual(world.searched, ["c4.example.com"]);
+    assert.equal(r.status, "succeeded");
+  });
+
+  /** One person at each company, so that what is searched leaves rows. */
+  const staffed = (n: number) => {
+    world.candidates = open(n);
+    world.people = new Map(open(n).map((c, i) => [c.domain, [{ id: `${200 + i}`, handle: `p${i}`, name: `P${i}`, email: `p${i}@${c.domain}` }]]));
+  };
+
+  it("does not ask again about what a previous live run examined", async () => {
+    staffed(60);
+    await run({ maxPeople: 2, peoplePerCompany: 1 });
+    world.crmBatches = [];
+    const second = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.ok(!asked().some((d) => ["c0.example.com", "c1.example.com"].includes(d)), `asked again: ${asked().slice(0, 3).join(", ")}`);
+    assert.equal(second.companyPass.skippedAsExamined, 2);
+  });
+
+  it("counts a company the ceiling stopped before as not yet examined", async () => {
+    staffed(60);
+    const first = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    // Two companies were searched; the other eighteen that survived were not reached.
+    assert.equal(first.looked.filter((l) => l.outcome === "not_reached").length, 18);
+    world.crmBatches = [];
+    await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.ok(asked().includes("c2.example.com"), "a company not reached was skipped as examined");
+  });
+
+  it("counts a company searched and found empty as examined", async () => {
+    world.candidates = open(60);
+    const first = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.equal(first.looked.filter((l) => l.pass === "company" && l.outcome === "kept").length, 20);
+    world.crmBatches = [];
+    const second = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.equal(second.companyPass.skippedAsExamined, 20);
+    assert.ok(!asked().includes("c0.example.com"));
+  });
+
+  it("does not let a dry run advance the cursor", async () => {
+    world.candidates = open(60);
+    await run({ maxPeople: 2, peoplePerCompany: 1, dryRun: true });
+    world.crmBatches = [];
+    const live = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.equal(live.companyPass.skippedAsExamined, 0);
+    assert.ok(asked().includes("c0.example.com"));
+  });
+
+  it("leaves no company row when the CRM fails in a later batch, not even the earlier batches'", async () => {
+    world.candidates = [...open(20), ...open(20, 20)];
+    for (const c of open(20)) world.crmCompanies.add(c.domain);
+    world.crmUnanswered = new Set(["c25.example.com"]);
+    const r = await run({ maxPeople: 2, peoplePerCompany: 1 });
+    assert.match(r.stoppedBy ?? "", /gave no answer for c25\.example\.com/);
+    assert.deepEqual(world.crmBatches.length, 2);
+    assert.deepEqual(await outcomes(r.runId), []);
   });
 });

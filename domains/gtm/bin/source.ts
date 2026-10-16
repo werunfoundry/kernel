@@ -119,6 +119,11 @@ async function main(): Promise<number> {
       }
     }
     console.log(`  candidates: ${report.candidates}`);
+    const c = report.companyPass;
+    console.log(
+      `  company pass: ${c.survived} of ${c.wanted} wanted survived; ${c.examined} examined; ${c.skippedAsExamined} skipped, examined by an earlier run` +
+        (c.exhausted ? " — the candidates ran out first" : ""),
+    );
     console.log(`  company pass, before anything was spent — excluded: ${companyExcluded.length}`);
     for (const o of ["protected", "known_to_crm", "unreachable"] as const) list(o, by("company", o));
     const a = report.avoidedByCompanyPass;

@@ -50,8 +50,11 @@ survived. It does not reach for another page of candidates.
 A company a previous live run examined is skipped. "Examined" means it has a
 row in `gtm.sourcing_result` from a run that was not a dry run, whatever the
 outcome, except `not_reached`: a company the ceiling stopped before is not
-yet examined, and comes back first. Without this, every run would ask the
-CRM about the same first twenty domains again.
+yet examined, and comes back first. A company the pass kept and whose
+people search found nobody now gets a row too — `kept`, saying so — where
+it had none: otherwise the cursor would not see it, and every run would
+search it again. Without the cursor, every run would ask the CRM about the
+same first twenty domains again.
 
 The cursor is a set, not a position, because a target list's order and its
 own page tokens do not outlive a run. A dry run reads the cursor and does

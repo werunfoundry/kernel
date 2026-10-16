@@ -60,7 +60,21 @@ export interface Protection {
    * are protected by nothing, and the run went on because a person said so.
    */
   uncovered: { customerId: string; name?: string; rows: number }[];
+  /**
+   * Whether a candidate company is protected, unreadable, or clear (decision
+   * 0044). Protected by its domain or one of its ancestors, or by a company
+   * id; `unreadable_key` when it carries a domain that is not a host and no
+   * other key protects it.
+   */
+  verdict(c: TargetCompany): "protected" | "unreadable_key" | "clear";
+  /** Whether a candidate company is excluded by protection: protected, or unreadable — fail closed (0044). */
   company(c: TargetCompany): boolean;
+  /**
+   * For each protected entry that matched — a domain, or a company id — how
+   * many distinct candidates it excluded so far (0044). An entry excluding
+   * far more than its share is seen in the run's report.
+   */
+  hits(): { entry: string; candidates: number }[];
   /**
    * Whether any address or domain this identity holds is protected. An
    * identity with no address cannot be found protected this way — which is
@@ -75,6 +89,27 @@ export interface Protection {
  * company as `http://Example.com` must not let it past the other's `example.com`.
  */
 const domainOf = hostOf;
+
+/** One DNS label: letters, digits, and hyphens inside (0044). */
+const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** Whether a reduced domain is a host protection can compare: two labels or more, each one valid (0044). */
+export function isHost(host: string): boolean {
+  const labels = host.split(".");
+  return host.length <= 253 && labels.length >= 2 && labels.every((l) => LABEL.test(l));
+}
+
+/**
+ * A host and its ancestors, down to two labels: `app.11x.ai`, `11x.ai`
+ * (0044). No public suffix list bounds the walk; the protected set holds no
+ * suffix, and where it would, the walk excludes more, never less.
+ */
+export function ancestry(host: string): string[] {
+  const labels = host.split(".");
+  const out: string[] = [];
+  for (let i = 0; i + 2 <= labels.length; i++) out.push(labels.slice(i).join("."));
+  return out;
+}
 
 export async function readProtection(
   targets: TargetList,
@@ -122,9 +157,12 @@ export async function readProtection(
     const page = await targets.protectedAccounts({ ...(cursor ? { cursor } : {}) }, ctx);
     if (!page.ok) return stop(`the protected set could not be read to its last page (${page.error.code}: ${page.error.message})`);
     for (const account of page.value.items as ProtectedAccount[]) {
-      // A "domain" that names no host — `http://`, a blank — matches
-      // nothing, so it is no domain at all.
-      const host = account.domain ? domainOf(account.domain) : "";
+      // A blank domain is no domain. One that is not blank must name a host,
+      // or the set is not what it says it protects: the run stops (0044).
+      const host = account.domain?.trim() ? domainOf(account.domain) : "";
+      if (account.domain?.trim() && !isHost(host)) {
+        return stop(`a protected row's domain is not a host: "${account.domain}"${account.customerId ? ` (customer ${account.customerId})` : ""}`);
+      }
       const networked = (account.identity?.keys ?? [])
         .filter((k) => k.kind !== "domain" && k.network && k.value.trim() !== "")
         .map((k) => `${k.kind}\n${k.network}\n${k.value.trim()}`);
@@ -167,6 +205,29 @@ export async function readProtection(
     );
   }
   const accounts = customers.size + new Set([...parent.keys()].map(find)).size;
+
+  /** The protected domain a host falls under — itself or an ancestor — if any (0044). */
+  const protectedHost = (host: string) => (isHost(host) ? ancestry(host).find((a) => domains.has(a)) : undefined);
+  /** Per protected entry, the distinct candidates it excluded (0044). */
+  const hits = new Map<string, Set<string>>();
+  const verdict = (c: TargetCompany): "protected" | "unreadable_key" | "clear" => {
+    const raw = c.domain?.trim();
+    const host = raw ? domainOf(raw) : "";
+    const readable = !raw || isHost(host);
+    const matched: string[] = [];
+    const byDomain = readable && host ? protectedHost(host) : undefined;
+    if (byDomain) matched.push(byDomain);
+    if (c.externalId !== undefined && ids.has(c.externalId)) matched.push(`id ${c.externalId}`);
+    for (const k of c.identity?.keys ?? []) {
+      if (k.kind !== "domain" && k.network !== undefined && companyIds.has(`${k.kind}\n${k.network}\n${k.value.trim()}`)) matched.push(`${k.kind}@${k.network} ${k.value.trim()}`);
+    }
+    if (matched.length > 0) {
+      const who = raw ?? c.externalId ?? c.name ?? JSON.stringify(c.identity ?? {});
+      for (const entry of matched) hits.set(entry, (hits.get(entry) ?? new Set()).add(who));
+      return "protected";
+    }
+    return readable ? "clear" : "unreadable_key";
+  };
   return {
     ok: true,
     protection: {
@@ -175,15 +236,15 @@ export async function readProtection(
       surface: { domains: domains.size, companyIds: companyIds.size },
       unkeyedRowsOfCoveredCustomers: [...customers.values()].filter((c) => c.keyed).reduce((n, c) => n + c.unkeyed, 0),
       uncovered,
-      company: (c) =>
-        (c.domain !== undefined && domains.has(domainOf(c.domain))) ||
-        (c.externalId !== undefined && ids.has(c.externalId)) ||
-        (c.identity?.keys ?? []).some((k) => k.kind !== "domain" && k.network !== undefined && companyIds.has(`${k.kind}\n${k.network}\n${k.value.trim()}`)),
+      verdict,
+      company: (c) => verdict(c) !== "clear",
+      hits: () =>
+        [...hits].map(([entry, seen]) => ({ entry, candidates: seen.size })).sort((a, b) => b.candidates - a.candidates || a.entry.localeCompare(b.entry)),
       person: (p) =>
         p.keys.some(
           (k) =>
-            (k.kind === "email" && domains.has(domainOf(k.value.split("@")[1] ?? ""))) ||
-            (k.kind === "domain" && domains.has(domainOf(k.value))),
+            (k.kind === "email" && protectedHost(domainOf(k.value.split("@")[1] ?? ""))) ||
+            (k.kind === "domain" && protectedHost(domainOf(k.value))),
         ),
     },
   };

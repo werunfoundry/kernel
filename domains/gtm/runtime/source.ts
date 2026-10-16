@@ -73,7 +73,7 @@ import { readProtection } from "./protection.js";
 /** The contract names this path asks the registry for. */
 export const SOURCING_CONTRACTS = { targetList: "target_list", peopleSource: "people_source", enrichment: "enrichment", crm: "crm" } as const;
 
-export type Outcome = "kept" | "protected" | "known_to_crm" | "opted_out" | "duplicate" | "incomplete" | "unreachable" | "not_reached" | "simulated";
+export type Outcome = "kept" | "protected" | "unreadable_key" | "known_to_crm" | "opted_out" | "duplicate" | "incomplete" | "unreachable" | "not_reached" | "simulated";
 
 export interface SourceRequest {
   query?: TargetQuery;
@@ -122,6 +122,12 @@ export interface SourceReport {
    * protect (0034). Absent when the run stopped before protection was read.
    */
   protection?: Pick<Protection, "surface" | "unkeyedRowsOfCoveredCustomers" | "uncovered">;
+  /**
+   * For each protected entry that matched, how many distinct candidates it
+   * excluded in this run (decision 0044): the guard on the ancestor walk. An
+   * entry excluding far more than its share shows here first.
+   */
+  protectionHits: { entry: string; candidates: number }[];
   candidates: number;
   /**
    * How far the company pass went (0043): the companies it wanted to
@@ -279,6 +285,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
     protectedRows: 0,
     candidates: 0,
     companyPass: { wanted: 0, survived: 0, examined: 0, skippedAsExamined: 0, exhausted: false },
+    protectionHits: [],
     looked: [],
     peopleSearches: 0,
     peopleTaken: 0,
@@ -318,6 +325,8 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
       .onConflictDoNothing({ target: [sourcingResult.runId, sourcingResult.subject] });
   };
 
+  /** Read once protection is: what each protected entry excluded (0044). */
+  let hitsOf: Protection["hits"] | undefined;
   const allCosts: { provider: string; cost: Cost }[] = [];
   const excludedCosts: { provider: string; cost: Cost }[] = [];
 
@@ -330,6 +339,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
     const read = await readProtection(targets, { maxAgeMinutes: request.protectedMaxAgeMinutes, now: now(), acknowledged }, ctx);
     if (!read.ok) throw new Stop(read.stop);
     const protection = read.protection;
+    hitsOf = protection.hits;
     report.protectedAccounts = protection.accounts;
     report.protectedRows = protection.rows;
     report.protection = { surface: protection.surface, unkeyedRowsOfCoveredCustomers: protection.unkeyedRowsOfCoveredCustomers, uncovered: protection.uncovered };
@@ -374,7 +384,10 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
       // at once.
       type Pending = { company: TargetCompany } & ({ host: string } | { excluded: { outcome: Outcome; detail: string } });
       const pending = batch.map((company): Pending => {
-        if (protection.company(company)) return { company, excluded: { outcome: "protected", detail: "the account is protected" } };
+        const verdict = protection.verdict(company);
+        if (verdict === "protected") return { company, excluded: { outcome: "protected", detail: "the account is protected" } };
+        // Fail closed (0044): a domain that is not a host could match nothing.
+        if (verdict === "unreadable_key") return { company, excluded: { outcome: "unreadable_key", detail: `its domain is not a host that can be read: "${company.domain}"` } };
         const host = company.domain ? hostOf(company.domain) : "";
         if (!host) return { company, excluded: { outcome: "unreachable", detail: "no domain: neither the CRM nor protection can recognise it" } };
         return { company, host };
@@ -570,6 +583,7 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
     report.stoppedBy = thrown.message;
     report.status = report.looked.some((l) => l.outcome === "kept") ? "partial" : "failed";
   }
+  report.protectionHits = hitsOf?.() ?? [];
   report.spent = total(allCosts);
   report.spentOnExcludedPeople = total(excludedCosts);
 

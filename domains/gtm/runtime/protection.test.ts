@@ -167,3 +167,72 @@ describe("customers: counted, acknowledged, never matched (0034)", () => {
     assert.equal(p.company({ externalId: "cust-9", domain: "b.example.org", attributes: {} }), false);
   });
 });
+
+describe("a domain is matched by its ancestors, and what is not a host fails closed (0044)", () => {
+  const protectedSet = () => read([account({ domain: "11x.example.com", id: "9843" }), account({ domain: "dcx.uni.example.org" })]);
+
+  it("protects a subdomain of a protected domain, at any depth", async () => {
+    const p = await protectedSet();
+    for (const d of ["app.11x.example.com", "go.11x.example.com", "a.b.11x.example.com"]) assert.equal(p.verdict(candidate({ domain: d })), "protected", d);
+  });
+
+  it("keeps the spellings 0028 already reduced", async () => {
+    const p = await protectedSet();
+    for (const d of ["11x.example.com/demo", "www.11x.example.com", "11X.EXAMPLE.COM", "https://11x.example.com", "11x.example.com."]) {
+      assert.equal(p.verdict(candidate({ domain: d })), "protected", d);
+    }
+  });
+
+  it("protects a doubled www. through its ancestor", async () => {
+    const p = await protectedSet();
+    assert.equal(p.verdict(candidate({ domain: "www.www.11x.example.com" })), "protected");
+  });
+
+  it("does not move the protected set: a protected subdomain protects what is under it, not its parent or its siblings", async () => {
+    const p = await protectedSet();
+    assert.equal(p.verdict(candidate({ domain: "x.dcx.uni.example.org" })), "protected");
+    assert.equal(p.verdict(candidate({ domain: "uni.example.org" })), "clear");
+    assert.equal(p.verdict(candidate({ domain: "other.uni.example.org" })), "clear");
+  });
+
+  it("excludes a domain that is not a host, under its own reason, and lets clear ones pass", async () => {
+    const p = await protectedSet();
+    for (const d of ["11x .example.com", "[www.11x.example.com](https://www.11x.example.com)", "not a domain at all", "localhost", "http://"]) {
+      assert.equal(p.verdict(candidate({ domain: d })), "unreadable_key", d);
+      assert.equal(p.company(candidate({ domain: d })), true, `${d}: company() lets it through`);
+    }
+    for (const d of ["nobody-here-7f3a91.example.com", "witness-negative.example.org"]) assert.equal(p.verdict(candidate({ domain: d })), "clear", d);
+  });
+
+  it("calls an unreadable domain protected when another key protects it", async () => {
+    const p = await protectedSet();
+    assert.equal(p.verdict(candidate({ domain: "11x .example.com", id: "9843" })), "protected");
+  });
+
+  it("walks the ancestors of a person's address too", async () => {
+    const p = await protectedSet();
+    assert.equal(p.person({ subject: "person", keys: [{ kind: "email", value: "ada@mail.11x.example.com" }] }), true);
+    assert.equal(p.person({ subject: "person", keys: [{ kind: "email", value: "ada@uni.example.org" }] }), false);
+  });
+
+  it("stops on a protected row whose domain is not a host, and still reads a blank one as no domain", async () => {
+    const r = await readProtection(source([account({ domain: "11x .example.com" })]), { maxAgeMinutes: 60, now: NOW }, ctx);
+    assert.ok(!r.ok && /a protected row's domain is not a host: "11x \.example\.com"/.test(r.stop), JSON.stringify(r));
+    const single = await readProtection(source([account({ domain: "localhost" })]), { maxAgeMinutes: 60, now: NOW }, ctx);
+    assert.ok(!single.ok, "a one-label domain was read as a host");
+    await read([account({ domain: "  ", id: "77" })]);
+  });
+
+  it("counts, per protected entry, the distinct candidates it excluded", async () => {
+    const p = await protectedSet();
+    p.verdict(candidate({ domain: "app.11x.example.com" }));
+    p.verdict(candidate({ domain: "app.11x.example.com" }));
+    p.verdict(candidate({ domain: "go.11x.example.com" }));
+    p.verdict(candidate({ domain: "elsewhere.example.net", id: "9843" }));
+    p.verdict(candidate({ domain: "nobody-here.example.com" }));
+    assert.deepEqual(p.hits(), [
+      { entry: "11x.example.com", candidates: 2 },
+      { entry: "social_company_id@net_a 9843", candidates: 1 },
+    ]);
+  });
+});

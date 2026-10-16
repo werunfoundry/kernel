@@ -1,3 +1,11 @@
+-- HAND-CORRECTED: this file is not what `drizzle-kit generate` writes.
+-- The generator writes only the statements after the DO block below: it
+-- drops relations.audience and relations.audience_member, with whatever rows
+-- they hold, without a word.
+-- The DO block is added by hand so that it stops instead. Regenerating this
+-- migration loses it; re-add it, and its test in the domain refuses the
+-- migration on a database holding rows until it is back.
+--
 -- Decision 0037: a set of identified people is a list, frozen when it is
 -- constituted; "audience" is kept for an anonymous segment. Nothing in the
 -- engine wrote these tables, so they are replaced rather than renamed and

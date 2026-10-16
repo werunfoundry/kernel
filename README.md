@@ -20,7 +20,7 @@ core/
   manifest/           what a domain declares and an instance fills in
   contracts/          what every contract is made of: context, result, error
 domains/
-  relations/          people, companies, audiences, interactions
+  relations/          people, companies, lists, interactions
     db/ contracts/    its tables; the CRM it needs
   gtm/                acquisition
     db/ contracts/    its tables; the sequencer and the target list

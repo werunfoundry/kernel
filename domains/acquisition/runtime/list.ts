@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 
 import { run as runTable } from "@werunfoundry/core/db/schema";
-import type { Database } from "@werunfoundry/core/runtime/run";
+import type { Database, Trigger } from "@werunfoundry/core/runtime/run";
 import { withRun } from "@werunfoundry/core/runtime/run";
 import type { ListRead, Member } from "@werunfoundry/relations/runtime/list";
 import { person } from "@werunfoundry/relations/db/schema";
@@ -99,11 +99,12 @@ export async function existingList(db: Database, key: string): Promise<ListRead 
 /**
  * The list, constituted in its own run with the person as actor. A key that
  * already names a list is refused before any run is opened; one written
- * meanwhile keeps the first list, as `constituteList` does, and says so.
+ * meanwhile keeps the first list, as `constituteList` does, and says so. The
+ * caller says how the run was reached (decision 0048).
  */
 export async function constituteSelection(
   db: Database,
-  input: { key: string; description?: string; selection: Selection; by: string },
+  input: { key: string; description?: string; selection: Selection; by: string; trigger: Trigger },
 ): Promise<{ runId: string; listId: string; constituted: boolean; members: number }> {
   const key = input.key.trim();
   const by = input.by.trim();
@@ -112,7 +113,7 @@ export async function constituteSelection(
   if (input.selection.members.length === 0) throw new Error("the selection names nobody: an empty list is not constituted");
   const existing = await readList(db, key);
   if (existing) throw new Error(`a list ${key} already exists, constituted on ${existing.createdAt.toISOString()} by ${existing.actorId ?? "nobody named"} with ${existing.members.length} members`);
-  return withRun(db, { processKey: "acquisition.list.constitute", trigger: "manual", actor: { type: "human", id: by }, dryRun: false }, async (context) => {
+  return withRun(db, { processKey: "acquisition.list.constitute", trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false }, async (context) => {
     const made = await constituteList(db, {
       key,
       ...(input.description ? { description: input.description } : {}),

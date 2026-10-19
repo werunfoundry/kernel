@@ -95,6 +95,7 @@ describe("kernel-list", { skip: base ? false : "TEST_DATABASE_URL is not set" },
     assert.match(r.out, /list october constituted and sealed, 2 members/);
     const [row] = (await client.query("select l.query->>'from' as source, l.sealed_at is not null as sealed, l.actor_id, k.process_key from relations.list l join core.run k on k.id = l.run_id")).rows;
     assert.deepEqual(row, { source: "hand", sealed: true, actor_id: "an operator", process_key: "acquisition.list.constitute" });
+    assert.deepEqual((await client.query("select trigger from core.run")).rows, [{ trigger: "cli" }], "a command says its channel: cli (0048)");
   });
 
   it("writes nothing when what is typed does not match", async () => {

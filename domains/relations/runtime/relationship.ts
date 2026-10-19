@@ -22,7 +22,7 @@
 
 import { eq } from "drizzle-orm";
 
-import type { Database } from "@werunfoundry/core/runtime/run";
+import type { Database, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
 
 import { relationship, relationshipCurrent } from "../db/schema.js";
@@ -84,11 +84,12 @@ export function planDeclaration(current: { state: string; at: Date } | undefined
 
 /**
  * A person declares a company's relationship. Replaying the same one keeps
- * one row, and says so. A person is refused as a subject (0047).
+ * one row, and says so. A person is refused as a subject (0047). The caller
+ * says how the run was reached (0048).
  */
 export async function declareRelationship(
   db: Database,
-  input: { subject: { companyId: string }; status: RelationshipStatus; at: Date; reason?: string; by: string },
+  input: { subject: { companyId: string }; status: RelationshipStatus; at: Date; reason?: string; by: string; trigger: Trigger },
 ): Promise<{ runId: string; declared: boolean }> {
   if ("personId" in input.subject || !input.subject.companyId) {
     throw new Error("a relationship is declared on a company, not on a person alone (decision 0047)");
@@ -96,7 +97,7 @@ export async function declareRelationship(
   const refused = checkDeclaration(input);
   if (refused) throw new Error(refused);
   const by = input.by.trim();
-  const open = await openRun(db, { processKey: "relations.relationship.declare", trigger: "manual", actor: { type: "human", id: by }, dryRun: false });
+  const open = await openRun(db, { processKey: "relations.relationship.declare", trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false });
   try {
     const written = await db
       .insert(relationship)

@@ -68,17 +68,18 @@ const aCompany = async () => (await rows("insert into relations.company (name, d
 describe("a declared stage", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
   it("is a person's act, recorded as its own run, and read through the published view", async () => {
     const personId = await aPerson();
-    const r = await declareStage(db, { subject: { personId }, stage: "opportunity", at: new Date("2026-09-01T00:00:00Z"), reason: "meeting held", by: "an operator" });
+    const r = await declareStage(db, { trigger: "cli", subject: { personId }, stage: "opportunity", at: new Date("2026-09-01T00:00:00Z"), reason: "meeting held", by: "an operator" });
     assert.equal(r.declared, true);
     const run = (await rows("select process_key, actor_type, actor_id, status from core.run where id = $1", [r.runId]))[0];
     assert.deepEqual(run, { process_key: "acquisition.stage.declare", actor_type: "human", actor_id: "an operator", status: "succeeded" });
+    assert.equal((await rows("select trigger from core.run where id = $1", [r.runId]))[0].trigger, "cli", "the run keeps the channel its caller gave (0048)");
     assert.deepEqual(await readStage(db, { personId }), { stage: "opportunity", at: new Date("2026-09-01T00:00:00Z"), reason: "meeting held", declaredBy: "an operator" });
   });
 
   it("keeps the history; the current stage is the latest by when it became true", async () => {
     const companyId = await aCompany();
-    await declareStage(db, { subject: { companyId }, stage: "engaged", at: new Date("2026-09-10T00:00:00Z"), by: "an operator" });
-    await declareStage(db, { subject: { companyId }, stage: "targeted", at: new Date("2026-08-01T00:00:00Z"), by: "an operator" });
+    await declareStage(db, { trigger: "cli", subject: { companyId }, stage: "engaged", at: new Date("2026-09-10T00:00:00Z"), by: "an operator" });
+    await declareStage(db, { trigger: "cli", subject: { companyId }, stage: "targeted", at: new Date("2026-08-01T00:00:00Z"), by: "an operator" });
     assert.equal((await readStage(db, { companyId }))?.stage, "engaged");
     assert.equal((await rows("select count(*)::int as n from acquisition.company_state"))[0].n, 2);
     assert.equal(await readStage(db, { personId: await aPerson() }), undefined);
@@ -87,8 +88,8 @@ describe("a declared stage", { skip: base ? false : "TEST_DATABASE_URL is not se
   it("keeps one row when the same declaration is replayed", async () => {
     const personId = await aPerson();
     const at = new Date("2026-09-01T00:00:00Z");
-    await declareStage(db, { subject: { personId }, stage: "engaged", at, by: "an operator" });
-    assert.equal((await declareStage(db, { subject: { personId }, stage: "engaged", at, by: "an operator" })).declared, false);
+    await declareStage(db, { trigger: "cli", subject: { personId }, stage: "engaged", at, by: "an operator" });
+    assert.equal((await declareStage(db, { trigger: "cli", subject: { personId }, stage: "engaged", at, by: "an operator" })).declared, false);
     assert.equal((await rows("select count(*)::int as n from acquisition.person_state"))[0].n, 1);
   });
 
@@ -103,8 +104,8 @@ describe("a declared stage", { skip: base ? false : "TEST_DATABASE_URL is not se
   });
 
   it("is append-only in the schema, for a person and for a company", async () => {
-    await declareStage(db, { subject: { personId: await aPerson() }, stage: "engaged", at: new Date("2026-09-01"), by: "an operator" });
-    await declareStage(db, { subject: { companyId: await aCompany() }, stage: "engaged", at: new Date("2026-09-01"), by: "an operator" });
+    await declareStage(db, { trigger: "cli", subject: { personId: await aPerson() }, stage: "engaged", at: new Date("2026-09-01"), by: "an operator" });
+    await declareStage(db, { trigger: "cli", subject: { companyId: await aCompany() }, stage: "engaged", at: new Date("2026-09-01"), by: "an operator" });
     await assert.rejects(client.query("update acquisition.person_state set stage = 'opportunity'"), /acquisition\.person_state is append-only/);
     await assert.rejects(client.query("update acquisition.company_state set reason = 'edited'"), /acquisition\.company_state is append-only/);
   });

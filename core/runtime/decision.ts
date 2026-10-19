@@ -11,12 +11,15 @@
  * for a write path that can replay — a retry, a redelivery — and the one
  * caller here is a person at a terminal, who concludes again when they run
  * it again. A path that can retry needs that key, and a migration, first.
+ *
+ * The caller says how the run was reached — its channel; that a person acts
+ * is the actor (decision 0048).
  */
 
 import { asc, eq } from "drizzle-orm";
 
 import { decision, experiment } from "../db/schema.js";
-import type { Database } from "./run.js";
+import type { Database, Trigger } from "./run.js";
 import { openRun } from "./run.js";
 
 /** One figure as it was read: which metric, its value, and when. */
@@ -62,7 +65,7 @@ export async function listDecisions(db: Database, experimentId: string): Promise
 
 export async function recordDecision(
   db: Database,
-  input: { experimentId: string; conclusion: string; rationale?: string; readings: Reading[]; by: string },
+  input: { experimentId: string; conclusion: string; rationale?: string; readings: Reading[]; by: string; trigger: Trigger },
 ): Promise<{ runId: string; decisionId: string }> {
   const by = input.by.trim();
   const conclusion = input.conclusion.trim();
@@ -70,7 +73,7 @@ export async function recordDecision(
   if (conclusion === "") throw new Error("a decision concludes something");
   const checked = checkReadings(input.readings);
   if ("refused" in checked) throw new Error(checked.refused);
-  const open = await openRun(db, { processKey: "core.decision.record", trigger: "manual", actor: { type: "human", id: by }, dryRun: false });
+  const open = await openRun(db, { processKey: "core.decision.record", trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false });
   try {
     const [row] = await db
       .insert(decision)

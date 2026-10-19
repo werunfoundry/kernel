@@ -195,9 +195,9 @@ whatever writes it, reads it, or connects it to the rest.
 **Processes**
 - *There:* `run.process_key`, written as free text — `instance.verify`,
   `acquisition.enrol.<sequence>`; `run.trigger`, an enum (`webhook`, `cron`, `cli`,
-  `manual`) of which only `cli` and `manual` are ever written — `manual` by
-  a declared stage or relationship, a list a person constitutes and a
-  decision, through the commands of 0047.
+  `manual`) of which only `cli` is written: each command passes it to its
+  verb (0048). Runs recorded before 0048 by an erasure or a person's
+  declaration, list or decision read `manual`, which stays in the enum.
 - *Not there at all:* a process. `core.run`'s comment says a process key
   matches "a process declared in the manifest", and the manifest has no such
   field. Nothing declares a process, nothing schedules one, and nothing routes

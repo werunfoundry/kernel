@@ -97,13 +97,14 @@ describe("a decision", { skip: base ? false : "TEST_DATABASE_URL is not set" }, 
 
   it("is a person's act, in its own run, with the readings it rested on", async () => {
     const experimentId = await anExperiment();
-    const r = await recordDecision(db, { experimentId, conclusion: "killed: below the threshold", readings, by: "an operator" });
+    const r = await recordDecision(db, { trigger: "cli", experimentId, conclusion: "killed: below the threshold", readings, by: "an operator" });
     assert.deepEqual((await rows("select process_key, actor_type, actor_id, status from core.run where id = $1", [r.runId]))[0], {
       process_key: "core.decision.record",
       actor_type: "human",
       actor_id: "an operator",
       status: "succeeded",
     });
+    assert.equal((await rows("select trigger from core.run where id = $1", [r.runId]))[0].trigger, "cli", "the run keeps the channel its caller gave (0048)");
     assert.deepEqual((await rows("select conclusion, readings from core.decision"))[0], { conclusion: "killed: below the threshold", readings });
   });
 
@@ -130,7 +131,7 @@ describe("a decision", { skip: base ? false : "TEST_DATABASE_URL is not set" }, 
       [{ metric: "m", value: "4%", readAt: "2026-09-30T00:00:00Z" }, /neither a number nor null/],
       [{ metric: "m", value: 0.04 }, /does not say when it was read/],
     ] as const) {
-      await assert.rejects(recordDecision(db, { experimentId, conclusion: "x", readings: [bad as unknown as Reading], by: "an operator" }), why);
+      await assert.rejects(recordDecision(db, { trigger: "cli", experimentId, conclusion: "x", readings: [bad as unknown as Reading], by: "an operator" }), why);
     }
     assert.equal((await rows("select count(*)::int as n from core.run"))[0].n, 0);
   });
@@ -142,8 +143,8 @@ describe("a decision", { skip: base ? false : "TEST_DATABASE_URL is not set" }, 
 
   it("is not idempotent: concluding twice is two decisions, read back oldest first (0047)", async () => {
     const experimentId = await anExperiment();
-    await recordDecision(db, { experimentId, conclusion: "continue", readings: [], by: "an operator" });
-    await recordDecision(db, { experimentId, conclusion: "continue", readings: [], by: "an operator" });
+    await recordDecision(db, { trigger: "cli", experimentId, conclusion: "continue", readings: [], by: "an operator" });
+    await recordDecision(db, { trigger: "cli", experimentId, conclusion: "continue", readings: [], by: "an operator" });
     const read = await listDecisions(db, experimentId);
     assert.deepEqual(read.map((d) => [d.conclusion, d.decidedBy]), [["continue", "an operator"], ["continue", "an operator"]]);
     assert.deepEqual(await findExperiment(db, " e "), { id: experimentId, slug: "e", status: "draft" });
@@ -152,7 +153,7 @@ describe("a decision", { skip: base ? false : "TEST_DATABASE_URL is not set" }, 
 
   it("is append-only, and its experiment is not deleted from under it", async () => {
     const experimentId = await anExperiment();
-    await recordDecision(db, { experimentId, conclusion: "validated", readings: [], by: "an operator" });
+    await recordDecision(db, { trigger: "cli", experimentId, conclusion: "validated", readings: [], by: "an operator" });
     await assert.rejects(client.query("update core.decision set conclusion = 'killed'"), /core\.decision is append-only/);
     await assert.rejects(client.query("delete from core.experiment where id = $1", [experimentId]), /foreign key/);
   });

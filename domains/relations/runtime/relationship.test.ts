@@ -72,18 +72,19 @@ const aRun = async (actor = "human") => (await rows("insert into core.run (proce
 describe("a declared relationship", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
   it("is a person's act, recorded as its own run with them as actor, and read through the view", async () => {
     const companyId = await aCompany();
-    const r = await declareRelationship(db, { subject: { companyId }, status: "customer", at: new Date("2026-09-01T00:00:00Z"), reason: "signed", by: "an operator" });
+    const r = await declareRelationship(db, { trigger: "cli", subject: { companyId }, status: "customer", at: new Date("2026-09-01T00:00:00Z"), reason: "signed", by: "an operator" });
     assert.equal(r.declared, true);
     const run = (await rows("select process_key, actor_type, actor_id, status from core.run where id = $1", [r.runId]))[0];
     assert.deepEqual(run, { process_key: "relations.relationship.declare", actor_type: "human", actor_id: "an operator", status: "succeeded" });
+    assert.equal((await rows("select trigger from core.run where id = $1", [r.runId]))[0].trigger, "cli", "the run keeps the channel its caller gave (0048)");
     assert.deepEqual(await readRelationship(db, { companyId }), { status: "customer", at: new Date("2026-09-01T00:00:00Z"), reason: "signed", declaredBy: "an operator" });
   });
 
   it("keeps the history, and the current one is the latest by when it became true, not by when it was written", async () => {
     const companyId = await aCompany();
-    await declareRelationship(db, { subject: { companyId }, status: "former_customer", at: new Date("2026-09-10T00:00:00Z"), by: "an operator" });
+    await declareRelationship(db, { trigger: "cli", subject: { companyId }, status: "former_customer", at: new Date("2026-09-10T00:00:00Z"), by: "an operator" });
     // Written after, true before: it is history, not the present.
-    await declareRelationship(db, { subject: { companyId }, status: "customer", at: new Date("2026-08-01T00:00:00Z"), by: "an operator" });
+    await declareRelationship(db, { trigger: "cli", subject: { companyId }, status: "customer", at: new Date("2026-08-01T00:00:00Z"), by: "an operator" });
     assert.equal((await readRelationship(db, { companyId }))?.status, "former_customer");
     assert.equal((await rows("select count(*)::int as n from relations.relationship"))[0].n, 2);
   });
@@ -95,16 +96,16 @@ describe("a declared relationship", { skip: base ? false : "TEST_DATABASE_URL is
   it("keeps one row when the same declaration is replayed", async () => {
     const companyId = await aCompany();
     const at = new Date("2026-09-01T00:00:00Z");
-    await declareRelationship(db, { subject: { companyId }, status: "customer", at, by: "an operator" });
-    const again = await declareRelationship(db, { subject: { companyId }, status: "customer", at, by: "another operator" });
+    await declareRelationship(db, { trigger: "cli", subject: { companyId }, status: "customer", at, by: "an operator" });
+    const again = await declareRelationship(db, { trigger: "cli", subject: { companyId }, status: "customer", at, by: "another operator" });
     assert.equal(again.declared, false);
     assert.equal((await rows("select count(*)::int as n from relations.relationship"))[0].n, 1);
   });
 
   it("refuses, before any run, a declaration dated ahead of now or made by nobody", async () => {
     const companyId = await aCompany();
-    await assert.rejects(declareRelationship(db, { subject: { companyId }, status: "customer", at: new Date(Date.now() + 86_400_000), by: "an operator" }), /not ahead of it/);
-    await assert.rejects(declareRelationship(db, { subject: { companyId }, status: "customer", at: new Date("2026-01-01"), by: "  " }), /a person's/);
+    await assert.rejects(declareRelationship(db, { trigger: "cli", subject: { companyId }, status: "customer", at: new Date(Date.now() + 86_400_000), by: "an operator" }), /not ahead of it/);
+    await assert.rejects(declareRelationship(db, { trigger: "cli", subject: { companyId }, status: "customer", at: new Date("2026-01-01"), by: "  " }), /a person's/);
     assert.equal((await rows("select count(*)::int as n from core.run"))[0].n, 0);
   });
 
@@ -119,7 +120,7 @@ describe("a declared relationship", { skip: base ? false : "TEST_DATABASE_URL is
 
   it("is append-only in the schema: a declaration is corrected by another, never rewritten", async () => {
     const companyId = await aCompany();
-    await declareRelationship(db, { subject: { companyId }, status: "customer", at: new Date("2026-09-01T00:00:00Z"), by: "an operator" });
+    await declareRelationship(db, { trigger: "cli", subject: { companyId }, status: "customer", at: new Date("2026-09-01T00:00:00Z"), by: "an operator" });
     await assert.rejects(client.query("update relations.relationship set status = 'none'"), /append-only/);
     await assert.rejects(client.query("update relations.relationship set reason = 'edited'"), /append-only/);
   });
@@ -127,7 +128,7 @@ describe("a declared relationship", { skip: base ? false : "TEST_DATABASE_URL is
   it("is refused on a person, before any run, though the schema would take it (0047)", async () => {
     const personId = await aPerson();
     const subject = { personId } as unknown as { companyId: string };
-    await assert.rejects(declareRelationship(db, { subject, status: "customer", at: new Date("2026-09-01T00:00:00Z"), by: "an operator" }), /on a company, not on a person alone/);
+    await assert.rejects(declareRelationship(db, { trigger: "cli", subject, status: "customer", at: new Date("2026-09-01T00:00:00Z"), by: "an operator" }), /on a company, not on a person alone/);
     assert.equal((await rows("select count(*)::int as n from core.run"))[0].n, 0);
     assert.equal((await rows("select count(*)::int as n from relations.relationship"))[0].n, 0);
   });

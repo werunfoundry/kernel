@@ -115,7 +115,7 @@ async function main(): Promise<number> {
       console.log("stage: what was typed does not match. Nothing was written.");
       return 1;
     }
-    const r = await declareStage(connection.db, { subject, stage: stage as Stage, at: moment.at, ...(why ? { reason: why } : {}), by });
+    const r = await declareStage(connection.db, { subject, stage: stage as Stage, at: moment.at, ...(why ? { reason: why } : {}), by, trigger: "cli" });
     console.log(`run: ${r.runId} — ${r.declared ? `declared: ${what}` : "the same declaration is already on record, in the history or written meanwhile; nothing changed"}`);
     return 0;
   } finally {

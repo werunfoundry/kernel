@@ -14,7 +14,7 @@
 
 import { eq } from "drizzle-orm";
 
-import type { Database } from "@werunfoundry/core/runtime/run";
+import type { Database, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
 import { checkDeclaration } from "@werunfoundry/relations/runtime/relationship";
 
@@ -30,15 +30,19 @@ export interface DeclaredStage {
   declaredBy: string;
 }
 
-/** A person declares a stage. Replaying the same one keeps one row, and says so. */
+/**
+ * A person declares a stage. Replaying the same one keeps one row, and says so.
+ * The caller says how the run was reached — its channel; who acts is the actor
+ * (decision 0048).
+ */
 export async function declareStage(
   db: Database,
-  input: { subject: Subject; stage: Stage; at: Date; reason?: string; by: string },
+  input: { subject: Subject; stage: Stage; at: Date; reason?: string; by: string; trigger: Trigger },
 ): Promise<{ runId: string; declared: boolean }> {
   const refused = checkDeclaration(input);
   if (refused) throw new Error(refused);
   const by = input.by.trim();
-  const open = await openRun(db, { processKey: "acquisition.stage.declare", trigger: "manual", actor: { type: "human", id: by }, dryRun: false });
+  const open = await openRun(db, { processKey: "acquisition.stage.declare", trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false });
   try {
     const common = {
       stage: input.stage,

@@ -384,6 +384,8 @@ try {
     const decided = await typed("kernel-decide", ["--experiment", "try-decide", "--conclusion", "continue", "--no-readings", "--by", "an operator"], "try-decide\n");
     expect(decided.status === 0 && /decision .* recorded on try-decide/.test(decided.stdout), `kernel-decide at a terminal: ${decided.stdout.trim().split("\n").pop()}`);
     expect((await count("core.decision")) === 1, "the decision was not recorded");
+    const triggers = (await client.query("select distinct trigger from core.run where process_key in ('acquisition.list.constitute', 'core.decision.record')")).rows;
+    expect(JSON.stringify(triggers) === JSON.stringify([{ trigger: "cli" }]), `a person's acts recorded their channel as ${JSON.stringify(triggers)}, not cli (0048)`);
   }
   await client.end();
 } catch (error) {

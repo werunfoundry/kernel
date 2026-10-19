@@ -127,7 +127,7 @@ describe("constituting the selection", { skip: base ? false : "TEST_DATABASE_URL
   it("is a person's act, in its own run, and seals the list", async () => {
     const ada = await aPerson("ada@example.com");
     const selection = await selectFromLines(db, "ada@example.com", "picked.txt");
-    const r = await constituteSelection(db, { key: "october", selection, by: "an operator" });
+    const r = await constituteSelection(db, { trigger: "cli", key: "october", selection, by: "an operator" });
     assert.deepEqual({ constituted: r.constituted, members: r.members }, { constituted: true, members: 1 });
     assert.deepEqual((await rows("select process_key, actor_type, actor_id, status from core.run where id = $1", [r.runId]))[0], {
       process_key: "acquisition.list.constitute",
@@ -135,6 +135,7 @@ describe("constituting the selection", { skip: base ? false : "TEST_DATABASE_URL
       actor_id: "an operator",
       status: "succeeded",
     });
+    assert.equal((await rows("select trigger from core.run where id = $1", [r.runId]))[0].trigger, "cli", "the run keeps the channel its caller gave (0048)");
     const read = await readList(db, "october");
     assert.ok(read?.sealedAt instanceof Date);
     assert.equal(read.actorId, "an operator");
@@ -144,24 +145,24 @@ describe("constituting the selection", { skip: base ? false : "TEST_DATABASE_URL
   it("refuses a key that already names a list, before any run is opened", async () => {
     await aPerson("ada@example.com");
     const selection = await selectFromLines(db, "ada@example.com", "picked.txt");
-    await constituteSelection(db, { key: "october", selection, by: "an operator" });
+    await constituteSelection(db, { trigger: "cli", key: "october", selection, by: "an operator" });
     const runs = await count("core.run");
-    await assert.rejects(constituteSelection(db, { key: "october", selection, by: "another operator" }), /a list october already exists, constituted on .* by an operator with 1 members/);
+    await assert.rejects(constituteSelection(db, { trigger: "cli", key: "october", selection, by: "another operator" }), /a list october already exists, constituted on .* by an operator with 1 members/);
     assert.equal(await count("core.run"), runs);
   });
 
   it("refuses a selection that names nobody, and one made by nobody, before any run", async () => {
     await aPerson("ada@example.com");
     const selection = await selectFromLines(db, "ada@example.com", "picked.txt");
-    await assert.rejects(constituteSelection(db, { key: "empty", selection: { ...selection, members: [] }, by: "an operator" }), /names nobody/);
-    await assert.rejects(constituteSelection(db, { key: "nobody", selection, by: " " }), /who constitutes it is required/);
+    await assert.rejects(constituteSelection(db, { trigger: "cli", key: "empty", selection: { ...selection, members: [] }, by: "an operator" }), /names nobody/);
+    await assert.rejects(constituteSelection(db, { trigger: "cli", key: "nobody", selection, by: " " }), /who constitutes it is required/);
     assert.equal(await count("core.run"), 0);
   });
 
   it("filters nobody: a person who opted out is selected, because a list is not a permission", async () => {
     const eve = await aPerson("eve@example.com", true);
     const selection = await selectFromLines(db, "eve@example.com", "picked.txt");
-    await constituteSelection(db, { key: "october", selection, by: "an operator" });
+    await constituteSelection(db, { trigger: "cli", key: "october", selection, by: "an operator" });
     assert.deepEqual((await readList(db, "october"))?.members.map((m) => m.personId), [eve]);
   });
 });
@@ -195,6 +196,14 @@ describe("the boundaries of a person's acts", () => {
 
   it("feed no protection from a declared relationship: the runs that read protection never read one", () => {
     for (const path of runs) assert.ok(!/relationship/i.test(read(path)), `${path} reaches a declared relationship`);
+  });
+
+  it("are reached through a command that says its channel, never told by the verb (0048)", () => {
+    // kernel-erase has no test that runs it as a process: this is what holds its channel.
+    const commands = ["../bin/stage.ts", "../bin/list.ts", "../../relations/bin/relationship.ts", "../../relations/bin/erase.ts", "../../../core/bin/decide.ts"];
+    for (const path of commands) assert.match(read(path), /trigger: "cli"/, `${path} does not pass its channel to the verb`);
+    const verbs = ["./stage.ts", "./list.ts", "../../relations/runtime/relationship.ts", "../../../core/runtime/decision.ts", "../../../core/runtime/erase.ts"];
+    for (const path of verbs) assert.match(read(path), /trigger: input\.trigger/, `${path} sets its own trigger`);
   });
 
   it("are made by no run: a run never declares a stage, constitutes a person's list or records a decision", () => {

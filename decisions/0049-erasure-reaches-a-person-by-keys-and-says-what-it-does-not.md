@@ -68,8 +68,16 @@ by keys as well as by id:
   its keys join the set, until no new key is found. Every kind matches, phone
   included: wrongly reaching a row empties a history row of its keys, while
   missing one leaves a person's data where it was.
-- **The plan says it all.** `--plan`, and the confirmation, show for each
-  rule the rows reached by id and by keys, and what not reached means.
+- **The gathering is a transitive closure, and it is not bounded.** A key
+  two people share — a generic address, a switchboard number — carries it
+  from one to the other: erasing A reaches B's rows through the key they
+  share, and C's through a key B shares with C. Nothing in the core stops
+  the chain, because nothing can tell a person's key from a shared one.
+- **What guards against that surprise is the plan.** `--plan`, and the
+  confirmation, show for each rule the rows reached by id and by keys, and
+  what is not reached. A count by keys larger than one person's history is
+  the sign of a chain. The plan is to be read before the id is typed again,
+  not skimmed: typing it confirms what the plan says, not only who.
 
 **The operational layer is not treated, and the command says so.** The
 plan, and every erasure, end with what it did not reach:
@@ -110,6 +118,28 @@ a legal basis** — `keep` in 0040's vocabulary — and that entry must be
 derivable from the address, or it recognises nobody. It is the one place
 where derivability is the purpose, and it is decided on its own: what it
 holds, for how long, and on which basis.
+
+**That decision starts from a contradiction, not a gap.** To recognise
+someone, the suppression entry must be derivable from their address: a
+later run computes the same value from the address it finds and compares.
+This decision rules out, for every row an erasure leaves, any value
+derivable from the keys — because a derivable value can be tested against
+an address someone holds, which is exactly what makes a fingerprint
+personal data. The two requirements are the same property, asked for in
+one place and forbidden in the other. The decision to come does not choose
+a cleverer hash: whatever recognises a person can be tested against them.
+It decides where derivability is allowed, under which basis, and what then
+stands in the register of who asked not to be contacted — knowing that
+this register names them.
+
+**It is due at the same threshold as erasure itself: before the first real
+send.** While nothing reaches a person, an erased person found again is
+recorded and nothing more; once something can, they can be contacted
+again. That point is not 0050's: its sending path hands over to a stub,
+and no command calls it. It is already reachable today: `kernel-enrol
+--live`, bound to a real sequencer, hands people to a provider that sends.
+So the threshold is the first live enrolment into a real sequencer, or the
+first real hand-over wired to 0050's path, whichever comes first.
 
 ## `core.event`: not reached, and the cheaper way out
 

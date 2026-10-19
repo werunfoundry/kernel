@@ -56,13 +56,15 @@
       },
       "ErasureStep": {
         "type": "object",
-        "required": ["domain", "table", "column", "do", "rows"],
+        "required": ["domain", "table", "do", "rows"],
         "properties": {
           "domain": { "type": "string" },
           "table": { "type": "string" },
-          "column": { "type": "string" },
+          "column": { "type": "string", "description": "The column naming the person by id, when the rule reaches rows that way." },
+          "keys": { "type": "string", "description": "The column holding an identity, when the rule reaches rows by the person's keys (decision 0049)." },
           "do": { "type": "string", "enum": ["delete", "anonymise", "keep"] },
-          "rows": { "type": "integer" },
+          "rows": { "type": "integer", "description": "Rows naming the person, by id or by keys." },
+          "byKeys": { "type": "integer", "description": "Of those, the rows reached only by keys." },
           "basis": { "type": "string" }
         }
       }
@@ -142,10 +144,10 @@
     "/v1/people/{id}/erasure": {
       "get": {
         "operationId": "planErasure",
-        "summary": "What erasing this person would do, as each domain declares it (decision 0040). Changes nothing; erasing is a person's act, at a terminal.",
+        "summary": "What erasing this person would do, as each domain declares it (decisions 0040, 0049), and what it does not reach. Changes nothing; erasing is a person's act, at a terminal.",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
         "responses": {
-          "200": { "description": "The plan.", "content": { "application/json": { "schema": { "type": "object", "properties": { "steps": { "type": "array", "items": { "$ref": "#/components/schemas/ErasureStep" } } } } } } },
+          "200": { "description": "The plan.", "content": { "application/json": { "schema": { "type": "object", "properties": { "steps": { "type": "array", "items": { "$ref": "#/components/schemas/ErasureStep" } }, "notReached": { "type": "array", "items": { "type": "string" } } } } } } },
           "401": { "description": "No token, or not the instance's." }
         }
       }

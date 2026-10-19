@@ -105,6 +105,10 @@ async function main(): Promise<number> {
     console.log(`run: ${report.runId} — ${report.dryRun ? "dry run" : "live"} — ${report.status}`);
     if (report.stoppedBy) console.log(`  stopped: ${report.stoppedBy}`);
     console.log(`  protected accounts read: ${report.protectedAccounts} distinct, from ${report.protectedRows} rows`);
+    // What each protected entry excluded in this run (0044): one excluding dozens is the first sign of a bad entry.
+    if (report.protectionHits.length > 0) {
+      console.log(`  protection excluded, by entry: ${report.protectionHits.map((h) => `${h.entry} (${h.candidates})`).join(", ")}`);
+    }
     if (report.protection) {
       const p = report.protection;
       console.log(`    matched on ${p.surface.domains} domains and ${p.surface.companyIds} company ids; ${p.unkeyedRowsOfCoveredCustomers} rows with no key, of customers protected through another row`);
@@ -122,7 +126,7 @@ async function main(): Promise<number> {
       console.log(`  reconciled, enrolled by an earlier run that stopped before recording it: ${report.reconciled.length}`);
       for (const e of report.reconciled) console.log(`    = ${shown(e.person)} (${e.state})`);
     }
-    const reasons = ["protected", "opted_out", "capacity", "duplicate", "unreachable"] as const;
+    const reasons = ["protected", "unreadable_key", "opted_out", "capacity", "duplicate", "unreachable"] as const;
     for (const reason of reasons) {
       const these = report.skipped.filter((s) => s.reason === reason);
       if (these.length === 0) continue;

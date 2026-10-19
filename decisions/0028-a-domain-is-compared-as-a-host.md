@@ -1,5 +1,9 @@
 # 0028 — A domain is compared as the host it names
 
+> Completed by [0044](0044-protection-matches-a-domains-ancestors-and-fails-closed.md):
+> a protected domain also protects its subdomains, and a domain that is not a
+> host is excluded.
+
 Completes [0013](0013-an-identity-is-a-set-of-keys.md), whose keys were
 compared trimmed and, where case means nothing, lower-cased.
 

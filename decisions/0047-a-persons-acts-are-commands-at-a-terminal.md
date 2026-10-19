@@ -8,9 +8,8 @@ is declared on a company, never on a person alone.
 
 ## Decided
 
-**Four commands, each in the domain that owns the table it writes.** The API
-refuses a person by construction (0040), so a person's act is a command, as
-`kernel-acknowledge` and `kernel-erase` are:
+**Four commands.** The API refuses a person by construction (0040), so a
+person's act is a command, as `kernel-acknowledge` and `kernel-erase` are:
 
 | Command               | Domain        | Writes through        |
 | --------------------- | ------------- | --------------------- |
@@ -19,10 +18,16 @@ refuses a person by construction (0040), so a person's act is a command, as
 | `kernel-list`         | `acquisition` | `constituteList`      |
 | `kernel-decide`       | `core`        | `recordDecision`      |
 
-`kernel-relationship` is in `relations` and nowhere else: the customer fact
-is not written from the domain that prospects (`docs/domains.md`, constraint
-6). A test reads `acquisition`'s sources and refuses any reach to
-`declareRelationship`, as one holds the acknowledgement's writers (0034).
+`kernel-list` is in `acquisition` because it reads a sourcing run's result.
+`kernel-relationship` is in `relations`, never in `acquisition`, and a test
+reads `acquisition`'s sources to hold that.
+
+**`relations` is not where constraint 6 is satisfied.** The constraint
+(`docs/domains.md`) says the customer fact is written by the domain that
+observes the payment. Neither `relations` nor `acquisition` observes one.
+`relations` is a neutral place: it keeps the fact out of the domain that
+prospects, and that is all. When a domain that observes the payment exists,
+`customer` moves there.
 
 **Who acts: the person names themselves, and is not verified.** `--by <who>`,
 required, is written as `actorType: human` and `actorId` as given — the core's
@@ -30,8 +35,8 @@ three columns, nothing more (doctrine 5). What is verified is that a person is
 at the keyboard: with no terminal, nothing is written; and the subject's key
 is typed again before anything is. No flag skips either. `--by` is checked
 against no register: the kernel has none, and building one is the identity
-system doctrine 5 rules out. A verified actor is 0040's open question, and
-the first case that needs a person over the API settles it — not this one.
+system doctrine 5 rules out. A verified actor is 0040's open question; the
+first case that needs a person over the API settles it — not this one.
 
 **A subject is named by its key**, found through the unique indexes
 `relations` already keeps — `--person <email>`, `--company <domain>`, or the
@@ -39,11 +44,29 @@ row id — and an experiment by `--experiment <slug>`. A key that names nothing
 is refused: a command never creates what it declares about (as 0039 for a
 person in an event).
 
-**A relationship is declared on a company.** Being a customer is a property
-of a relationship with a company, not of a person alone (`docs/domains.md`,
-constraint 3). `kernel-relationship` takes `--company` only, and
-`declareRelationship` refuses a person subject, so no other caller writes
-one. A person's standing follows from the company they are at.
+**A relationship is declared on a company — an approximation of constraint
+3, not constraint 3.** The constraint says being a customer is a property of
+a person's affiliation to a company, bounded in time. That affiliation does
+not exist: `relations.person.company_id` is one reference, with no dates. The
+company is the closest subject the record has. Three things hold, and only
+the second is this change:
+
+1. the schema still accepts a relationship on a person;
+2. the code refuses one — `kernel-relationship` takes `--company` only, and
+   `declareRelationship` refuses a person subject, whoever calls it;
+3. the real fix is the bounded affiliation, a piece of work of its own, with
+   its migration.
+
+**A declared relationship feeds no protection.** 0041 already decided it:
+protection reads the protected set from the source the instance binds — a
+fact derived from billing — and never a declaration. This decision does not
+reopen that; it builds the first gesture that writes a declaration, so it
+says what that gesture is: an operator's annotation, read by whoever reads
+relationships, and never a protection. Declaring a company a customer stops
+no run, and withdrawing it releases none. What it costs: a customer signed
+but not yet billed is not protected by being declared. A test reads the
+sources of every run that reads protection and refuses any reach to the
+relationship's table, view or functions.
 
 **The moment is said, never assumed.** `--at` is required: an ISO time, or a
 date read as that day at 00:00 UTC. Defaulting it to now would merge the two
@@ -55,18 +78,25 @@ would turn every re-run into a new row.
 - *Stage, relationship.* The same subject, state and moment is one row: the
   key is in the DDL (0036). The command reads the current state first: if it
   is that same declaration, nothing is written and it says so. If the subject
-  already stands in that state from another moment, the command refuses: a
-  second row would only move "since when", and it writes nothing. A different
+  already stands in that state from another moment, the command refuses and
+  writes nothing: a second row would only move "since when". A different
   state is a new row; the history keeps the old one.
 - *List.* `--key` is required and unique in the DDL (0037). An existing key is
   refused before anything is written, naming when, by whom and with how many
   members the list was constituted. `constituteList`'s own answer still holds
   a race.
-- *Decision.* **Not idempotent.** Each run of the command is one decision: a
-  person concluding twice has acted twice. Before writing, the command shows
-  the decisions already on the experiment and asks for its slug to be typed
-  again. A mistaken decision is corrected by another that says so; the table
-  is append-only (0039).
+- *Decision.* **Not idempotent, and exempt from doctrine 4 — on purpose.**
+  Each run of the command is one decision. Doctrine 4 asks a uniqueness key of
+  every write path that *can replay*: a retry, a redelivered callback, a job
+  run twice — a write repeated with nobody choosing to repeat it. A person
+  who runs `kernel-decide` again, at a terminal, and types the experiment's
+  slug again to confirm, is not replaying a write; they are concluding a
+  second time, and two conclusions are two acts. Before writing, the command
+  shows the decisions already recorded on the experiment. A mistaken one is
+  corrected by another that says so; the table is append-only (0039). The
+  exemption covers this command only: a decision written by any path that
+  can retry — a queue, a schedule, the API — needs its key first, and a
+  migration with it.
 
 **A list is made from a run's result or from a hand selection, never from a
 live query.** 0037 froze it and kept the query beside it as a record; that
@@ -94,33 +124,55 @@ computes nothing and reads no metric (0039).
 **A dry run.** Each command takes `--dry-run`: it resolves the subject, shows
 what it would write, and writes nothing — no run either.
 
+## A person who declares the wrong state cannot always correct it
+
+These commands are for people, and people make mistakes. 0036's model —
+append-only, current state is the latest `at` — leaves some of them with no
+way back. Named, with the workaround where there is one:
+
+| Mistake                                         | Relationship                                         | Stage                                                |
+| ----------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- |
+| Wrong state                                     | Declare the right one, at or after the wrong moment. | Same.                                                |
+| A state where there should be none              | Declare `none`.                                      | **No workaround**: a stage has no neutral value.     |
+| Right state, wrong moment                       | **No workaround.**                                   | **No workaround.**                                   |
+| Wrong subject                                   | Declare `none` on it.                                | **No workaround.**                                   |
+
+The workaround for a wrong state costs the moment: the correction is current
+only from a moment at or after the mistake's, so "since when" reads later
+than it was. A right state at the wrong moment cannot be fixed: the command
+refuses the same state again, and the schema would make an earlier moment
+history, never current. A row can be deleted in SQL — the triggers refuse an
+update, not a delete — but that leaves no run and no trace, and no command
+offers it. Erasing the person removes their stages with everything else, and
+is not a correction. Each command says this before it asks for confirmation.
+Fixing it — a withdrawal, or a neutral stage — changes 0036's model, and is
+its own decision.
+
 ## Rules out
 
 - A declaration, a list or a decision written without a terminal.
 - A relationship declared on a person alone.
 - The customer fact written from `acquisition`.
+- Protection read from, or relaxed by, a declared relationship (0041).
 - A moment defaulted to now.
 - A list filtered by consent or protection when it is made; a list
   re-evaluated.
 - A command creating the subject it declares about.
+- A decision written by a path that can retry, without a uniqueness key.
 
 ## Noticed, not fixed here
 
-1. **`core.decision` has no uniqueness key** (doctrine 4). Adding one is a
-   migration, and this change writes none.
-2. **`relations.relationship` still accepts a person in the schema.** The rule
-   above lives in the runtime; a check holding it in the DDL is a migration.
-3. **There is no affiliation.** `relations.person.company_id` is one foreign
-   key with no bounds in time: constraint 3's dated affiliation does not
-   exist, and a person who changes company loses where they were.
-4. **A current state's moment cannot be moved earlier.** The view takes the
-   latest `at`, so the same state declared earlier never becomes current, and
-   a stage has no neutral value to pass through.
-5. **Nothing reads a list.** Enrolment reads a sourcing run (0032);
+1. **`relations.relationship` still accepts a person in the schema**; a check
+   would hold the rule there, and is a migration. The bounded affiliation
+   makes it moot.
+2. **There is no affiliation.** A person who changes company loses where
+   they were (0041 says what that costs).
+3. **Nothing reads a list.** Enrolment reads a sourcing run (0032);
    `core.experiment.targets` names a list by convention, unchecked.
 
 ## Would reverse it
 
 A verified actor identity (0040): `--by` gives way to it. A domain that
-observes the payment: `customer` is written there, and `kernel-relationship`
-declares only what that domain does not see (0036).
+observes the payment: `customer` is written there. A bounded affiliation:
+the relationship moves onto it, and the company-only rule goes. A way to
+withdraw a declaration: the table of mistakes above shrinks.

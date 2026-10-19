@@ -20,11 +20,12 @@ core/
   manifest/           what a domain declares and an instance fills in
   contracts/          what every contract is made of: context, result, error
 domains/
-  relations/          people, companies, lists, interactions
-    db/ contracts/    its tables; the CRM it needs
-  acquisition/                acquisition
-    db/ contracts/    its tables; the sequencer and the target list
+  relations/          people, companies, lists, interactions, messages, relationships
+    db/ contracts/    its tables; the CRM, the people source and enrichment
+  acquisition/        sourcing, drafts, enrolment, sending
+    db/ contracts/    its tables; the sequencer, the target list and inbound
     manifest/         the shapes of its own truths
+api/                  the HTTP API and its OpenAPI document (0040)
 adapters/             one folder per provider, satisfying the domains' contracts
 decisions/            boundary decisions, numbered
 template/             what an instance is generated from
@@ -42,10 +43,14 @@ scripts/              checks that make the doctrine enforceable
 | Binding resolver | written; a contract bound once, per channel (0015), or in sequence by the keys each source finds (0030) |
 | Run recorder | written |
 | Boot | written; resolves every name from the instance (0007) |
-| End to end | in CI, a generated instance migrates, verifies and runs the enrolment path — dry, live and replayed (0019) |
-| Sourcing path | written (0031): company pass by protection and the CRM before any spend — lazy, only as far as the run needs, resuming after what earlier live runs examined (0043) — people, completion in sequence, person pass on the completed identity; tested against a real database with in-memory adapters, not yet run on an instance; `kernel-enrol --from-run` enrols what a sourcing run kept (0032) |
+| End to end | in CI, a generated instance migrates, verifies, and from the packs on plain Node runs the enrolment path — dry, live and replayed (0019) — the inbound pull, the API, the sourcing path dry and live, an enrolment from what it kept, a person's acts (0047), the sending path with a stub hand-over (0050) and an erasure (0049) |
+| Sourcing path | written (0031): company pass by protection and the CRM before any spend — lazy, only as far as the run needs, resuming after what earlier live runs examined (0043) — people, completion in sequence, person pass on the completed identity, every address at the targeted company (0045); run in CI on a generated instance, and on a real instance (0043–0045); `kernel-enrol --from-run` enrols what a sourcing run kept (0032) |
+| A person's acts | commands at a terminal, refused without one (0047): `kernel-stage`, `kernel-relationship`, `kernel-list`, `kernel-decide`, beside `kernel-acknowledge` and `kernel-erase` |
+| HTTP API | written (0040): `kernel-api`, one token per instance; health, a run, listing and proposing drafts, an erasure's plan. It refuses `actorType: human`, so no act reserved to a person is on it |
+| Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not |
+| Sending path | written, with its hand-over stubbed (0050): from a frozen list to drafts, a person's approval, protection read at sending, the message's gate, a touch. No hand-over ships and no command calls it: nothing is sent for real |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
-| Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a sandbox for every contract; an API example to copy |
+| Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
 
 ## Where the work is
@@ -70,6 +75,13 @@ Next:
   column; it has run against a fake of the warehouse's API, not a real one.
 - **enrichment and a social sequencer**, which wait for the choice of tools.
 
+**Sending for real.** The sending path runs end to end with its hand-over
+stubbed (0050); the real hand-over is the next decision. Until it exists,
+nothing the kernel drafts is sent. And a person enrolled in a sequence is
+sent to by the sequencer alone: those sends do not pass the message's gate,
+and nothing records them as touches, so the solicitation cap, which reads
+touches, does not count them (0050, defects 1 and 2).
+
 **Withdrawing someone whose account becomes protected later.** The protected
 set is read whole and fresh before anyone is enrolled (0019). `suppress`
 exists on every sequencer (0014), but nothing yet calls it when an account
@@ -79,41 +91,46 @@ answerable: it records the company each person was enrolled through.
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
 
-`acquisition.lifecycle_stage` is a Postgres enum — `unknown`, `targeted`, `engaged`,
-`opportunity`, `customer`, `lost` — carried by `acquisition.person_state` and
-`acquisition.company_state`. Two neighbouring fields were given the opposite
-treatment, and the reasoning is written beside them. `core.experiment.type`
-is text because "a Postgres enum cannot be extended by a domain without that
-domain migrating a type it does not own". `relations.touch.channel` is text
-because an acquisition domain and a marketing domain "do not share a closed
-channel list". The vocabulary a domain declares in its `domain.yaml` —
-`channels`, `experimentTypes`, `eventTypes` — exists for exactly this.
-`lifecycle_stage` does not use it.
+`acquisition.lifecycle_stage` is a Postgres enum — `targeted`, `engaged`,
+`opportunity` — carried by `acquisition.person_state` and
+`acquisition.company_state`, one row per declaration (0036). `customer` and
+`lost` left it for `relations.relationship`, where `lost` is written
+`former_customer`, and `unknown` left it too (0036). Two neighbouring fields
+were given the opposite treatment, and the reasoning is written beside them.
+`core.experiment.type` is text because "a Postgres enum cannot be extended by
+a domain without that domain migrating a type it does not own".
+`relations.touch.channel` is text because an acquisition domain and a
+marketing domain "do not share a closed channel list". The vocabulary a domain
+declares in its `domain.yaml` — `channels`, `experimentTypes`, `eventTypes` —
+exists for exactly this. `lifecycle_stage` does not use it.
 
 It is the same case. A lifecycle stage is not a structural fact of the engine;
 it is a company's vocabulary for its own funnel. A product-led motion has
-"signed up", "activated", "expanded"; a sales-led one has "SQL", "SAL". The six
+"signed up", "activated", "expanded"; a sales-led one has "SQL", "SAL". The
 values in the enum are one company's funnel, cut into a Postgres type no other
 domain owns. Compare `acquisition.draft_state`, which is an enum and should stay one:
 it is the engine's own state machine, and the engine owns it.
 
-The fix is about ten lines today: text, a vocabulary declared in `domain.yaml`
-beside `channels`, checked against the union of the enabled domains. Note what
-"like `channels`" means today: the manifest validator reads the declaration,
-and the enrolment path only routes to declared channels (0015), but nothing
-writes `relations.touch` or these tables yet, so no write checks a stored value.
-The check lands with the first such write, for both. Once an instance has rows in these
-tables, the same change is a data migration on a Postgres type. The build and
-the publication make that first instance close, so this lands before it does.
-Adding a vocabulary key to `domain.yaml` changes how a domain contributes its
-vocabulary, which is a decision record when the change is made.
+The fix proposed is text, a vocabulary declared in `domain.yaml` beside
+`channels`, checked against the union of the enabled domains. It was put at
+about ten lines while nothing wrote these tables. `kernel-stage` writes them
+now (0036, 0047), so on an instance that has declared a stage the same change
+is a data migration on a Postgres type, and a value cannot be dropped from a
+Postgres enum (0044). Note what "like `channels`" means today: the manifest
+validator reads the declaration; the enrolment path only routes to declared
+channels (0015); `kernel-inbound` writes a touch only on a declared channel
+(0039); the sending path records its template's channel without checking it
+against the declared ones (0050). Adding a vocabulary key to `domain.yaml`
+changes how a domain contributes its vocabulary, which is a decision record
+when the change is made.
 
 **Publication.** The packs are built, checked and run as an instance in CI
 (0008). Putting them on the registry needs the `@werunfoundry` scope to exist
 there, which is an account, not code.
 
-**A first instance.** Generated from `template/`, in its own repository, with
-real adapters. It decides what is built next.
+**The first instance runs.** Generated from `template/`, in its own
+repository, with real adapters, it has run against real data: 0043 to 0045
+report its runs. It decides what is built next.
 
 ### Not built yet, and recorded where it was decided
 
@@ -209,8 +226,8 @@ whatever writes it, reads it, or connects it to the rest.
 
 - **Managing a pool of senders** — warm-up, rotation, health — belongs to the
   provider, not to the kernel.
-- **An MCP server or an HTTP API** waits until there are operations worth a
-  conversation.
+- **An MCP server** waits: it comes as a thin adapter over the HTTP API, so
+  that it inherits the API's access rules rather than imposing its own (0040).
 - **Reading runs back** — listing, filtering, dashboards — waits until there
   are enough runs to read.
 - **Retention** of what names a person outside the database — backups,

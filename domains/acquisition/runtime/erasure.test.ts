@@ -299,7 +299,15 @@ describe("the reference case — what was done by hand (0049)", { skip: base ? f
     assert.deepEqual(after.find((r) => r.id === kept)!.said, [{ key: { kind: "email" }, status: "accepts everything" }], "the provider's status stays, the address does not");
     assert.equal(new Set(after.map((r) => r.subject)).size, 5, "a value derived from nothing is not shared by two rows");
     const hers = after.filter((r) => [kept, excluded, simulated].includes(r.id));
-    assert.ok(!/ada|crm-0001/i.test(JSON.stringify(hers)), JSON.stringify(hers));
+    // Nothing in her rows names her: no key of hers, in any case, nor the CRM's
+    // id for her. Checked value by value, not on the JSON, and not on the
+    // random UUIDs — ids, and the subjects checked above as derived from
+    // nothing — which can spell "ada", or "ada-1" across a hyphen.
+    const naming = [ada.email.value, ada.id.value, ada.handle.value, "crm-0001"];
+    const strings = (v: unknown): string[] => (typeof v === "string" ? [v] : v && typeof v === "object" ? Object.values(v).flatMap(strings) : []);
+    const random = /^(erased:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const left = strings(hers).filter((s) => !random.test(s) && naming.some((k) => s.toLowerCase().includes(k.toLowerCase())));
+    assert.deepEqual(left, [], JSON.stringify(hers));
     assert.ok(!after.some((r) => before.some((b) => b.subject === r.subject && b.id !== r.id)));
     assert.deepEqual(after.filter((r) => ![kept, excluded, simulated].includes(r.id)), others, "nobody else's row changed");
 

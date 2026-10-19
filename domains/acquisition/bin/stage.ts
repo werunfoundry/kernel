@@ -116,7 +116,7 @@ async function main(): Promise<number> {
       return 1;
     }
     const r = await declareStage(connection.db, { subject, stage: stage as Stage, at: moment.at, ...(why ? { reason: why } : {}), by });
-    console.log(`run: ${r.runId} — ${r.declared ? `declared: ${what}` : "the same declaration was written meanwhile; nothing changed"}`);
+    console.log(`run: ${r.runId} — ${r.declared ? `declared: ${what}` : "the same declaration is already on record, in the history or written meanwhile; nothing changed"}`);
     return 0;
   } finally {
     await connection.end().catch(() => {});

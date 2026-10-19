@@ -1,5 +1,9 @@
 # 0047 — A person's declarations, lists and decisions are commands at a terminal
 
+> Superseded in part by [0048](0048-a-runs-trigger-is-the-channel-its-command-says.md):
+> an erasure opened its run as `manual`, not `cli` as *Noticed* 5 says, and
+> every command now passes `cli` to its verb.
+
 Completes [0036](0036-a-state-is-declared-and-kept.md),
 [0037](0037-a-list-is-frozen-and-is-not-a-permission.md) and
 [0039](0039-events-are-pulled-and-kept-decisions-are-a-persons.md), whose

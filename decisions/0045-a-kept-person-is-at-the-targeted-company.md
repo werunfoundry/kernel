@@ -35,9 +35,12 @@ people.
 ## Not done here
 
 - **The credit is already spent.** The mismatch is only known once
-  completion has answered. Detecting it before paying needs the people
-  source to say each person's *current* company — a field the contract does
-  not carry today — and that is a contract change of its own.
+  completion has answered, and today nothing can tell it earlier: the
+  people source returns, for each person, an id, a handle, a name and a job
+  title — no company and no domain — and its contract carries no such
+  field. Detecting the mismatch before paying means extending that
+  contract with the person's current company, which is a decision of its
+  own.
 - **Aliases.** A company with a second domain the target list does not
   carry will see people on that second domain excluded. That is the safe
   direction: excluded, never contacted under the wrong company.

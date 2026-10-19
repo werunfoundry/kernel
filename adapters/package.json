@@ -18,11 +18,11 @@
   },
   "peerDependencies": {
     "@werunfoundry/core": "workspace:*",
-    "@werunfoundry/gtm": "workspace:*",
+    "@werunfoundry/acquisition": "workspace:*",
     "@werunfoundry/relations": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@werunfoundry/gtm": {
+    "@werunfoundry/acquisition": {
       "optional": true
     },
     "@werunfoundry/relations": {
@@ -31,7 +31,7 @@
   },
   "devDependencies": {
     "@werunfoundry/core": "workspace:*",
-    "@werunfoundry/gtm": "workspace:*",
+    "@werunfoundry/acquisition": "workspace:*",
     "@werunfoundry/relations": "workspace:*"
   },
   "scripts": {

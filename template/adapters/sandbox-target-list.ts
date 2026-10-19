@@ -5,7 +5,7 @@
  */
 
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
-import type { TargetList } from "@werunfoundry/gtm/contracts/target-list";
+import type { TargetList } from "@werunfoundry/acquisition/contracts/target-list";
 
 import { loadData } from "./sandbox-store.ts";
 

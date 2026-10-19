@@ -96,7 +96,7 @@ export default ({ options }) => ({
 
 /**
  * An instance on disk; `driver: false` leaves out pg and drizzle-orm. `truths`
- * are files under `truths/`; giving any enables `gtm`, which declares a kind.
+ * are files under `truths/`; giving any enables `acquisition`, which declares a kind.
  */
 function instance(
   adapter: string,
@@ -116,8 +116,8 @@ function instance(
     symlinkSync(to, at, "dir");
   };
   link("@werunfoundry/relations", join(kernel, "domains/relations"));
-  link("@werunfoundry/gtm", join(kernel, "domains/gtm"));
-  const domains = Object.keys(truths).length ? "[relations, gtm]" : "[relations]";
+  link("@werunfoundry/acquisition", join(kernel, "domains/acquisition"));
+  const domains = Object.keys(truths).length ? "[relations, acquisition]" : "[relations]";
   if (truthsDir === "folder") mkdirSync(join(root, "truths"));
   if (truthsDir === "file") writeFileSync(join(root, "truths"), "not a folder\n");
   for (const [name, body] of Object.entries(truths)) writeFileSync(join(root, "truths", name), body);

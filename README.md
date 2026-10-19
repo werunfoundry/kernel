@@ -22,7 +22,7 @@ core/
 domains/
   relations/          people, companies, lists, interactions
     db/ contracts/    its tables; the CRM it needs
-  gtm/                acquisition
+  acquisition/                acquisition
     db/ contracts/    its tables; the sequencer and the target list
     manifest/         the shapes of its own truths
 adapters/             one folder per provider, satisfying the domains' contracts
@@ -79,9 +79,9 @@ answerable: it records the company each person was enrolled through.
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
 
-`gtm.lifecycle_stage` is a Postgres enum — `unknown`, `targeted`, `engaged`,
-`opportunity`, `customer`, `lost` — carried by `gtm.person_state` and
-`gtm.company_state`. Two neighbouring fields were given the opposite
+`acquisition.lifecycle_stage` is a Postgres enum — `unknown`, `targeted`, `engaged`,
+`opportunity`, `customer`, `lost` — carried by `acquisition.person_state` and
+`acquisition.company_state`. Two neighbouring fields were given the opposite
 treatment, and the reasoning is written beside them. `core.experiment.type`
 is text because "a Postgres enum cannot be extended by a domain without that
 domain migrating a type it does not own". `relations.touch.channel` is text
@@ -94,7 +94,7 @@ It is the same case. A lifecycle stage is not a structural fact of the engine;
 it is a company's vocabulary for its own funnel. A product-led motion has
 "signed up", "activated", "expanded"; a sales-led one has "SQL", "SAL". The six
 values in the enum are one company's funnel, cut into a Postgres type no other
-domain owns. Compare `gtm.draft_state`, which is an enum and should stay one:
+domain owns. Compare `acquisition.draft_state`, which is an enum and should stay one:
 it is the engine's own state machine, and the engine owns it.
 
 The fix is about ten lines today: text, a vocabulary declared in `domain.yaml`
@@ -151,7 +151,7 @@ whatever writes it, reads it, or connects it to the rest.
   `autonomy_streak` only, on each human review (0027).
 - *Read by:* `laneOf` (lane and streak), the draft's gate (`status` must be
   `running` to queue) and the message's (`lane` and `status`, for a lane's
-  approval — 0038). `gtm.template`, `gtm.draft`, `relations.message` and
+  approval — 0038). `acquisition.template`, `acquisition.draft`, `relations.message` and
   `relations.touch` reference it.
 - *Not wired:* a writer that creates an experiment and checks its `type`
   against the declared types; the status transitions, enforced in the schema
@@ -179,11 +179,11 @@ whatever writes it, reads it, or connects it to the rest.
   event id, with when it happened and the run that read it. Whether an event
   was handled is a run naming it (`run.event_id`).
 - *Written by:* `recordEvent` (`core/runtime/event.ts`), which refuses an
-  undeclared type, called by `kernel-inbound`: each source bound to `gtm`'s
-  `Inbound` is read after its cursor (`gtm.inbound_cursor`, locked for the
+  undeclared type, called by `kernel-inbound`: each source bound to `acquisition`'s
+  `Inbound` is read after its cursor (`acquisition.inbound_cursor`, locked for the
   read: one writer per source), and each event is stored once, with an
   inbound `touch` when it names a recorded person and a declared channel,
-  and the opt-out applied for `gtm.unsubscribe`.
+  and the opt-out applied for `acquisition.unsubscribe`.
 - *Read by:* nobody directly. The inbound touch written beside it is read
   by the reactive lane, in the draft's gate and the message's: a touch from
   the person, on the channel, inside the caller's window, licenses a reply
@@ -193,7 +193,7 @@ whatever writes it, reads it, or connects it to the rest.
 
 **Processes**
 - *There:* `run.process_key`, written as free text — `instance.verify`,
-  `gtm.enrol.<sequence>`; `run.trigger`, an enum (`webhook`, `cron`, `cli`,
+  `acquisition.enrol.<sequence>`; `run.trigger`, an enum (`webhook`, `cron`, `cli`,
   `manual`) of which only `cli` is ever written.
 - *Not there at all:* a process. `core.run`'s comment says a process key
   matches "a process declared in the manifest", and the manifest has no such
@@ -220,7 +220,7 @@ whatever writes it, reads it, or connects it to the rest.
 - What shape `Inbound` takes when one instance reads events from several
   sources at once — one binding per source, or one per event type.
 - Where a diagnostic metric is declared. `experimentMetrics` now says only
-  what judges an experiment (`channel_test` dropped `gtm.replied` for that
+  what judges an experiment (`channel_test` dropped `acquisition.replied` for that
   reason), and a metric worth reading beside the judgement has nowhere to be
   named.
 

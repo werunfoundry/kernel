@@ -3,7 +3,7 @@
 > **This is a projection, not a plan, and not an instruction.**
 >
 > Only two domains exist today: `relations`, and the addressing domain
-> (`domains/gtm`). **Everything else in this file is hypothetical.** It
+> (`domains/acquisition`). **Everything else in this file is hypothetical.** It
 > describes what the split *might* look like if every surface of a company ran
 > on the kernel, in order to test the rule of decision
 > [0035](../decisions/0035-what-a-domain-is.md) against cases it was not
@@ -80,7 +80,7 @@ and nothing else that is recorded.
 | Domain | Verbs | Objects | Depends on |
 |---|---|---|---|
 | `relations` | identify, merge, consent, record a contact | person, company, list, list_member, touch, message, signal, consent | — |
-| the addressing domain (today `gtm`; name not settled) | select, qualify, draft, send, observe the reply | draft, enrolment, sourcing_result, person_state | relations |
+| `acquisition` (formerly `gtm` — 0046) | select, qualify, draft, send, observe the reply | draft, enrolment, sourcing_result, person_state | relations |
 | `publishing` | publish, distribute, rank, measure reach | page, article, keyword, placement, creative, ranking | — |
 | `support` | receive, qualify, resolve, escalate | ticket, resolution, sla | relations |
 | `product` | collect, arbitrate, ship | request, feedback, release | relations |
@@ -173,7 +173,8 @@ the boundary will blur at the first incident caused by a release.
 
 ## On naming
 
-The addressing domain's name is not settled. Its scope covers prospecting,
-recruiting, the newsletter and the product announcement, and it changed
-three times in two days as tests went on. A domain whose boundary is still
-moving is not renamed.
+The addressing domain is `acquisition` since
+[0046](../decisions/0046-the-addressing-domain-is-acquisition.md), formerly
+`gtm`. Its scope covers prospecting, recruiting, the newsletter and the
+product announcement: sourcing, qualifying, selecting, drafting, enrolling,
+and measuring what comes back.

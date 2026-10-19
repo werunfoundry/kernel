@@ -21,8 +21,8 @@ import { run } from "@werunfoundry/core/db/schema";
 import type { DomainManifest } from "@werunfoundry/core/manifest/types";
 import { planErasure } from "@werunfoundry/core/runtime/erase";
 import type { Database } from "@werunfoundry/core/runtime/run";
-import { draft, draftState } from "@werunfoundry/gtm/db/schema";
-import { propose } from "@werunfoundry/gtm/runtime/draft";
+import { draft, draftState } from "@werunfoundry/acquisition/db/schema";
+import { propose } from "@werunfoundry/acquisition/runtime/draft";
 
 export interface ApiDeps {
   db: Database;

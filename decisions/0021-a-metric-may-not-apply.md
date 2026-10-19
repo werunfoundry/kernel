@@ -1,5 +1,8 @@
 # 0021 — A metric reading may be "not applicable"
 
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+
 Supersedes in part [0018](0018-measurement-reads-little.md): the shape of
 what `MetricSource.read` returns.
 

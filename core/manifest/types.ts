@@ -30,6 +30,14 @@ export interface DomainManifest {
   schema: string;
 
   /**
+   * The names this domain was known by before (decision 0046). Migrations
+   * applied under a former name are recognised under this one, not replayed.
+   * It renames nothing else: the domain's own migration renames its schema,
+   * and data keeps the names it was written with.
+   */
+  formerly?: string[];
+
+  /**
    * Domains this one may reference. A foreign key is legal only into `core`
    * or into a name listed here (doctrine 2), and that is checked.
    */
@@ -57,7 +65,7 @@ export interface DomainManifest {
 
   /**
    * The numbers this domain defines, namespaced like its events —
-   * `gtm.replied` (decision 0018). A metric source says which it can read;
+   * `acquisition.replied` (decision 0018). A metric source says which it can read;
    * nothing here stores them.
    */
   metrics?: MetricDeclaration[];

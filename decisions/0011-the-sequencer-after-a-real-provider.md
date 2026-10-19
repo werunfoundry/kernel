@@ -1,6 +1,9 @@
 # 0011 — The sequencer, after a real provider
 
 > Superseded in part by [0014](0014-one-sequencer-contract-every-channel.md): what `suppress` takes, and what `capacity` is.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 > Completed by [0012](0012-one-provider-workspace-per-instance.md): one provider workspace per instance.
 

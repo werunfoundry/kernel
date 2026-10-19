@@ -1,0 +1,75 @@
+name: acquisition
+version: 0.0.0
+description: Acquisition — producing outbound and handling what comes back.
+schema: acquisition
+# The names this domain was known by (decision 0046): migrations applied
+# under them are recognised, not replayed.
+formerly: [gtm]
+dependsOn:
+  - relations
+# Contributed to the shared vocabulary. A channel may only be used by a touch
+# once a enabled domain declares it here.
+channels:
+  - email
+  - social_message
+  - social_invite
+  - social_comment
+  - profile_visit
+experimentTypes:
+  - campaign
+  - audience_test
+  - message_test
+  - channel_test
+  - signal_play
+  - offer_test
+# Kinds of truth this domain understands. The shapes live in
+# manifest/types.ts; without the declaration here, no instance may hold one.
+truthKinds:
+  - icp
+  - persona
+eventTypes:
+  - acquisition.signup
+  - acquisition.reply
+  - acquisition.bounce
+  - acquisition.unsubscribe
+  - acquisition.meeting_booked
+# The numbers this domain defines, and what each experiment type is judged on
+# (decision 0018). A metric source says which it can read; none is stored.
+metrics:
+  - key: acquisition.enrolled
+    unit: people
+  - key: acquisition.replied
+    unit: people
+  # Email only: elsewhere they are not applicable, never zero.
+  - key: acquisition.bounced
+    unit: people
+    channels: [email]
+  - key: acquisition.unsubscribed
+    unit: people
+    channels: [email]
+  - key: acquisition.meetings_booked
+    unit: meetings
+#
+# acquisition.bounced and acquisition.unsubscribed are guardrails, in every type: no type is
+# tied to a channel, so any of them can carry email, and an experiment can
+# win on replies while it damages deliverability. offer_test reads
+# acquisition.replied too, to tell "nobody bit" from "people replied and did not
+# book". channel_test is judged on meetings booked per person enrolled — an
+# outcome that means the same on every channel — and not on replies, whose
+# rate does not compare across channels at equal volume; replies stay
+# readable per channel, as a diagnostic.
+experimentMetrics:
+  campaign: [acquisition.enrolled, acquisition.replied, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
+  audience_test: [acquisition.enrolled, acquisition.replied, acquisition.bounced, acquisition.unsubscribed]
+  message_test: [acquisition.enrolled, acquisition.replied, acquisition.bounced, acquisition.unsubscribed]
+  channel_test: [acquisition.enrolled, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
+  signal_play: [acquisition.enrolled, acquisition.replied, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
+  offer_test: [acquisition.enrolled, acquisition.replied, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
+# What erasing a person does here (decision 0040). A row that names a person
+# by keys rather than by id — enrolment_skip, and sourcing_result's excluded
+# rows — is not reached by an erasure by id: matching on keys is not built.
+erasure:
+  - { table: draft, column: person_id, do: delete }
+  - { table: person_state, column: person_id, do: delete }
+  - { table: enrolment, column: person_id, do: delete }
+  - { table: sourcing_result, column: person_id, do: delete }

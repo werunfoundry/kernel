@@ -1,5 +1,8 @@
 # 0023 — Adapters leave the domains
 
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+
 Supersedes in part [0003](0003-contracts-not-ports.md): where an adapter
 lives. Amends doctrine 6.
 

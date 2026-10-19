@@ -4,13 +4,13 @@
  */
 
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
-import type { Inbound } from "@werunfoundry/gtm/contracts/inbound";
+import type { Inbound } from "@werunfoundry/acquisition/contracts/inbound";
 
 import { loadData } from "./sandbox-store.ts";
 
 const factory: AdapterFactory<Inbound> = ({ options }) => ({
   provider: "sandbox-inbound",
-  eventTypes: ["gtm.reply", "gtm.meeting_booked"],
+  eventTypes: ["acquisition.reply", "acquisition.meeting_booked"],
 
   async probe(): Promise<CallResult<void>> {
     const data = loadData(options.dataFile);

@@ -1,5 +1,8 @@
 # 0007 — A name in the manifest resolves from the instance
 
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+
 ## Decided
 
 Every name an instance manifest holds is resolved the way the instance would

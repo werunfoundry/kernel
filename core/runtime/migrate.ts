@@ -66,6 +66,31 @@ async function recorded(db: Database, layer: string): Promise<number> {
   return Number(counted[0]?.n ?? 0);
 }
 
+/**
+ * A renamed layer's record of what was applied (decision 0046): when the
+ * bookkeeping table exists under one of the layer's former names and not
+ * under its own, it is renamed, so the migrator recognises what ran instead
+ * of replaying it. Refuses when records exist under the current name and a
+ * former one, or under two former names: which one is true cannot be told.
+ * Returns the former name it carried, if any.
+ */
+export async function carryRecord(db: Database, layer: string, formerly: readonly string[]): Promise<string | undefined> {
+  const rowsOf = (result: unknown) => (Array.isArray(result) ? result : (result as { rows: unknown[] }).rows) as Record<string, unknown>[];
+  const exists = async (name: string) =>
+    rowsOf(await db.execute(sql`select to_regclass(${`drizzle.__migrations_${name}`}) is not null as present`))[0]?.present === true;
+  const found = [];
+  for (const former of formerly) if (await exists(former)) found.push(former);
+  if (found.length === 0) return undefined;
+  if (await exists(layer)) {
+    throw new Error(`${layer}: migrations are recorded both as "${layer}" and as former "${found.join('", "')}"; which is true cannot be told, so nothing was applied to it`);
+  }
+  if (found.length > 1) {
+    throw new Error(`${layer}: migrations are recorded under two former names, "${found.join('" and "')}"; which is true cannot be told, so nothing was applied to it`);
+  }
+  await db.execute(sql`alter table ${sql.identifier("drizzle")}.${sql.identifier(`__migrations_${found[0]}`)} rename to ${sql.identifier(`__migrations_${layer}`)}`);
+  return found[0];
+}
+
 /** Returns the exit code. */
 export async function migrate(options: MigrateOptions): Promise<number> {
   const say = options.say ?? ((line: string) => console.log(line));
@@ -130,6 +155,10 @@ export async function migrate(options: MigrateOptions): Promise<number> {
       const folder = dirname(dirname(fileURLToPath(journal)));
       // One bookkeeping table per layer: a domain added later starts its own
       // count, and dropping a domain's schema leaves the others' untouched.
+      // A renamed domain's count is carried first, from its former name.
+      const formerly = domains.find((d) => d.name === layer)?.formerly ?? [];
+      const carried = await carryRecord(connection.db, layer, formerly);
+      if (carried) say(`  ${layer}: recognised the migrations recorded under its former name "${carried}"`);
       const before = await recorded(connection.db, layer);
       await migrator(connection.db, { migrationsFolder: folder, migrationsTable: `__migrations_${layer}`, migrationsSchema: "drizzle" });
       const applied = (await recorded(connection.db, layer)) - before;

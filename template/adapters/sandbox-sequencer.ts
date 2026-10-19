@@ -6,7 +6,7 @@
 
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
-import type { EnrolmentStatus, Sequencer } from "@werunfoundry/gtm/contracts/sequencer";
+import type { EnrolmentStatus, Sequencer } from "@werunfoundry/acquisition/contracts/sequencer";
 
 import { loadState, saveState, stateFile } from "./sandbox-store.ts";
 

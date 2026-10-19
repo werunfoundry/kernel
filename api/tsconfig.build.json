@@ -14,7 +14,7 @@
   "references": [
     { "path": "../core/tsconfig.build.json" },
     { "path": "../domains/relations/tsconfig.build.json" },
-    { "path": "../domains/gtm/tsconfig.build.json" }
+    { "path": "../domains/acquisition/tsconfig.build.json" }
   ],
   "include": ["**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]

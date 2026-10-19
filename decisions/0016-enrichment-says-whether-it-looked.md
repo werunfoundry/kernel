@@ -3,6 +3,9 @@
 > Superseded in part by [0022](0022-a-completion-carries-what-was-attested.md): a completion carries only what the provider attests, and is accepted only on an immutable key.
 >
 > Superseded in part by [0030](0030-sources-in-sequence-by-what-they-find.md): finding people (`people_source`) and completing an identity (`enrichment`) are two contracts.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 ## Decided
 

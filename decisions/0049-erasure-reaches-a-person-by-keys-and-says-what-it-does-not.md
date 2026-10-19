@@ -11,11 +11,15 @@ and the keys inside `said`); the run's fingerprint of those keys
 pseudonymised data, not anonymous; and, outside the database, the output of
 the commands that ran.
 
-`kernel-erase` as 0040 built it reached the first, and reached the second
-wrongly: it **deleted** every `sourcing_result` row that names the person by
-id — the history of what a run did — and did not reach the rows that name
-them only by keys (excluded people, dry runs), nor `enrolment_skip`, which
-holds keys and a fingerprint the same way.
+**0040 had a defect, not only a gap.** `kernel-erase` reached the first
+place, and reached the second the wrong way: acquisition declared
+`sourcing_result` as `delete`, so erasing a person **deleted the history of
+what each run did** — the run's outcome for that person, its cost, the
+company it targeted — instead of anonymising it. That is the opposite of
+what the rule requires. It was not blocked by the `restrict` key, because it
+deleted those rows before the person's. It also did not reach the rows that
+name a person only by keys (people excluded, dry runs), nor `enrolment_skip`,
+which keeps keys and a fingerprint the same way.
 
 ## Decided
 
@@ -23,7 +27,9 @@ holds keys and a fingerprint the same way.
 what it did, erasure empties who it was about and keeps the rest: the run,
 the company targeted, the outcome, the timestamps, what the provider said of
 each key. The outcome is never changed. The foreign key to the person is set
-to null; the row is not deleted.
+to null; the row is not deleted. Rows that exist only to say something
+about the person — a touch, a message, a state, a draft — are still deleted,
+as 0040 declared.
 
 **Each domain declares it, in its `domain.yaml`, as 0040 set.** The
 vocabulary of `anonymise` grows by three answers, and a rule may reach rows
@@ -37,7 +43,7 @@ by keys as well as by id:
   columns: [person_id, person]            # emptied, as in 0040
   strip: { said: [key.value] }            # removed from each element of a JSON array; the status stays
   random: [subject]                       # replaced by a value derived from nothing
-  text: { detail: "erased (0049); the outcome stands" }
+  text: { detail: "erased (decision 0049); the outcome stands" }
 ```
 
 - **`random`** writes `erased:` and a fresh random UUID. Not a hash of the
@@ -46,7 +52,12 @@ by keys as well as by id:
   column's `not null` and the run's uniqueness key.
 - **`text`** writes a fixed sentence. `detail` is free text written from a
   provider's or a CRM's answer — `known to the CRM as <its id for the
-  person>` is one — and the kernel cannot prove a given one clean.
+  person>` is one — and the kernel cannot prove a given one clean. So on
+  every row anonymised, not only where an id is known to be quoted:
+  erasing too much costs a diagnostic on a row nobody reads again.
+- **`enrolment_skip` is declared the same way**, reached by keys alone: it
+  has no column naming the person by id. Its owner's logic is unchanged;
+  only its answer to erasure is declared.
 - **Reaching by keys is the core's, declared by the domains.** Before
   anything changes, the core gathers the person's keys: from the subject's
   own row, whose rule names the columns that hold them (`keyColumns: {
@@ -72,27 +83,68 @@ plan, and every erasure, end with what it did not reach:
    retention is the instance's.
 3. **Working copies** — dumps, exports, copies of the database, target
    lists in the instance.
-4. **In the database, not reached by this decision**: `core.event` payloads,
-   which name the person by keys and are append-only — rewriting one needs a
-   migration that lifts the trigger for erasure alone, and deleting one
-   loses an observation; and `core.run.error`, free text that may quote a
+4. **In the database, not reached by this decision**: `core.event`
+   payloads (below), and `core.run.error`, free text that may quote a
    provider's answer.
+5. **The opt-out** (below).
 
 The kernel owns none of 1–3 and cannot see them: they live where the
 instance runs (doctrine 8). A command that claimed to cover them would be
 worse than one that says it does not — protection that is not there,
 looking as if it were (doctrine 6).
 
+## The opt-out does not survive an erasure
+
+The opt-out is a column of the person's row (`relations.person.opted_out_at`,
+global by 0041). Erasing deletes that row — or, when a kept row still points
+at it, empties every key it is matched by — so nothing can recognise the
+person again. **A person who asked to be erased and not contacted can have
+one of the two today, not both**: a later sourcing run that finds them again
+records a new person, who has not opted out. The CRM's exclusion (0031)
+holds them only if the instance's CRM still knows them, and that is the
+instance's, not the kernel's.
+
+This is a hole, named here, not closed. The command says it, before the
+confirmation and on the plan. Closing it is a **suppression entry kept under
+a legal basis** — `keep` in 0040's vocabulary — and that entry must be
+derivable from the address, or it recognises nobody. It is the one place
+where derivability is the purpose, and it is decided on its own: what it
+holds, for how long, and on which basis.
+
+## `core.event`: not reached, and the cheaper way out
+
+The payload is the inbound event as the source gave it (`{ ...e }` in
+`acquisition/runtime/inbound.ts`): its id, type and time, `attribution`,
+`detail`, and `subject` — the person's **keys**, embedded. The contract
+carries no body. Nothing reads `payload.subject` back.
+
+A foreign key from the event to the person cannot exist: the core references
+no domain (doctrine 2). But the reference already exists the other way.
+Beside the event, inbound writes a `relations.touch` that names the person by
+`person_id` and is unique on the same `(provider, provider_event_id)` as the
+event — and erasure already deletes it. So **an event that carried no keys
+would be reached by erasure without being rewritten**: who it was about lives
+in the touch, and is erased there.
+
+What that leaves, for the decision to come: an event about someone not
+recorded, or on a channel no domain declares, has no touch, and its keys are
+the only link; and the events already written keep theirs. The first is a
+choice of what inbound keeps; the second is a one-time rewrite of past rows,
+with the trigger lifted once and only there, as relations lifted the
+touch trigger once for one backfill (its migration 0003). Both
+are smaller than lifting append-only for every erasure, and smaller than
+deleting observations. Neither is this decision.
+
 ## Rules out
 
 - Deleting a history row to erase who it was about; changing its outcome.
-- A replacement for a key or a fingerprint that is derived from it.
-- An erasure silent about what it leaves.
+- A replacement for a key or a fingerprint, in a history row, that is
+  derived from it.
+- An erasure silent about what it leaves, the opt-out included.
 
 ## Would reverse it
 
-A suppression requirement — recognising an erased person so that a later
-run does not contact them again. It needs a derivable key, which is exactly
-what this rules out, and is decided on its own. Until then, an erased person
-found again by a later run is a new person: nothing remains to recognise
-them, by construction.
+A history row that cannot be read without knowing who it was about — then
+it is a row about the person, and is deleted. The suppression entry does not
+reverse it: it is a row of its own, kept under a basis, not a history row
+made derivable again.

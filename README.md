@@ -128,8 +128,9 @@ when the change is made.
 (0008). Putting them on the registry needs the `@werunfoundry` scope to exist
 there, which is an account, not code.
 
-**A first instance.** Generated from `template/`, in its own repository, with
-real adapters. It decides what is built next.
+**The first instance runs.** Generated from `template/`, in its own
+repository, with real adapters, it has run against real data: 0043 to 0045
+report its runs. It decides what is built next.
 
 ### Not built yet, and recorded where it was decided
 

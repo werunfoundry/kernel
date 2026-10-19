@@ -50,6 +50,31 @@ people.
 - **`off_target` cannot be dropped from the enum** once migrated (0044's
   note applies: PostgreSQL does not drop an enum value).
 
+## What the 4 people showed about forgetting someone
+
+The 4 people kept before this decision were deleted, by hand: they were
+identified under a premise this decision rules invalid, and never contacted.
+Doing it showed that **a person's identifying data lives in two places**:
+`relations.person`, and every `gtm.sourcing_result` row that kept or
+excluded them, which holds their keys (address, network id and handle) and
+the address inside what the provider said. `relations.person` is not their
+only owner.
+
+`kernel-erase` (0040) exists, and does not do what was needed here. It
+deletes the sourcing rows that reference the person, where the record of
+what each run did should stay and only the identity should go. And it does
+not reach the rows that name a person by keys alone, such as a skip or an
+excluded result. So there is today no operation that forgets a person while
+keeping the record. It was rebuilt by hand, in one transaction: the
+reference set to null, the key values and the address removed from the 4
+sourcing rows (outcome, detail, cost, run and the provider's status kept),
+then the 4 people deleted.
+
+**The next time will not be an internal correction, but a real person's
+request to be erased.** Answering it is a decision of its own, to be taken
+after the single door to people search, enrichment and the sequencer, on the
+form that door gives the protected actions.
+
 ## Rules out
 
 - A kept person whose address is at another company than the one targeted.

@@ -50,7 +50,7 @@ after(() => {
 
 describe("decision 0025 — the engine is consumed as published, never as a folder", () => {
   it("accepts a version and a packed tarball", () => {
-    accepts(instance({ "package.json": pkg({ dependencies: { "@werunfoundry/core": "^0.1.0", "@werunfoundry/gtm": "file:../packs/werunfoundry-gtm-0.1.0.tgz" } }) }));
+    accepts(instance({ "package.json": pkg({ dependencies: { "@werunfoundry/core": "^0.1.0", "@werunfoundry/acquisition": "file:../packs/werunfoundry-acquisition-0.1.0.tgz" } }) }));
   });
 
   it("refuses a folder by file:", () => {
@@ -64,7 +64,7 @@ describe("decision 0025 — the engine is consumed as published, never as a fold
   });
 
   it("refuses a folder in the overrides, where it replaces a version without saying so", () => {
-    refuses(instance({ "package.json": pkg({ pnpm: { overrides: { "@werunfoundry/gtm": "file:../kernel/domains/gtm" } } }) }), "gtm");
+    refuses(instance({ "package.json": pkg({ pnpm: { overrides: { "@werunfoundry/acquisition": "file:../kernel/domains/acquisition" } } }) }), "acquisition");
     refuses(instance({ "package.json": pkg({}), "pnpm-workspace.yaml": 'overrides:\n  "@werunfoundry/relations": "file:../kernel/domains/relations"\n' }), "relations");
   });
 

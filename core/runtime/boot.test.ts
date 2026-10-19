@@ -27,7 +27,7 @@ after(() => {
  * An instance on disk. `domains` are the kernel's own packages, linked the way
  * pnpm links them; `files` is everything else, paths relative to the root.
  */
-function instance(files: Record<string, string>, domains: string[] = ["relations", "gtm"]): string {
+function instance(files: Record<string, string>, domains: string[] = ["relations", "acquisition"]): string {
   const root = mkdtempSync(join(tmpdir(), "instance-"));
   made.push(root);
   for (const name of domains) {
@@ -56,7 +56,7 @@ describe("booting an instance", () => {
     const r = await boot({ root: join(kernel, "template"), env: {} });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (!r.ok) return;
-    assert.deepEqual(r.domains.map((d) => d.name), ["relations", "gtm"]);
+    assert.deepEqual(r.domains.map((d) => d.name), ["relations", "acquisition"]);
     assert.deepEqual(
       r.registry.list().map((a) => `${a.contract}:${a.provider}`),
       [
@@ -92,7 +92,7 @@ describe("booting an instance", () => {
   it("reports every problem at once, not the first", async () => {
     const root = instance({
       "manifest.yaml": manifest([
-        "enabledDomains: [gtm, nowhere]",
+        "enabledDomains: [acquisition, nowhere]",
         "providers:",
         "  - { contract: crm, adapter: ./adapters/crm.mjs, env: [MISSING] }",
         "  - { contract: sequencer, adapter: ./adapters/absent.mjs, env: [] }",
@@ -102,7 +102,7 @@ describe("booting an instance", () => {
     const r = await boot({ root, env: {} });
     assert.equal(r.ok, false);
     const said = messages(r).join("\n");
-    assert.match(said, /enabledDomains\.0 "gtm" depends on "relations", which is not enabled/);
+    assert.match(said, /enabledDomains\.0 "acquisition" depends on "relations", which is not enabled/);
     assert.match(said, /enabledDomains\.1 @werunfoundry\/nowhere is not installed/);
     assert.match(said, /providers\.0\.env MISSING is declared but not set/);
     assert.match(said, /providers\.1\.adapter cannot be loaded/);
@@ -110,12 +110,12 @@ describe("booting an instance", () => {
 
   it("says one thing about a domain that is not installed, and what to do", async () => {
     const root = instance({
-      "manifest.yaml": manifest(["enabledDomains: [relations, gtm]", "providers: []"]),
+      "manifest.yaml": manifest(["enabledDomains: [relations, acquisition]", "providers: []"]),
     }, ["relations"]);
     const r = await boot({ root, env: {} });
     assert.equal(r.ok, false);
     assert.deepEqual(messages(r), [
-      "enabledDomains.1 @werunfoundry/gtm is not installed in this instance — add it to its package.json dependencies",
+      "enabledDomains.1 @werunfoundry/acquisition is not installed in this instance — add it to its package.json dependencies",
     ]);
   });
 
@@ -184,30 +184,30 @@ describe("booting an instance", () => {
     assert.doesNotMatch(said, /No "exports" main defined/);
   });
 
-  it("loads the metrics gtm declares, and refuses a source that reads an undeclared one", async () => {
+  it("loads the metrics acquisition declares, and refuses a source that reads an undeclared one", async () => {
     const source = (...metrics: string[]) => `export default () => ({ provider: "fixture", metrics: ${JSON.stringify(metrics)} });\n`;
     const good = instance({
-      "manifest.yaml": manifest(["enabledDomains: [relations, gtm]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),
-      "adapters/m.mjs": source("gtm.enrolled", "gtm.replied"),
+      "manifest.yaml": manifest(["enabledDomains: [relations, acquisition]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),
+      "adapters/m.mjs": source("acquisition.enrolled", "acquisition.replied"),
     });
     const r = await boot({ root: good, env: {} });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (r.ok) {
-      const judged = r.domains.find((d) => d.name === "gtm")?.experimentMetrics ?? {};
+      const judged = r.domains.find((d) => d.name === "acquisition")?.experimentMetrics ?? {};
       // The guardrails are in every type, and offer_test reads replies.
       for (const [type, keys] of Object.entries(judged)) {
-        assert.ok(keys.includes("gtm.bounced") && keys.includes("gtm.unsubscribed"), `${type} has no deliverability guardrail`);
+        assert.ok(keys.includes("acquisition.bounced") && keys.includes("acquisition.unsubscribed"), `${type} has no deliverability guardrail`);
       }
-      assert.ok(judged.offer_test?.includes("gtm.replied"), "offer_test cannot tell nobody bit from replied without booking");
+      assert.ok(judged.offer_test?.includes("acquisition.replied"), "offer_test cannot tell nobody bit from replied without booking");
       // Reply rates do not compare across channels; meetings per person enrolled do.
-      assert.ok(judged.channel_test?.includes("gtm.meetings_booked") && !judged.channel_test.includes("gtm.replied"));
+      assert.ok(judged.channel_test?.includes("acquisition.meetings_booked") && !judged.channel_test.includes("acquisition.replied"));
     }
 
     const bad = instance({
-      "manifest.yaml": manifest(["enabledDomains: [relations, gtm]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),
-      "adapters/m.mjs": source("gtm.enrolled", "gtm.revenue"),
+      "manifest.yaml": manifest(["enabledDomains: [relations, acquisition]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),
+      "adapters/m.mjs": source("acquisition.enrolled", "acquisition.revenue"),
     });
-    assert.match(messages(await boot({ root: bad, env: {} })).join("\n"), /reads "gtm.revenue", which no enabled domain declares/);
+    assert.match(messages(await boot({ root: bad, env: {} })).join("\n"), /reads "acquisition.revenue", which no enabled domain declares/);
   });
 
   it("refuses a metric scoped to a channel no enabled domain declares", async () => {
@@ -229,7 +229,7 @@ describe("booting an instance", () => {
     const twoSequencers = (a: string, b: string, extra: string[] = []) =>
       instance({
         "manifest.yaml": manifest([
-          "enabledDomains: [relations, gtm]",
+          "enabledDomains: [relations, acquisition]",
           "providers:",
           `  - { contract: sequencer, adapter: ./adapters/a.mjs, env: []${extra[0] ?? ""} }`,
           `  - { contract: sequencer, adapter: ./adapters/b.mjs, env: []${extra[1] ?? ""} }`,

@@ -27,7 +27,7 @@ let client: Client;
 let server: Server;
 let origin = "";
 
-const domains = ["relations", "gtm"].map((d) => loadDomain(join(import.meta.dirname, `../domains/${d}/domain.yaml`)).manifest!);
+const domains = ["relations", "acquisition"].map((d) => loadDomain(join(import.meta.dirname, `../domains/${d}/domain.yaml`)).manifest!);
 const spec = JSON.parse(readFileSync(join(import.meta.dirname, "openapi.json"), "utf8")) as { paths: Record<string, Record<string, unknown>> };
 
 before(async () => {
@@ -39,7 +39,7 @@ before(async () => {
   url.pathname = `/${database}`;
   client = new Client({ connectionString: url.toString() });
   await client.connect();
-  for (const layer of ["../core", "../domains/relations", "../domains/gtm"]) {
+  for (const layer of ["../core", "../domains/relations", "../domains/acquisition"]) {
     const dir = join(import.meta.dirname, layer, "db/migrations");
     for (const f of readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()) await client.query(readFileSync(join(dir, f), "utf8"));
   }
@@ -58,7 +58,7 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  if (client) await client.query("truncate gtm.draft, relations.person, core.experiment, core.run cascade");
+  if (client) await client.query("truncate acquisition.draft, relations.person, core.experiment, core.run cascade");
 });
 
 const call = (method: string, path: string, opts: { body?: unknown; auth?: string | null } = {}) =>
@@ -117,7 +117,7 @@ describe("the API", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () 
   it("lets a reactive lane approve an agent's reply when the person reached us inside the window (decision 0042)", async () => {
     const { personId, experimentId } = await fixtures();
     await client.query("update core.experiment set lane = 'reactive' where id = $1", [experimentId]);
-    const [{ id: templateId }] = await rows("insert into gtm.template (experiment_id, variant, step, channel, body) values ($1, 'a', 1, 'email', 'Hello') returning id", [experimentId]);
+    const [{ id: templateId }] = await rows("insert into acquisition.template (experiment_id, variant, step, channel, body) values ($1, 'a', 1, 'email', 'Hello') returning id", [experimentId]);
     await client.query(
       "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type) values ($1, 'email', 'inbound', false, 'memory', 'r1', now(), 'system')",
       [personId],
@@ -131,7 +131,7 @@ describe("the API", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () 
     const { personId, experimentId } = await fixtures();
     const res = await call("POST", "/v1/drafts", { body: { experimentId, personId, step: 1, renderedBody: "Hello", autonomyAfter: 5, actor: { type: "human", id: "someone" } } });
     assert.equal(res.status, 403);
-    assert.equal((await rows("select count(*)::int as n from gtm.draft"))[0].n, 0);
+    assert.equal((await rows("select count(*)::int as n from acquisition.draft"))[0].n, 0);
   });
 
   it("refuses a body with a field the operation does not take", async () => {

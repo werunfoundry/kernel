@@ -17,7 +17,7 @@ import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, it } from "node:test";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
-import type { TargetList } from "@werunfoundry/gtm/contracts/target-list";
+import type { TargetList } from "@werunfoundry/acquisition/contracts/target-list";
 
 import factory, { candidatesSql, freshnessSql, protectedSql } from "./index.js";
 

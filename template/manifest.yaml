@@ -8,12 +8,12 @@
 # tenant, and the engine has no column for a second.
 instance: example
 
-# A domain may only be enabled with everything it depends on. `gtm` depends on
+# A domain may only be enabled with everything it depends on. `acquisition` depends on
 # `relations`, and leaving `relations` out is refused here rather than
 # discovered when a foreign key points at a schema nobody installed.
 enabledDomains:
   - relations
-  - gtm
+  - acquisition
 
 # The networks a social profile or company id may belong to (decision 0013).
 # Named here, never in the engine. A key on a network not listed is refused.

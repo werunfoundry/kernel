@@ -15,7 +15,7 @@
   ],
   "crm": { "companies": ["other.example.org"], "people": ["bo@open.example.com"] },
   "events": [
-    { "id": "evt-1", "type": "gtm.reply", "occurredAt": "2026-01-02T09:00:00Z", "email": "ada@open.example.com" },
-    { "id": "evt-2", "type": "gtm.meeting_booked", "occurredAt": "2026-01-03T15:30:00Z", "email": "ada@open.example.com" }
+    { "id": "evt-1", "type": "acquisition.reply", "occurredAt": "2026-01-02T09:00:00Z", "email": "ada@open.example.com" },
+    { "id": "evt-2", "type": "acquisition.meeting_booked", "occurredAt": "2026-01-03T15:30:00Z", "email": "ada@open.example.com" }
   ]
 }

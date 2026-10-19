@@ -19,7 +19,7 @@
       "path": "../domains/relations/tsconfig.build.json"
     },
     {
-      "path": "../domains/gtm/tsconfig.build.json"
+      "path": "../domains/acquisition/tsconfig.build.json"
     }
   ],
   "include": [

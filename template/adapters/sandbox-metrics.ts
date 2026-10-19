@@ -1,5 +1,5 @@
 /**
- * Metric source, sandbox. Reads every metric a gtm experiment type is judged
+ * Metric source, sandbox. Reads every metric a acquisition experiment type is judged
  * on, guardrails included, from the sandbox's own data and state. A key it
  * does not read is refused, never answered with zero; a zero it does answer
  * is a count of invented events that happens to be zero.
@@ -11,7 +11,7 @@ import { loadData, loadState, stateFile } from "./sandbox-store.ts";
 
 const factory: AdapterFactory<MetricSource> = ({ options }) => ({
   provider: "sandbox-metrics",
-  metrics: ["gtm.enrolled", "gtm.replied", "gtm.meetings_booked", "gtm.bounced", "gtm.unsubscribed"],
+  metrics: ["acquisition.enrolled", "acquisition.replied", "acquisition.meetings_booked", "acquisition.bounced", "acquisition.unsubscribed"],
 
   async probe(): Promise<CallResult<void>> {
     const data = loadData(options.dataFile);
@@ -30,20 +30,20 @@ const factory: AdapterFactory<MetricSource> = ({ options }) => ({
     });
     // Bounces and unsubscribes exist on email only. Asked about another
     // channel, the answer is that there is no number — never a zero.
-    if ((query.key === "gtm.bounced" || query.key === "gtm.unsubscribed") && query.channel && query.channel !== "email") {
+    if ((query.key === "acquisition.bounced" || query.key === "acquisition.unsubscribed") && query.channel && query.channel !== "email") {
       return {
         ok: true,
         value: { key: query.key, applicable: false, why: `no ${query.key} on ${query.channel}`, asOf, source: "sandbox-metrics" },
       };
     }
     const events = (type: string) => new Set(data.value.events.filter((e) => e.type === type).map((e) => e.email)).size;
-    if (query.key === "gtm.enrolled") {
+    if (query.key === "acquisition.enrolled") {
       return reading(Object.values(state.value.enrolments).reduce((n, s) => n + Object.keys(s).length, 0), "people");
     }
-    if (query.key === "gtm.replied") return reading(events("gtm.reply"), "people");
-    if (query.key === "gtm.meetings_booked") return reading(data.value.events.filter((e) => e.type === "gtm.meeting_booked").length, "meetings");
-    if (query.key === "gtm.bounced") return reading(events("gtm.bounce"), "people");
-    if (query.key === "gtm.unsubscribed") return reading(events("gtm.unsubscribe"), "people");
+    if (query.key === "acquisition.replied") return reading(events("acquisition.reply"), "people");
+    if (query.key === "acquisition.meetings_booked") return reading(data.value.events.filter((e) => e.type === "acquisition.meeting_booked").length, "meetings");
+    if (query.key === "acquisition.bounced") return reading(events("acquisition.bounce"), "people");
+    if (query.key === "acquisition.unsubscribed") return reading(events("acquisition.unsubscribe"), "people");
     return { ok: false, error: { code: "invalid", message: `the sandbox does not read "${query.key}"`, retryable: false } };
   },
 });

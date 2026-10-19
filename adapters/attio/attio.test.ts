@@ -412,7 +412,7 @@ describe("inbound", () => {
     const r = await inbound("example.com").events({}, ctx(true));
     assert.ok(r.ok, JSON.stringify(r));
     if (!r.ok) return;
-    assert.deepEqual(r.value.items.map((e) => [e.providerEventId, e.type, e.occurredAt]), [["m1:ada@example.org", "gtm.meeting_booked", "2026-01-01T10:00:00Z"]]);
+    assert.deepEqual(r.value.items.map((e) => [e.providerEventId, e.type, e.occurredAt]), [["m1:ada@example.org", "acquisition.meeting_booked", "2026-01-01T10:00:00Z"]]);
   });
 
   it("pages through, then resumes from when the read began, and the ids stay stable across reads", async () => {

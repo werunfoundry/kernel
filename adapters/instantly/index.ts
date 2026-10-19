@@ -62,7 +62,7 @@ import type {
   EnrolmentStatus,
   Sequencer,
   Suppression,
-} from "@werunfoundry/gtm/contracts/sequencer";
+} from "@werunfoundry/acquisition/contracts/sequencer";
 
 /* -------------------------------------------------------------------------- */
 /* What the API returns, as far as this adapter reads it                       */

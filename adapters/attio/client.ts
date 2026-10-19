@@ -1,7 +1,7 @@
 /**
  * adapters/attio — the HTTP client and the authentication both Attio
  * adapters share: `crm/` (the relations `Crm` contract) and `inbound/` (the
- * gtm `Inbound` contract). One folder per provider, whatever the number of
+ * acquisition `Inbound` contract). One folder per provider, whatever the number of
  * contracts it satisfies.
  *
  * Read in Attio's published OpenAPI document (api.attio.com/openapi/api) and

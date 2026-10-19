@@ -63,10 +63,10 @@ beforeEach(async () => {
 const rows = async (sql: string, params: unknown[] = []) => (await client.query(sql, params)).rows;
 const aRun = async (actor = "system") => (await rows("insert into core.run (process_key, trigger, actor_type) values ('t', 'cli', $1) returning id", [actor]))[0].id as string;
 const anExperiment = async () => (await rows("insert into core.experiment (slug, type, hypothesis_ref) values ('e', 'campaign', 'https://example.com/h') returning id"))[0].id as string;
-const declared = new Set(["gtm.reply"]);
+const declared = new Set(["acquisition.reply"]);
 
 describe("an event", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
-  const input = (runId: string, over = {}) => ({ kind: "gtm.reply", provider: "memory", providerEventId: "e1", occurredAt: new Date("2026-09-01T10:00:00Z"), payload: { a: 1 }, runId, ...over });
+  const input = (runId: string, over = {}) => ({ kind: "acquisition.reply", provider: "memory", providerEventId: "e1", occurredAt: new Date("2026-09-01T10:00:00Z"), payload: { a: 1 }, runId, ...over });
 
   it("is stored once, however often it is read", async () => {
     const runId = await aRun();
@@ -76,7 +76,7 @@ describe("an event", { skip: base ? false : "TEST_DATABASE_URL is not set" }, ()
   });
 
   it("is refused when no enabled domain declares its type", async () => {
-    await assert.rejects(recordEvent(db, input(await aRun(), { kind: "gtm.unknown" }), declared), /no enabled domain declares/);
+    await assert.rejects(recordEvent(db, input(await aRun(), { kind: "acquisition.unknown" }), declared), /no enabled domain declares/);
   });
 
   it("is append-only in the schema: never marked handled in place", async () => {
@@ -92,7 +92,7 @@ describe("an event", { skip: base ? false : "TEST_DATABASE_URL is not set" }, ()
 });
 
 describe("a decision", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
-  const readings = [{ metric: "gtm.replied", value: 0.04, readAt: "2026-09-30T00:00:00Z" }];
+  const readings = [{ metric: "acquisition.replied", value: 0.04, readAt: "2026-09-30T00:00:00Z" }];
 
   it("is a person's act, in its own run, with the readings it rested on", async () => {
     const experimentId = await anExperiment();
@@ -144,7 +144,7 @@ describe("the migration that narrows event and decision", { skip: base ? false :
     const all = migrations();
     const at = all.findIndex((m) => m.name.startsWith("0001_"));
     for (const m of all.slice(0, at)) await old.query(m.sql);
-    await old.query("insert into core.event (kind, provider, provider_event_id, payload) values ('gtm.reply', 'memory', 'e1', '{}')");
+    await old.query("insert into core.event (kind, provider, provider_event_id, payload) values ('acquisition.reply', 'memory', 'e1', '{}')");
     await assert.rejects(old.query(all[at]!.sql), /not dropped silently/);
     await old.query("delete from core.event");
     for (const m of all.slice(at)) await old.query(m.sql);

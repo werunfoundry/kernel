@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@werunfoundry/core": "workspace:*",
-    "@werunfoundry/gtm": "workspace:*",
+    "@werunfoundry/acquisition": "workspace:*",
     "@werunfoundry/relations": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.13.0"

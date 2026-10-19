@@ -29,24 +29,24 @@ importers:
 
   adapters:
     devDependencies:
+      '@werunfoundry/acquisition':
+        specifier: workspace:*
+        version: link:../domains/acquisition
       '@werunfoundry/core':
         specifier: workspace:*
         version: link:../core
-      '@werunfoundry/gtm':
-        specifier: workspace:*
-        version: link:../domains/gtm
       '@werunfoundry/relations':
         specifier: workspace:*
         version: link:../domains/relations
 
   api:
     dependencies:
+      '@werunfoundry/acquisition':
+        specifier: workspace:*
+        version: link:../domains/acquisition
       '@werunfoundry/core':
         specifier: workspace:*
         version: link:../core
-      '@werunfoundry/gtm':
-        specifier: workspace:*
-        version: link:../domains/gtm
       '@werunfoundry/relations':
         specifier: workspace:*
         version: link:../domains/relations
@@ -66,7 +66,7 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
-  domains/gtm:
+  domains/acquisition:
     dependencies:
       '@werunfoundry/core':
         specifier: workspace:*
@@ -89,12 +89,12 @@ importers:
 
   template:
     dependencies:
+      '@werunfoundry/acquisition':
+        specifier: workspace:*
+        version: link:../domains/acquisition
       '@werunfoundry/core':
         specifier: workspace:*
         version: link:../core
-      '@werunfoundry/gtm':
-        specifier: workspace:*
-        version: link:../domains/gtm
       '@werunfoundry/relations':
         specifier: workspace:*
         version: link:../domains/relations

@@ -65,7 +65,7 @@ export interface DomainManifest {
 
   /**
    * The numbers this domain defines, namespaced like its events —
-   * `gtm.replied` (decision 0018). A metric source says which it can read;
+   * `acquisition.replied` (decision 0018). A metric source says which it can read;
    * nothing here stores them.
    */
   metrics?: MetricDeclaration[];

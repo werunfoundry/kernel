@@ -47,7 +47,7 @@ before it is published, pack them from a checkout of the engine:
 mkdir -p ../packs
 (cd ../kernel/core              && pnpm pack --pack-destination ../../packs)
 (cd ../kernel/domains/relations && pnpm pack --pack-destination ../../../packs)
-(cd ../kernel/domains/gtm       && pnpm pack --pack-destination ../../../packs)
+(cd ../kernel/domains/acquisition       && pnpm pack --pack-destination ../../../packs)
 ```
 
 and point the dependencies at the tarballs, here and in the overrides (one
@@ -64,7 +64,7 @@ overrides:
   "@werunfoundry/core": "file:../packs/werunfoundry-core-0.1.0.tgz"
 ```
 
-The same for `relations` and `gtm`, and for `@werunfoundry/adapters` if a
+The same for `relations` and `acquisition`, and for `@werunfoundry/adapters` if a
 binding names a shipped adapter. `pnpm check` refuses a folder.
 
 ## Starting one
@@ -79,7 +79,7 @@ from invented data, so before anything is configured:
 
 ```
 cp .env.example .env          # set DATABASE_URL (and DIRECT_URL, for migrations)
-pnpm migrate                  # installs core, relations, gtm — in that order
+pnpm migrate                  # installs core, relations, acquisition — in that order
 pnpm verify                   # boots, opens a dry run, probes every adapter
 pnpm enrol -- --sequence welcome --channel email --max-age 60
 ```

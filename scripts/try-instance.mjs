@@ -32,7 +32,7 @@
  * manifest names are passed through from this process's environment, and
  * nothing else is. Keep that manifest outside the repository.
  *
- * Drops the `core`, `relations`, `gtm` and `drizzle` schemas in that
+ * Drops the `core`, `relations`, `acquisition` (and its former name, `gtm`) and `drizzle` schemas in that
  * database. Point it at a database that exists to be thrown away.
  */
 
@@ -55,8 +55,9 @@ if (!url) {
   process.exit(2);
 }
 
-const PACKAGES = ["core", "domains/relations", "domains/gtm", "api", "adapters"];
-const SCHEMAS = ["gtm", "relations", "core", "drizzle"];
+const PACKAGES = ["core", "domains/relations", "domains/acquisition", "api", "adapters"];
+// `gtm` is acquisition's former name (0046): a database earlier runs used still has it.
+const SCHEMAS = ["acquisition", "gtm", "relations", "core", "drizzle"];
 
 const work = mkdtempSync(join(tmpdir(), "try-instance-"));
 const packs = join(work, "packs");
@@ -200,10 +201,10 @@ try {
     expect(!existsSync(state), "the dry run wrote the sandbox's state");
     expect((await runOf(dry.stdout))?.dry_run === true, "the dry run is not recorded as one");
     // The registry (0026), read back from the database the packs migrated.
-    const registry = async () => (await client.query("select state, count(*)::int as n from gtm.enrolment group by 1 order by 1")).rows;
+    const registry = async () => (await client.query("select state, count(*)::int as n from acquisition.enrolment group by 1 order by 1")).rows;
     const skipsOf = async (out) => {
       const id = out.match(/^run: ([0-9a-f-]{36})/m)?.[1];
-      return id ? (await client.query("select reason, count(*)::int as n from gtm.enrolment_skip where run_id = $1 group by 1 order by 1", [id])).rows : [];
+      return id ? (await client.query("select reason, count(*)::int as n from acquisition.enrolment_skip where run_id = $1 group by 1 order by 1", [id])).rows : [];
     };
     expect(JSON.stringify(await registry()) === "[]", `the dry run wrote the registry: ${JSON.stringify(await registry())}`);
     expect(JSON.stringify(await skipsOf(dry.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }]), "the dry run did not keep its skip");
@@ -248,7 +249,7 @@ try {
     expect(inLive.status === 0, `the inbound live run exited ${inLive.status}`);
     expect(/recorded: 2, already stored: 0/.test(inLive.stdout), "the inbound live run did not store the two events");
     expect(
-      JSON.stringify(await events()) === JSON.stringify([{ kind: "gtm.meeting_booked", n: 1 }, { kind: "gtm.reply", n: 1 }]),
+      JSON.stringify(await events()) === JSON.stringify([{ kind: "acquisition.meeting_booked", n: 1 }, { kind: "acquisition.reply", n: 1 }]),
       `core.event reads ${JSON.stringify(await events())}`,
     );
 
@@ -297,7 +298,7 @@ try {
     const outcomesOf = async (out) => {
       const id = out.match(/^run: ([0-9a-f-]{36})/m)?.[1];
       return id
-        ? (await client.query("select pass, outcome, count(*)::int as n, count(person_id)::int as recorded from gtm.sourcing_result where run_id = $1 group by 1, 2 order by 1, 2", [id])).rows
+        ? (await client.query("select pass, outcome, count(*)::int as n, count(person_id)::int as recorded from acquisition.sourcing_result where run_id = $1 group by 1, 2 order by 1, 2", [id])).rows
         : [];
     };
     const expected = (recorded) => [

@@ -38,7 +38,7 @@ const d = (name: string, dependsOn: string[] = []): DomainManifest => ({ name, v
 
 describe("dependency order", () => {
   it("puts every domain after what it depends on", () => {
-    assert.deepEqual(dependencyOrder([d("gtm", ["relations"]), d("relations")]).order, ["relations", "gtm"]);
+    assert.deepEqual(dependencyOrder([d("acquisition", ["relations"]), d("relations")]).order, ["relations", "acquisition"]);
   });
 
   it("refuses a cycle", () => {
@@ -49,21 +49,21 @@ describe("dependency order", () => {
 describe("migrating the template's domains", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
   const root = join(import.meta.dirname, "../../template");
 
-  it("installs core, relations and gtm, in that order", async () => {
+  it("installs core, relations and acquisition, in that order", async () => {
     const said: string[] = [];
     assert.equal(await migrate({ root, url, say: (l) => said.push(l) }), 0, said.join("\n"));
     assert.deepEqual(
       said.filter((l) => /: applied \d+ migration/.test(l)).map((l) => l.trim().split(":")[0]),
-      ["core", "relations", "gtm"],
+      ["core", "relations", "acquisition"],
       said.join("\n"),
     );
     const db = new Client({ connectionString: url });
     await db.connect();
     const { rows } = await db.query(
-      "select table_schema || '.' || table_name as t from information_schema.tables where table_schema in ('core','relations','gtm') order by 1",
+      "select table_schema || '.' || table_name as t from information_schema.tables where table_schema in ('core','relations','acquisition') order by 1",
     );
     await db.end();
-    for (const t of ["core.run", "relations.person", "gtm.person_state"]) assert.ok(rows.some((r) => r.t === t), `${t} missing`);
+    for (const t of ["core.run", "relations.person", "acquisition.person_state"]) assert.ok(rows.some((r) => r.t === t), `${t} missing`);
   });
 
   it("applies nothing the second time", async () => {
@@ -77,7 +77,7 @@ describe("migrating the template's domains", { skip: base ? false : "TEST_DATABA
     // Said, not only true: the second run reports that it applied nothing.
     assert.deepEqual(
       said.filter((l) => /: nothing to apply, \d+ already applied/.test(l)).map((l) => l.trim().split(":")[0]),
-      ["core", "relations", "gtm"],
+      ["core", "relations", "acquisition"],
       said.join("\n"),
     );
     await db.end();

@@ -1,5 +1,5 @@
 /**
- * adapters/attio/inbound — the gtm `Inbound` contract, against Attio.
+ * adapters/attio/inbound — the acquisition `Inbound` contract, against Attio.
  *
  *   - contract: inbound
  *     adapter: "@werunfoundry/adapters/attio/inbound"
@@ -7,7 +7,7 @@
  *     options:
  *       internalDomains: "example.com,example.org"   # your own; their people are not events
  *
- * It produces one event type, `gtm.meeting_booked`, and the record should say
+ * It produces one event type, `acquisition.meeting_booked`, and the record should say
  * why only that one, because the others were looked for:
  *
  * - **Replies are not readable as a feed.** `GET /v2/emails` requires a
@@ -41,7 +41,7 @@
 
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
 
-import type { InboundEvent, InboundPage, Inbound } from "@werunfoundry/gtm/contracts/inbound";
+import type { InboundEvent, InboundPage, Inbound } from "@werunfoundry/acquisition/contracts/inbound";
 import { DEFAULT_BASE_URL, client, fail } from "../client.js";
 
 interface Meeting {
@@ -85,7 +85,7 @@ const factory: AdapterFactory<Inbound> = ({ options, env }) => {
 
   return {
     provider: "attio",
-    eventTypes: ["gtm.meeting_booked"],
+    eventTypes: ["acquisition.meeting_booked"],
     probe,
 
     async events({ after, limit }, ctx): Promise<CallResult<InboundPage>> {
@@ -107,7 +107,7 @@ const factory: AdapterFactory<Inbound> = ({ options, env }) => {
           if (internal.has(email.split("@")[1] ?? "")) continue;
           items.push({
             providerEventId: `${meeting.id.meeting_id}:${email}`,
-            type: "gtm.meeting_booked",
+            type: "acquisition.meeting_booked",
             occurredAt: meeting.created_at,
             subject: { subject: "person", keys: [{ kind: "email", value: email }] },
             ...(p.status ? { detail: { participantStatus: p.status } } : {}),

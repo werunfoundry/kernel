@@ -1,5 +1,5 @@
 /**
- * adapters/bigquery — the gtm `TargetList` contract, read from BigQuery
+ * adapters/bigquery — the acquisition `TargetList` contract, read from BigQuery
  * tables.
  *
  *   - contract: target_list
@@ -112,7 +112,7 @@ import type {
   TargetPage,
   TargetQuery,
   TargetRoute,
-} from "@werunfoundry/gtm/contracts/target-list";
+} from "@werunfoundry/acquisition/contracts/target-list";
 
 /* -------------------------------------------------------------------------- */
 /* What the API returns, as far as this adapter reads it                       */

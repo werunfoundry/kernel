@@ -65,7 +65,8 @@
       "./db/migrations/*": "./db/migrations/*"
     },
     "bin": {
-      "kernel-erase": "./dist/bin/erase.js"
+      "kernel-erase": "./dist/bin/erase.js",
+      "kernel-relationship": "./dist/bin/relationship.js"
     }
   },
   "dependencies": {
@@ -86,6 +87,7 @@
     "!dist/*.tsbuildinfo"
   ],
   "bin": {
-    "kernel-erase": "./bin/erase.ts"
+    "kernel-erase": "./bin/erase.ts",
+    "kernel-relationship": "./bin/relationship.ts"
   }
 }

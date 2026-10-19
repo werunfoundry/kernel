@@ -17,7 +17,8 @@ import { Client } from "pg";
 
 import type { Database } from "@werunfoundry/core/runtime/run";
 
-import { declareRelationship, readRelationship } from "./relationship.js";
+import { nameCompany, namePerson } from "./record.js";
+import { declareRelationship, planDeclaration, readMoment, readRelationship } from "./relationship.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_relationship_${process.pid}`;
@@ -79,11 +80,11 @@ describe("a declared relationship", { skip: base ? false : "TEST_DATABASE_URL is
   });
 
   it("keeps the history, and the current one is the latest by when it became true, not by when it was written", async () => {
-    const personId = await aPerson();
-    await declareRelationship(db, { subject: { personId }, status: "former_customer", at: new Date("2026-09-10T00:00:00Z"), by: "an operator" });
+    const companyId = await aCompany();
+    await declareRelationship(db, { subject: { companyId }, status: "former_customer", at: new Date("2026-09-10T00:00:00Z"), by: "an operator" });
     // Written after, true before: it is history, not the present.
-    await declareRelationship(db, { subject: { personId }, status: "customer", at: new Date("2026-08-01T00:00:00Z"), by: "an operator" });
-    assert.equal((await readRelationship(db, { personId }))?.status, "former_customer");
+    await declareRelationship(db, { subject: { companyId }, status: "customer", at: new Date("2026-08-01T00:00:00Z"), by: "an operator" });
+    assert.equal((await readRelationship(db, { companyId }))?.status, "former_customer");
     assert.equal((await rows("select count(*)::int as n from relations.relationship"))[0].n, 2);
   });
 
@@ -123,12 +124,73 @@ describe("a declared relationship", { skip: base ? false : "TEST_DATABASE_URL is
     await assert.rejects(client.query("update relations.relationship set reason = 'edited'"), /append-only/);
   });
 
+  it("is refused on a person, before any run, though the schema would take it (0047)", async () => {
+    const personId = await aPerson();
+    const subject = { personId } as unknown as { companyId: string };
+    await assert.rejects(declareRelationship(db, { subject, status: "customer", at: new Date("2026-09-01T00:00:00Z"), by: "an operator" }), /on a company, not on a person alone/);
+    assert.equal((await rows("select count(*)::int as n from core.run"))[0].n, 0);
+    assert.equal((await rows("select count(*)::int as n from relations.relationship"))[0].n, 0);
+  });
+
   it("names exactly one subject", async () => {
     const [companyId, personId, runId] = [await aCompany(), await aPerson(), await aRun()];
     const insert = (c: string | null, p: string | null) =>
       client.query("insert into relations.relationship (company_id, person_id, status, at, actor_type, actor_id, run_id) values ($1, $2, 'customer', now(), 'human', 'x', $3)", [c, p, runId]);
     await assert.rejects(insert(companyId, personId), /relationship_one_subject/);
     await assert.rejects(insert(null, null), /relationship_one_subject/);
+  });
+});
+
+describe("what a person types (0047)", () => {
+  it("reads a date as that day at 00:00 UTC, and a time only with its zone", () => {
+    assert.deepEqual(readMoment("2026-09-01"), { at: new Date("2026-09-01T00:00:00Z") });
+    assert.deepEqual(readMoment("2026-09-01T09:30:00+02:00"), { at: new Date("2026-09-01T07:30:00Z") });
+    assert.match((readMoment("2026-09-01T09:30:00") as { refused: string }).refused, /with its zone/);
+    assert.match((readMoment("last tuesday") as { refused: string }).refused, /neither a date/);
+    assert.match((readMoment("2026-13-45") as { refused: string }).refused, /not a moment/);
+  });
+});
+
+describe("what a declaration would do, read before it is written (0047)", () => {
+  const at = new Date("2026-09-01T00:00:00Z");
+  const later = new Date("2026-09-10T00:00:00Z");
+
+  it("is declared, and current, when nothing is", () => {
+    assert.deepEqual(planDeclaration(undefined, { state: "customer", at }), { declare: true, current: true });
+  });
+
+  it("writes nothing when it is the current declaration again", () => {
+    assert.deepEqual(planDeclaration({ state: "customer", at }, { state: "customer", at }), { already: true });
+  });
+
+  it("refuses the current state from another moment: it would only move since when", () => {
+    assert.match((planDeclaration({ state: "customer", at }, { state: "customer", at: later }) as { refused: string }).refused, /already stands as customer/);
+  });
+
+  it("declares another state, current only when it is not dated before the current one", () => {
+    assert.deepEqual(planDeclaration({ state: "customer", at }, { state: "none", at: later }), { declare: true, current: true });
+    assert.deepEqual(planDeclaration({ state: "customer", at }, { state: "none", at }), { declare: true, current: true });
+    assert.deepEqual(planDeclaration({ state: "customer", at: later }, { state: "none", at }), { declare: true, current: false });
+  });
+});
+
+describe("a subject named at a terminal (0047)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  it("is found by its address without case, or by its id, and never created", async () => {
+    const personId = await aPerson();
+    assert.deepEqual(await namePerson(db, " ADA@example.com "), { id: personId, label: "ada@example.com" });
+    assert.deepEqual(await namePerson(db, personId), { id: personId, label: "ada@example.com" });
+    assert.match((await namePerson(db, "bob@example.com") as { refused: string }).refused, /no person with the address/);
+    assert.match((await namePerson(db, "ada") as { refused: string }).refused, /neither an address nor/);
+    assert.match((await namePerson(db, "00000000-0000-0000-0000-000000000000") as { refused: string }).refused, /no person 0{8}/);
+    assert.equal((await rows("select count(*)::int as n from relations.person"))[0].n, 1);
+  });
+
+  it("is found by its domain as a host, or by its id, and never created", async () => {
+    const companyId = await aCompany();
+    assert.deepEqual(await nameCompany(db, "https://www.Example.com/about"), { id: companyId, label: "example.com" });
+    assert.deepEqual(await nameCompany(db, companyId), { id: companyId, label: "example.com" });
+    assert.match((await nameCompany(db, "example.org") as { refused: string }).refused, /no company with the domain example\.org/);
+    assert.equal((await rows("select count(*)::int as n from relations.company"))[0].n, 1);
   });
 });
 

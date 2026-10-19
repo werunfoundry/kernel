@@ -428,6 +428,25 @@ try {
       crossed.length === 1 && crossed[0].direction === "outbound" && crossed[0].unsolicited === true && crossed[0].provider === "stub-handover" && crossed[0].state === "sent",
       `the database does not hold one message, its touch and a sent draft: ${JSON.stringify(crossed)}`,
     );
+
+    // The one act that cannot be undone, on what the runs above really wrote:
+    // Ada sourced, kept, listed and enrolled (0040, 0049).
+    step("an erasure: planned, refused without a terminal, done at one, the runs' history kept naming nobody");
+    const [{ id: adaId }] = (await client.query("select id from relations.person where lower(email) = 'ada@open.example.com'")).rows;
+    const naming = async () => (await client.query("select count(*)::int as n from acquisition.sourcing_result where person::text ilike '%ada@open.example.com%' or person_id = $1", [adaId])).rows[0].n;
+    const results = await count("acquisition.sourcing_result");
+    expect((await naming()) > 1, "the sourcing runs above left fewer than two rows naming Ada: nothing would be reached by keys");
+    const erasePlan = await bin("kernel-erase", ["--person", adaId, "--plan"]);
+    show(erasePlan);
+    expect(erasePlan.status === 0 && /sourcing_result: \d+ rows \(\d+ by keys\) — anonymise/.test(erasePlan.stdout), "kernel-erase --plan did not show the rows reached by keys");
+    expect(/Not reached by this command \(decision 0049\)/.test(erasePlan.stdout) && /opt-out does not survive/.test(erasePlan.stdout), "kernel-erase --plan did not say what it does not reach");
+    const eraseBare = await bin("kernel-erase", ["--person", adaId, "--by", "an operator"]);
+    expect(eraseBare.status === 1 && /at a terminal\. Nothing was changed/.test(eraseBare.stdout), `kernel-erase without a terminal: ${eraseBare.stdout.trim()}`);
+    const erased = await typed("kernel-erase", ["--person", adaId, "--by", "an operator"], `${adaId}\n`);
+    expect(erased.status === 0 && /erased; the person's row was deleted/.test(erased.stdout), `kernel-erase at a terminal: ${erased.stdout.trim().split("\n").slice(-8).join(" / ")}`);
+    expect((await count("relations.person where lower(email) = 'ada@open.example.com'")) === 0, "Ada is still on record");
+    expect((await naming()) === 0, "a sourcing row still names Ada");
+    expect((await count("acquisition.sourcing_result")) === results, "erasing deleted a run's history instead of anonymising it");
   }
   await client.end();
 } catch (error) {

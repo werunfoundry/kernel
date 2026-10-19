@@ -75,7 +75,9 @@ export interface DomainManifest {
    * (decision 0040): delete the rows, empty listed columns, or keep them under
    * a stated legal basis. The core orchestrates; the domain answers. A rule on
    * the subject's own row may list `ifStillNamed`: the columns emptied when a
-   * kept row elsewhere still points at it, so it cannot be deleted.
+   * kept row elsewhere still points at it, so it cannot be deleted. Where a
+   * domain keeps the history of what it did, it anonymises: the row says what
+   * happened, not who (decision 0049).
    */
   erasure?: ErasureRule[];
 
@@ -235,7 +237,29 @@ export interface ValidationResult {
   issues: ValidationIssue[];
 }
 
+/**
+ * One answer to erasure (decisions 0040, 0049). A rule reaches the subject's
+ * rows by its id in `column`, by its keys in the identity `keys` holds, or
+ * both — a row that names a person only by keys is theirs as much as one that
+ * names them by id.
+ *
+ * - `keyColumns`, on the subject's own row: which of its columns hold which
+ *   kind of key, so the core can gather them before anything changes. A
+ *   networked kind is held as `<network>:<value>`.
+ * - `anonymise` empties `columns`, removes the `strip` paths from each
+ *   element of a JSON array, writes into `random` a value derived from
+ *   nothing, and into `text` a fixed sentence.
+ */
 export type ErasureRule =
-  | { table: string; column: string; do: "delete"; ifStillNamed?: string[] }
-  | { table: string; column: string; do: "anonymise"; columns: string[] }
-  | { table: string; column: string; do: "keep"; basis: string };
+  | { table: string; column: string; do: "delete"; ifStillNamed?: string[]; keyColumns?: Record<string, string> }
+  | {
+      table: string;
+      column?: string;
+      keys?: string;
+      do: "anonymise";
+      columns?: string[];
+      strip?: Record<string, string[]>;
+      random?: string[];
+      text?: Record<string, string>;
+    }
+  | { table: string; column?: string; keys?: string; do: "keep"; basis: string };

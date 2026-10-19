@@ -19,10 +19,11 @@ import { and, asc, eq } from "drizzle-orm";
 
 import { run } from "@werunfoundry/core/db/schema";
 import type { DomainManifest } from "@werunfoundry/core/manifest/types";
-import { planErasure } from "@werunfoundry/core/runtime/erase";
+import { NOT_REACHED, planErasure } from "@werunfoundry/core/runtime/erase";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import { draft, draftState } from "@werunfoundry/acquisition/db/schema";
 import { propose } from "@werunfoundry/acquisition/runtime/draft";
+import { OPT_OUT_AFTER_ERASURE } from "@werunfoundry/relations/runtime/record";
 
 export interface ApiDeps {
   db: Database;
@@ -137,7 +138,11 @@ export const routes: { method: string; path: string; handler: Handler }[] = [
   {
     method: "get",
     path: "/v1/people/{id}/erasure",
-    handler: async ({ db, domains }, { params }) => ({ status: 200, body: { steps: await planErasure(db, domains, uuid(params.id, "the person id")) } }),
+    // What it does not reach goes with it: a plan silent about it would read as coverage (0049).
+    handler: async ({ db, domains }, { params }) => ({
+      status: 200,
+      body: { steps: await planErasure(db, domains, uuid(params.id, "the person id")), notReached: [...NOT_REACHED, OPT_OUT_AFTER_ERASURE] },
+    }),
   },
 ];
 

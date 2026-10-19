@@ -65,11 +65,31 @@ experimentMetrics:
   channel_test: [acquisition.enrolled, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
   signal_play: [acquisition.enrolled, acquisition.replied, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
   offer_test: [acquisition.enrolled, acquisition.replied, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
-# What erasing a person does here (decision 0040). A row that names a person
-# by keys rather than by id — enrolment_skip, and sourcing_result's excluded
-# rows — is not reached by an erasure by id: matching on keys is not built.
+# What erasing a person does here (decisions 0040, 0049). A row that exists
+# only to say something about the person is deleted. A row that is the
+# history of what a run did is anonymised: it says what happened, not who —
+# the run, the company targeted, the outcome, the times, what the provider
+# said of each key all stay. It is reached by id and by the person's keys,
+# since an excluded person or a dry run's is named by keys alone. `subject`
+# is a fingerprint of those keys, which anyone holding an address can
+# recompute, so it is replaced by a value derived from nothing; `detail` is
+# free text written from a provider's or the CRM's answer, which the kernel
+# cannot prove clean, so it is replaced by a fixed sentence.
 erasure:
   - { table: draft, column: person_id, do: delete }
   - { table: person_state, column: person_id, do: delete }
   - { table: enrolment, column: person_id, do: delete }
-  - { table: sourcing_result, column: person_id, do: delete }
+  - table: sourcing_result
+    column: person_id
+    keys: person
+    do: anonymise
+    columns: [person_id, person]
+    strip: { said: [key.value] }
+    random: [subject]
+    text: { detail: "erased (decision 0049); the outcome stands" }
+  - table: enrolment_skip
+    keys: person
+    do: anonymise
+    columns: [person]
+    random: [subject]
+    text: { detail: "erased (decision 0049); the reason stands" }

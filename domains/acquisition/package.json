@@ -18,6 +18,7 @@
     "./runtime/draft": "./runtime/draft.ts",
     "./runtime/inbound": "./runtime/inbound.ts",
     "./runtime/stage": "./runtime/stage.ts",
+    "./runtime/send": "./runtime/send.ts",
     "./db/migrations/*": "./db/migrations/*"
   },
   "publishConfig": {
@@ -71,6 +72,10 @@
       "./runtime/stage": {
         "types": "./dist/runtime/stage.d.ts",
         "default": "./dist/runtime/stage.js"
+      },
+      "./runtime/send": {
+        "types": "./dist/runtime/send.d.ts",
+        "default": "./dist/runtime/send.js"
       },
       "./db/migrations/*": "./db/migrations/*"
     },

@@ -137,22 +137,14 @@ member instead would be a change to protection, outside this decision.
   (0039); this path does not yet. The real hand-over, which is bound per
   channel (0015), is where an undeclared one is refused.
 
-## Noticed: a decision describes behaviour the code does not have
+## Noticed: a comment described a cap the code did not have
 
-Third time in two days. **0036** says the cap, *when it is built, reads
-unsolicited touches only*, and the comment on `touch.unsolicited` says, in
-the present tense, that *the solicitation cap reads unsolicited touches
-only*. **0038** then built the cap on messages — and said so — while stating
-as a future condition ("when touches say whether they were solicited") one
-0036 had already met. Until this decision, `touch.unsolicited` had no reader.
-
-The two earlier cases: 0047 misstated the trigger an erasure opens its run
-with (0048, *Erratum*); and the erasure 0040 built deleted a history that
-0049 finds should have been anonymised.
-
-Nothing checks that what a decision asserts is what the code does. This is
-a finding, not a fix: what to do about it is decided once this decision and
-0049 are merged.
+The comment on `touch.unsolicited` said, in the present tense, that the
+solicitation cap reads unsolicited touches. The code counted messages, and
+nothing read the column. The decisions were accurate: 0036 announced the cap
+that way for when it would be built, and 0038 built it on messages and said
+so. The comment was not, and nothing checks that a comment describes what
+the code does. This decision makes the comment true; it proposes no check.
 
 ## Rules out
 

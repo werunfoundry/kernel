@@ -105,9 +105,14 @@ stands.
 - `--from-run <runId>`: the people a live sourcing run kept. The query kept is
   `{ from: "acquisition.sourcing_result", runId, outcome: "kept" }`;
   replaying it gives the same people, because a run's result does not move.
-- `--from-file <path>`: one email or domain per line. Every line must name a
-  recorded subject, or nothing is written. The query kept says it was a hand
-  selection, and the file's name and digest.
+- `--from-file <path>`: one email or domain per line, blank lines and `#`
+  comments aside. Every line must name a recorded subject, or nothing is
+  written. The query kept says it was a hand selection, and the file's name
+  and digest.
+
+A selection that names nobody is refused: an empty list targets nothing,
+and is not evidence of anything. The members are shown by the address
+recorded, before the key is typed again.
 
 The list is constituted in its own run, with the person as actor; the source
 run is named in the query, not as the list's run. **The command reads no
@@ -169,6 +174,12 @@ its own decision.
    they were (0041 says what that costs).
 3. **Nothing reads a list.** Enrolment reads a sourcing run (0032);
    `core.experiment.targets` names a list by convention, unchecked.
+4. **The README's account of stages is stale.** It still describes
+   `acquisition.lifecycle_stage` as an enum holding `customer` and `lost`,
+   which 0036 replaced.
+5. **Two triggers for one kind of act.** A declared stage or relationship,
+   a list and a decision open their run as `manual`; an acknowledgement and
+   an erasure, as `cli`. All are a person at a terminal.
 
 ## Would reverse it
 

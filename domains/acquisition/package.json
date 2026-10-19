@@ -78,7 +78,9 @@
       "kernel-enrol": "./dist/bin/enrol.js",
       "kernel-source": "./dist/bin/source.js",
       "kernel-acknowledge": "./dist/bin/acknowledge.js",
-      "kernel-inbound": "./dist/bin/inbound.js"
+      "kernel-inbound": "./dist/bin/inbound.js",
+      "kernel-stage": "./dist/bin/stage.js",
+      "kernel-list": "./dist/bin/list.js"
     }
   },
   "dependencies": {
@@ -103,6 +105,8 @@
     "kernel-enrol": "./bin/enrol.ts",
     "kernel-source": "./bin/source.ts",
     "kernel-acknowledge": "./bin/acknowledge.ts",
-    "kernel-inbound": "./bin/inbound.ts"
+    "kernel-inbound": "./bin/inbound.ts",
+    "kernel-stage": "./bin/stage.ts",
+    "kernel-list": "./bin/list.ts"
   }
 }

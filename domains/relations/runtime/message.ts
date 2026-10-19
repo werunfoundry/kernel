@@ -13,8 +13,12 @@
  * - **consent** — the person opted out. The opt-out is global today, so it
  *   refuses every message, solicited or not, until consent is per purpose;
  * - **cadence** — an unsolicited message with no cap given (there is no
- *   default), or past it: the unsolicited messages to the person inside the
- *   cap's window. A solicited one is never held back by a cadence;
+ *   default), or past it. The cap reads touches (decision 0050): the
+ *   unsolicited outbound touches to the person inside the cap's window,
+ *   whoever recorded them, plus the unsolicited messages inside it that no
+ *   touch names yet — handed over and not confirmed, which count rather than
+ *   let a second through. A message and its touch count once. A solicited
+ *   message is never held back by a cadence;
  * - **lane** — a message whose writer is not a person and which names no
  *   approval; or the lane's approval where the lane does not give it:
  *   `lane:autonomous` only for an experiment whose lane is autonomous and
@@ -27,12 +31,12 @@
  * answer to a customer's question must not be refused by it.
  */
 
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, notExists, sql } from "drizzle-orm";
 
 import { experiment } from "@werunfoundry/core/db/schema";
 import type { ActorKind, Database } from "@werunfoundry/core/runtime/run";
 
-import { message, person } from "../db/schema.js";
+import { message, person, touch } from "../db/schema.js";
 import { engagedSince } from "./record.js";
 
 export interface MessageInput {
@@ -78,11 +82,25 @@ export async function writeMessage(db: Database, input: MessageInput, now = new 
         refused.push("cadence: an unsolicited message needs a cap — a count and a window — and there is no default");
       } else {
         const since = new Date(now.getTime() - cap.withinDays * DAY);
-        const [count] = await tx
+        // Served by the touch index on (person, occurred_at).
+        const [touches] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(touch)
+          .where(and(eq(touch.personId, input.personId), eq(touch.direction, "outbound"), eq(touch.unsolicited, true), gt(touch.occurredAt, since)));
+        // Served by the message index on unsolicited (person, written_at), and the touch's unique message.
+        const [unconfirmed] = await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(message)
-          .where(and(eq(message.personId, input.personId), eq(message.unsolicited, true), gt(message.writtenAt, since)));
-        if ((count?.n ?? 0) >= cap.max) refused.push(`cadence: ${count?.n ?? 0} unsolicited messages to this person in ${cap.withinDays} days, at a cap of ${cap.max}`);
+          .where(
+            and(
+              eq(message.personId, input.personId),
+              eq(message.unsolicited, true),
+              gt(message.writtenAt, since),
+              notExists(tx.select({ id: touch.id }).from(touch).where(eq(touch.messageId, message.id))),
+            ),
+          );
+        const n = (touches?.n ?? 0) + (unconfirmed?.n ?? 0);
+        if (n >= cap.max) refused.push(`cadence: ${n} unsolicited contacts with this person in ${cap.withinDays} days, at a cap of ${cap.max}`);
       }
     }
 

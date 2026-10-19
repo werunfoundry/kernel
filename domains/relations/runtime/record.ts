@@ -197,14 +197,17 @@ export type TouchInput = TouchDirection & {
   sender?: string;
   outcome?: string;
   experimentId?: string;
+  /** The message whose hand-over this confirms (decision 0050). Only the sending path names one. */
+  messageId?: string;
   actor: { type: ActorKind; id?: string };
   runId?: string;
 };
 
 /**
- * Appends one touch. A provider event already recorded is not a second touch:
- * the unique key on (provider, provider_event_id) is in the DDL (doctrine 4),
- * and a replay returns `recorded: false` rather than an error.
+ * Appends one touch. A provider event already recorded is not a second touch,
+ * and neither is a second confirmation of one message's hand-over: both keys
+ * are unique in the DDL (doctrine 4), and a replay returns `recorded: false`
+ * rather than an error.
  */
 export async function recordTouch(db: Database, input: TouchInput): Promise<{ recorded: boolean }> {
   const inserted = await db
@@ -220,11 +223,13 @@ export async function recordTouch(db: Database, input: TouchInput): Promise<{ re
       ...(input.sender ? { sender: input.sender } : {}),
       ...(input.outcome ? { outcome: input.outcome } : {}),
       ...(input.experimentId ? { experimentId: input.experimentId } : {}),
+      ...(input.messageId ? { messageId: input.messageId } : {}),
       actorType: input.actor.type,
       ...(input.actor.id ? { actorId: input.actor.id } : {}),
       ...(input.runId ? { runId: input.runId } : {}),
     })
-    .onConflictDoNothing({ target: [touch.provider, touch.providerEventId] })
+    // Untargeted: either key held is a replay — the provider's event, or the message's hand-over.
+    .onConflictDoNothing()
     .returning({ id: touch.id });
   return { recorded: inserted.length === 1 };
 }

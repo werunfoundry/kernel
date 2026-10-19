@@ -104,9 +104,47 @@ describe("writing a message", { skip: base ? false : "TEST_DATABASE_URL is not s
     assert.ok((await writeMessage(db, input(personId, { unsolicited: true, cap }), day(20))).ok);
     assert.ok((await writeMessage(db, input(personId, { unsolicited: true, cap }), day(25))).ok);
     const [r] = await refusal(writeMessage(db, input(personId, { unsolicited: true, cap }), day(26)));
-    assert.match(r!, /2 unsolicited messages to this person in 10 days, at a cap of 2/);
+    assert.match(r!, /2 unsolicited contacts with this person in 10 days, at a cap of 2/);
     assert.ok((await writeMessage(db, input(personId, { unsolicited: false }), day(26))).ok, "a solicited answer is held back");
     assert.ok((await writeMessage(db, input(personId, { unsolicited: true, cap }), day(40))).ok);
+  });
+
+  // Decision 0050: the cap reads touches. Each fixture leaves the cap as the
+  // only rule that can refuse: a person, no opt-out, a person's write.
+  const aTouch = (personId: string, over: Record<string, unknown> = {}) =>
+    rows(
+      `insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type, message_id)
+       values ($1, 'email', $2, $3, 'a-sequencer', gen_random_uuid()::text, $4, 'system', $5)`,
+      [personId, over.direction ?? "outbound", over.unsolicited ?? true, over.at ?? new Date(), over.messageId ?? null],
+    );
+
+  it("cadence: an unsolicited touch counts though no message was written — a send the sequencer made on its own", async () => {
+    const personId = await aPerson();
+    await aTouch(personId);
+    const [r] = await refusal(writeMessage(db, input(personId, { unsolicited: true, cap: { max: 1, withinDays: 30 } })));
+    assert.match(r!, /^cadence: 1 unsolicited contacts/);
+  });
+
+  it("cadence: an inbound touch, a solicited one, and one outside the window do not count", async () => {
+    const personId = await aPerson();
+    await aTouch(personId, { direction: "inbound", unsolicited: false });
+    await aTouch(personId, { unsolicited: false });
+    await aTouch(personId, { at: new Date(Date.now() - 40 * 86_400_000) });
+    assert.ok((await writeMessage(db, input(personId, { unsolicited: true, cap: { max: 1, withinDays: 30 } }))).ok);
+  });
+
+  it("cadence: a message and the touch that confirms it count once; a message with no touch yet still counts", async () => {
+    const personId = await aPerson();
+    const cap = { max: 2, withinDays: 30 };
+    const first = await writeMessage(db, input(personId, { unsolicited: true, cap }));
+    assert.ok(first.ok);
+    await aTouch(personId, { messageId: (first as { messageId: string }).messageId });
+    // One contact so far, not two: a second passes.
+    const second = await writeMessage(db, input(personId, { unsolicited: true, cap }));
+    assert.ok(second.ok, "a message and its touch were counted twice");
+    // The second is handed over and not confirmed: it counts, and the cap is reached.
+    const [r] = await refusal(writeMessage(db, input(personId, { unsolicited: true, cap })));
+    assert.match(r!, /^cadence: 2 unsolicited contacts/);
   });
 
   it("cadence: solicited messages do not count against the cap", async () => {

@@ -11,6 +11,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   check,
   index,
@@ -281,14 +282,28 @@ export const touch = relations.table(
     /**
      * Whether the person did not ask for it (decision 0036). `direction`
      * cannot say it: an answer to a support question and a sales follow-up
-     * are both outbound. The solicitation cap reads unsolicited touches only,
-     * so a reply is never held back by a cadence. Inbound is never
+     * are both outbound. The solicitation cap reads unsolicited touches only
+     * (decision 0050 — until then, nothing read this column), so a reply is
+     * never held back by a cadence. Inbound is never
      * unsolicited — the check below.
      */
     unsolicited: boolean("unsolicited").notNull(),
 
     outcome: text("outcome"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+
+    /**
+     * The message whose hand-over this touch confirms (decision 0050), set by
+     * the sending path and by nothing else: an inbound touch, a pulled one, a
+     * send the sequencer made on its own name none. The cap counts a message
+     * and its touch once through it. Not `provider_event_id`, which is the
+     * provider's id and only that.
+     *
+     * Cascade: only an erasure deletes a message, and it deletes the person's
+     * touches too. Set null would be an update, which the append-only trigger
+     * refuses.
+     */
+    messageId: uuid("message_id").references((): AnyPgColumn => message.id, { onDelete: "cascade" }),
 
     /** Doctrine 5: which run recorded it, on whose behalf. */
     actorType: actorType("actor_type").notNull(),
@@ -306,6 +321,14 @@ export const touch = relations.table(
 
     /** `capacityUsed(sender, day)` — the pre-flight check before booking work. */
     index("touch_sender_occurred_at_idx").on(t.sender, sql`${t.occurredAt} desc`),
+
+    /**
+     * A message is handed over once: the sending path's touch write, replayed,
+     * keeps one. Also serves the cap's "has this message its touch".
+     */
+    uniqueIndex("touch_message_uidx")
+      .on(t.messageId)
+      .where(sql`${t.messageId} is not null`),
 
     /** What the person did is never outreach they did not ask for. */
     check("touch_inbound_not_unsolicited", sql`${t.direction} = 'outbound' or not ${t.unsolicited}`),
@@ -462,7 +485,11 @@ export const message = relations.table(
     subject: text("subject"),
     body: text("body").notNull(),
 
-    /** Whether the person did not ask for it. Only these count against the cap. */
+    /**
+     * Whether the person did not ask for it. Only these count against the cap
+     * — through their touch once it is recorded, and on their own until then
+     * (decision 0050).
+     */
     unsolicited: boolean("unsolicited").notNull(),
 
     /**

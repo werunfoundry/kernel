@@ -70,6 +70,15 @@ reference set to null, the key values and the address removed from the 4
 sourcing rows (outcome, detail, cost, run and the provider's status kept),
 then the 4 people deleted.
 
+**The same addresses were found in four places, one after the other**: in
+clear in `relations.person`; as keys in `gtm.sourcing_result`; as a hash in
+that row's `subject`, which anyone holding a candidate address can test;
+and in copies outside the database — the run logs kept while measuring. A
+backup taken earlier happened not to hold them only because it predated the
+runs. An erasure command that covers the tables alone will be believed
+complete, and will not be. It must reach the operational layer, backups and
+logs, or say in so many words that it does not.
+
 **The next time will not be an internal correction, but a real person's
 request to be erased.** Answering it is a decision of its own, to be taken
 after the single door to people search, enrichment and the sequencer, on the

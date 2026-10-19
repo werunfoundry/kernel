@@ -20,8 +20,10 @@
  *      that enrols the open accounts' people and skips the protected one, and
  *      a replay that enrols nobody twice; then `kernel-source`, dry and
  *      live, excluding by protection and by the CRM before and after
- *      completion; then `kernel-enrol --from-run` on what it kept, twice.
- *      Every run is read back from the database.
+ *      completion; then `kernel-enrol --from-run` on what it kept, twice;
+ *      then a person's acts (0047) — each refused without a terminal, shown
+ *      on a dry run, and a list and a decision written through a
+ *      pseudo-terminal. Every run is read back from the database.
  *
  *   TEST_DATABASE_URL=postgresql://… node scripts/try-instance.mjs
  *
@@ -339,6 +341,49 @@ try {
     show(fromAgain);
     expect(enrolled(fromAgain.stdout) === 0, "a sourcing run consumed twice enrolled someone twice");
     expect(/already enrolled in this sequence, by the registry/.test(fromAgain.stdout), "the second consumption was not caught by the registry");
+
+    // A person's acts (0047), from the packs, on plain Node. Without a
+    // terminal each writes nothing; `script` gives one a pseudo-terminal and
+    // types the confirmation, as a person would.
+    const count = async (table) => (await client.query(`select count(*)::int as n from ${table}`)).rows[0].n;
+    const typed = (name, args, input) =>
+      new Promise((done) => {
+        const quote = (a) => `'${a.replace(/'/g, `'\\''`)}'`;
+        const child = spawn("script", ["-qec", [join(root, "node_modules/.bin", name), ...args].map(quote).join(" "), "/dev/null"], { cwd: root, env });
+        let stdout = "";
+        child.stdout.on("data", (d) => (stdout += d));
+        child.stderr.on("data", (d) => (stdout += d));
+        child.stdin.end(input);
+        child.on("close", (status) => done({ status, stdout, stderr: "" }));
+      });
+
+    step("a list from the sourcing run: refused without a terminal, shown dry, constituted at one");
+    const listArgs = ["--key", "sourced", "--from-run", sourcingRun, "--by", "an operator"];
+    const listBare = await bin("kernel-list", listArgs);
+    expect(listBare.status === 1 && /at a terminal\. Nothing was written/.test(listBare.stdout), `kernel-list without a terminal: ${listBare.stdout.trim()}`);
+    const listDry = await bin("kernel-list", [...listArgs, "--dry-run"]);
+    show(listDry);
+    expect(listDry.status === 0 && /1 members/.test(listDry.stdout) && /ada@open\.example\.com/.test(listDry.stdout), "the dry run of kernel-list did not show Ada alone");
+    expect((await count("relations.list")) === 0, "a list was written without a terminal, or by a dry run");
+    const listed = await typed("kernel-list", listArgs, "sourced\n");
+    expect(listed.status === 0 && /list sourced constituted and sealed, 1 members/.test(listed.stdout), `kernel-list at a terminal: ${listed.stdout.trim().split("\n").pop()}`);
+    expect((await count("relations.list_member")) === 1, "the list does not hold Ada");
+
+    step("a stage and a relationship, shown dry");
+    const ada = (await client.query("select p.email, c.domain from relations.person p join relations.company c on c.id = p.company_id where lower(p.email) = 'ada@open.example.com'")).rows[0];
+    const stageDry = await bin("kernel-stage", ["--person", ada?.email ?? "", "--stage", "engaged", "--at", "2026-09-01", "--by", "an operator", "--dry-run"]);
+    show(stageDry);
+    expect(stageDry.status === 0 && /would declare ada@open\.example\.com engaged/.test(stageDry.stdout), "kernel-stage did not show its dry run");
+    const relDry = await bin("kernel-relationship", ["--company", ada?.domain ?? "", "--status", "customer", "--at", "2026-09-01", "--by", "an operator", "--dry-run"]);
+    show(relDry);
+    expect(relDry.status === 0 && /would declare .* customer/.test(relDry.stdout), "kernel-relationship did not show its dry run");
+    expect((await count("acquisition.person_state")) + (await count("relations.relationship")) === 0, "a dry run declared something");
+
+    step("a decision, recorded at a terminal");
+    await client.query("insert into core.experiment (slug, type, hypothesis_ref) values ('try-decide', 'campaign', 'https://example.com/h')");
+    const decided = await typed("kernel-decide", ["--experiment", "try-decide", "--conclusion", "continue", "--no-readings", "--by", "an operator"], "try-decide\n");
+    expect(decided.status === 0 && /decision .* recorded on try-decide/.test(decided.stdout), `kernel-decide at a terminal: ${decided.stdout.trim().split("\n").pop()}`);
+    expect((await count("core.decision")) === 1, "the decision was not recorded");
   }
   await client.end();
 } catch (error) {

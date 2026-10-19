@@ -273,3 +273,29 @@ export async function queue(db: Database, draftId: string, attribution: Attribut
     return { ok: true, draft: queued! };
   });
 }
+
+/**
+ * What became of a queued draft once it was handed over (decision 0050):
+ * `sent`, or `failed` with the reason — the only two moves out of `queued`.
+ * Written by the sending path, inside the transaction that records the touch
+ * of a send, so a draft never reads sent without its touch.
+ */
+export async function settle(
+  db: Database,
+  draftId: string,
+  outcome: { state: "sent" } | { state: "failed"; reason: string },
+  attribution: Attribution,
+): Promise<Decided> {
+  if (outcome.state === "failed" && !outcome.reason.trim()) return { ok: false, refused: "a failure says why" };
+  return db.transaction(async (tx) => {
+    const current = await locked(tx, draftId);
+    if (!current) return { ok: false, refused: "no such draft" };
+    if (current.state !== "queued") return { ok: false, refused: `a ${current.state} draft was not handed over: only a queued one is settled` };
+    const [settled] = await tx
+      .update(draft)
+      .set({ state: outcome.state, ...(outcome.state === "failed" ? { failureReason: outcome.reason } : {}), ...attributed(attribution) })
+      .where(eq(draft.id, draftId))
+      .returning();
+    return { ok: true, draft: settled! };
+  });
+}

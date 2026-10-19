@@ -12,7 +12,8 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
-import { recordDecision } from "./decision.js";
+import type { Reading } from "./decision.js";
+import { checkReadings, findExperiment, listDecisions, recordDecision } from "./decision.js";
 import { recordEvent } from "./event.js";
 import type { Database } from "./run.js";
 
@@ -120,6 +121,33 @@ describe("a decision", { skip: base ? false : "TEST_DATABASE_URL is not set" }, 
       client.query("insert into core.decision (experiment_id, conclusion, readings, actor_type, actor_id, run_id) values ($1, 'x', '{}', 'human', 'x', $2)", [experimentId, runId]),
       /decision_readings_check/,
     );
+  });
+
+  it("refuses, before any run, a reading that is not one: no metric, a value that is not a number, no moment", async () => {
+    const experimentId = await anExperiment();
+    for (const [bad, why] of [
+      [{ value: 1, readAt: "2026-09-30T00:00:00Z" }, /names no metric/],
+      [{ metric: "m", value: "4%", readAt: "2026-09-30T00:00:00Z" }, /neither a number nor null/],
+      [{ metric: "m", value: 0.04 }, /does not say when it was read/],
+    ] as const) {
+      await assert.rejects(recordDecision(db, { experimentId, conclusion: "x", readings: [bad as unknown as Reading], by: "an operator" }), why);
+    }
+    assert.equal((await rows("select count(*)::int as n from core.run"))[0].n, 0);
+  });
+
+  it("takes a reading whose value is none, said as null", () => {
+    assert.deepEqual(checkReadings([{ metric: "m", value: null, readAt: "2026-09-30T00:00:00Z" }]), { readings: [{ metric: "m", value: null, readAt: "2026-09-30T00:00:00Z" }] });
+    assert.match((checkReadings({}) as { refused: string }).refused, /are a list/);
+  });
+
+  it("is not idempotent: concluding twice is two decisions, read back oldest first (0047)", async () => {
+    const experimentId = await anExperiment();
+    await recordDecision(db, { experimentId, conclusion: "continue", readings: [], by: "an operator" });
+    await recordDecision(db, { experimentId, conclusion: "continue", readings: [], by: "an operator" });
+    const read = await listDecisions(db, experimentId);
+    assert.deepEqual(read.map((d) => [d.conclusion, d.decidedBy]), [["continue", "an operator"], ["continue", "an operator"]]);
+    assert.deepEqual(await findExperiment(db, " e "), { id: experimentId, slug: "e", status: "draft" });
+    assert.equal(await findExperiment(db, "nothing"), undefined);
   });
 
   it("is append-only, and its experiment is not deleted from under it", async () => {

@@ -110,7 +110,8 @@
     "bin": {
       "kernel-check-instance": "./scripts/check-instance.mjs",
       "kernel-verify": "./dist/bin/verify.js",
-      "kernel-migrate": "./dist/bin/migrate.js"
+      "kernel-migrate": "./dist/bin/migrate.js",
+      "kernel-decide": "./dist/bin/decide.js"
     }
   },
   "dependencies": {
@@ -128,7 +129,8 @@
   "bin": {
     "kernel-check-instance": "./scripts/check-instance.mjs",
     "kernel-verify": "./bin/verify.ts",
-    "kernel-migrate": "./bin/migrate.ts"
+    "kernel-migrate": "./bin/migrate.ts",
+    "kernel-decide": "./bin/decide.ts"
   },
   "files": [
     "dist",

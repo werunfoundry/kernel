@@ -245,6 +245,14 @@ export async function recordOptOut(db: Database, personId: string, at: Date): Pr
 }
 
 /**
+ * What erasing a person does to their opt-out (decision 0049), said wherever
+ * an erasure is shown: the opt-out is a column of the row erasure deletes, so
+ * a person who asked for both can have one of the two today.
+ */
+export const OPT_OUT_AFTER_ERASURE =
+  "the opt-out does not survive: nothing will recognise this person again, and a later run that finds them records a new person who has not opted out. A person who asked not to be contacted as well is held only by what the instance keeps outside the kernel, such as its CRM";
+
+/**
  * Whether the person reached us on this channel after `since`: an inbound
  * touch, their own act (decision 0042). What licenses a reactive reply, read
  * by the draft's gate and the message's alike. Reads only; served by the

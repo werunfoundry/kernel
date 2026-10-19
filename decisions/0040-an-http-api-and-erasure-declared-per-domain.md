@@ -1,5 +1,9 @@
 # 0040 — An HTTP API, and erasure declared by each domain
 
+> Completed by [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md):
+> erasure reaches a person by their keys too, and a run's history is
+> anonymised, not deleted as acquisition first declared it.
+
 ## Decided
 
 **An HTTP API, described by OpenAPI.** `api/openapi.json` is the contract;

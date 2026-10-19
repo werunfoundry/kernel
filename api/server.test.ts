@@ -143,8 +143,10 @@ describe("the API", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () 
   it("shows the erasure plan, and changes nothing", async () => {
     const { personId } = await fixtures();
     const res = await call("GET", `/v1/people/${personId}/erasure`);
-    const { steps } = (await res.json()) as { steps: { table: string; rows: number }[] };
+    const { steps, notReached } = (await res.json()) as { steps: { table: string; rows: number }[]; notReached: string[] };
     assert.deepEqual(steps.find((s) => s.table === "person"), { domain: "relations", table: "person", column: "id", do: "delete", rows: 1 });
+    assert.deepEqual(steps.find((s) => s.table === "sourcing_result"), { domain: "acquisition", table: "sourcing_result", column: "person_id", keys: "person", do: "anonymise", rows: 0, byKeys: 0 });
+    assert.ok(notReached.some((n) => n.startsWith("backups")) && notReached.some((n) => n.includes("opt-out")), "the plan says what it does not reach (0049)");
     assert.equal((await rows("select count(*)::int as n from relations.person"))[0].n, 1);
   });
 

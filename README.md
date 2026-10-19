@@ -213,7 +213,10 @@ whatever writes it, reads it, or connects it to the rest.
   conversation.
 - **Reading runs back** — listing, filtering, dashboards — waits until there
   are enough runs to read.
-- **Erasure and retention** wait until a real instance touches real people.
+- **Retention** of what names a person outside the database — backups,
+  execution logs, working copies — is the instance's: `kernel-erase` does not
+  reach it, and says so (0049). Erasure itself is built (0040, 0049); a
+  suppression entry that survives it is not.
 - **The experiment object**, beyond the row that exists, waits until a real
   campaign has run.
 

@@ -648,3 +648,14 @@ describe("protection by ancestry, through the company pass (decision 0044)", { s
     );
   });
 });
+
+describe("the person pass walks the ancestors of an address (decision 0044)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  it("excludes, after completion, a person whose address is on a subdomain of a protected domain", async () => {
+    // The company is open; only the completed address, one level under a protected domain, can protect her.
+    world.people.get("open.example.com")!.push({ id: "105", handle: "zoe", name: "Zoe", email: "zoe@mail.customer.example.org" });
+    const r = await run();
+    const zoe = r.looked.find((l) => l.person?.keys.some((k) => k.value === "zoe@mail.customer.example.org"));
+    assert.deepEqual([zoe?.pass, zoe?.outcome, zoe?.detail], ["person", "protected", "an address completion gave it is on a protected domain"]);
+    assert.ok(!kept(r).includes("zoe@mail.customer.example.org"), "a person on a protected subdomain was kept");
+  });
+});

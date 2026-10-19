@@ -43,6 +43,30 @@ candidates it excluded. An entry that starts excluding dozens is seen at
 once, with no list and no recurring check: that is the guard on the
 unbounded walk.
 
+**Zero everywhere is the expected reading today, not a fault.** On the
+instance's real data, no candidate meets the protected set: the target list
+keeps companies the pipeline has not worked yet, and every protected company
+found in it sits further down the pipeline. The run that counted 8 for one
+entry was a test harness feeding it spellings of a protected domain, not
+real candidates.
+
+## Not undone by reverting
+
+**`unreadable_key` stays in both enums once migrated.** PostgreSQL cannot
+drop a value from an enum ("dropping an enum value is not implemented",
+checked on PostgreSQL 17). Reverting this change in the code leaves the
+value in every database that applied it. It is harmless while nothing
+writes it; removing it means recreating the type, and only once no row
+uses it.
+
+## History needs no remapping
+
+Before this decision, a candidate whose domain was not a host was recorded
+`unreachable`, as one with no domain was. On the instance, the only
+`unreachable` rows are failed people searches on an empty page (one per
+live run), on valid domains. No existing row is an unreadable key in
+disguise, so none is rewritten.
+
 ## Rules out
 
 - Widening a protected domain to its registrable domain.

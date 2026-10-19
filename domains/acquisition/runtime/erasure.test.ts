@@ -1,10 +1,11 @@
 /**
  * Erasure as the domains declare it and the core carries it out (decision
- * 0040), against a real database with every layer migrated — the only place
+ * 0040, completed by 0049), against a real database with every layer migrated — the only place
  * the declarations of both domains meet the tables they name.
  */
 
 import { strict as assert } from "node:assert";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
@@ -19,6 +20,7 @@ import { validateDomain } from "@werunfoundry/core/manifest/validate";
 import { erase, planErasure } from "@werunfoundry/core/runtime/erase";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import * as relationsSchema from "@werunfoundry/relations/db/schema";
+import { recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import * as acquisitionSchema from "../db/schema.js";
 
@@ -109,9 +111,60 @@ describe("erasure, as declared", () => {
     assert.ok(relations.erasure?.some((r) => r.table === "person" && r.column === "id"), "the person's own row has no rule");
   });
 
+  it("reaches by keys every column that holds a person's identity (0049)", () => {
+    for (const [domain, schema] of [[relations, relationsSchema], [acquisition, acquisitionSchema]] as const) {
+      const declared = new Set((domain.erasure ?? []).flatMap((r) => ("keys" in r && r.keys ? [`${r.table}.${r.keys}`] : [])));
+      for (const value of Object.values(schema)) {
+        if (!(value instanceof PgTable)) continue;
+        const config = getTableConfig(value);
+        for (const column of config.columns) {
+          if (column.name !== "person" || column.getSQLType() !== "jsonb") continue;
+          assert.ok(declared.has(`${config.name}.person`), `${domain.name}: ${config.name}.person holds a person's keys and no rule reaches it by them`);
+        }
+      }
+    }
+  });
+
   it("refuses a row kept with no legal basis", () => {
     const r = validateDomain({ ...relations, erasure: [{ table: "touch", column: "person_id", do: "keep" }] });
     assert.ok(r.issues.some((i) => i.severity === "error" && /erasure/.test(i.at)), JSON.stringify(r.issues));
+  });
+
+  // Each from a rule that is otherwise valid, so the refusal is the one rule's.
+  const refused = (rule: unknown, why: RegExp) => {
+    const r = validateDomain({ ...acquisition, erasure: [rule] });
+    assert.ok(r.issues.some((i) => i.severity === "error" && i.at.startsWith("erasure.0") && why.test(i.message)), JSON.stringify(r.issues));
+    assert.equal(r.manifest, undefined);
+  };
+  const valid = { table: "enrolment_skip", keys: "person", do: "anonymise", columns: ["person"] };
+
+  it("accepts an anonymisation reached by keys alone", () => {
+    assert.ok(validateDomain({ ...acquisition, erasure: [valid] }).ok);
+  });
+
+  it("refuses a rule that reaches its rows by neither id nor keys", () => {
+    const { keys: _, ...none } = valid;
+    refused(none, /by `column`, by `keys`, or both/);
+  });
+
+  it("refuses an anonymisation that changes nothing", () => {
+    const { columns: _, ...nothing } = valid;
+    refused(nothing, /changes no column/);
+  });
+
+  it("refuses a column given two answers", () => {
+    refused({ ...valid, random: ["person"] }, /"person" is given two answers/);
+  });
+
+  it("refuses a strip path that is an expression, not field names", () => {
+    refused({ ...valid, strip: { said: ["key.value}'; drop"] } }, /field names joined by dots/);
+  });
+
+  it("refuses keyColumns anywhere but on the subject's own row, and a kind the domain does not declare", () => {
+    const r = validateDomain({ ...relations, erasure: [{ table: "touch", column: "person_id", do: "delete", keyColumns: { email: "email" } }] });
+    assert.ok(r.issues.some((i) => i.at === "erasure.0.keyColumns" && /own row/.test(i.message)), JSON.stringify(r.issues));
+    const k = validateDomain({ ...relations, erasure: [{ table: "person", column: "id", do: "delete", keyColumns: { fax: "email" } }] });
+    assert.ok(k.issues.some((i) => i.at === "erasure.0.keyColumns.fax" && /not an identity key/.test(i.message)), JSON.stringify(k.issues));
   });
 });
 
@@ -120,7 +173,7 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
     const id = await someone();
     const plan = await planErasure(db, [relations, acquisition], id);
     assert.deepEqual(plan.map((s) => `${s.domain}.${s.table}:${s.rows}`), [
-      "acquisition.draft:1", "acquisition.person_state:1", "acquisition.enrolment:1", "acquisition.sourcing_result:1",
+      "acquisition.draft:1", "acquisition.person_state:1", "acquisition.enrolment:1", "acquisition.sourcing_result:1", "acquisition.enrolment_skip:0",
       "relations.list_member:1", "relations.relationship:1", "relations.message:1", "relations.touch:1", "relations.signal:1", "relations.person:1",
     ]);
     assert.equal(await total(id), "9");
@@ -138,6 +191,7 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
     const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" });
     assert.equal(await total(id), "0");
     assert.equal((await rows("select count(*)::int as n from relations.person"))[0].n, 0);
+    assert.equal((await rows("select count(*)::int as n from acquisition.sourcing_result"))[0].n, 1, "the run's history stays, naming nobody (0049)");
     assert.equal(r.steps.at(-1)?.outcome, "deleted");
     assert.deepEqual((await rows("select actor_type, actor_id, status from core.run where id = $1", [r.runId]))[0], { actor_type: "human", actor_id: "an operator", status: "succeeded" });
     assert.equal((await rows("select trigger from core.run where id = $1", [r.runId]))[0].trigger, "cli", "the run keeps the channel its caller gave (0048)");
@@ -158,5 +212,119 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
     const wrong: DomainManifest = { ...relations, erasure: relations.erasure!.map((r) => (r.table === "touch" ? { table: "touch", column: "person_id", do: "anonymise", columns: ["sender"] } : r)) };
     await assert.rejects(erase(db, [wrong, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }), (e: Error) => /append-only/.test(String((e.cause as Error | undefined)?.message ?? e.message)));
     assert.equal(await total(id), "9");
+  });
+});
+
+/** The run's fingerprint of a person's keys, as `source.ts` writes it — what anyone holding an address can recompute. */
+const fingerprint = (keys: { kind: string; network?: string; value: string }[]) =>
+  `person:${createHash("sha256").update(keys.map((k) => `${k.kind}:${k.network ?? ""}:${k.value}`).sort().join("\n")).digest("hex").slice(0, 32)}`;
+
+const ada = {
+  email: { kind: "email", value: "ada@example.com" },
+  id: { kind: "social_profile_id", network: "network_a", value: "ada-1" },
+  handle: { kind: "social_profile_handle", network: "network_a", value: "ada-h" },
+};
+
+async function aRun(label: string, dryRun = false): Promise<string> {
+  const [{ id }] = await rows("insert into core.run (process_key, trigger, actor_type, dry_run) values ($1, 'cli', 'system', $2) returning id", [label, dryRun]);
+  return id;
+}
+
+const json = (v: unknown) => (v == null ? null : JSON.stringify(v));
+
+async function result(run: string, outcome: string, detail: string, keys: object[] | null, extra: { personId?: string; said?: object; cost?: object } = {}): Promise<string> {
+  const [{ id }] = await rows(
+    "insert into acquisition.sourcing_result (run_id, pass, outcome, detail, company, person, person_id, said, cost, subject) values ($1, 'person', $2, $3, $4, $5, $6, $7, $8, $9) returning id",
+    // As JSON: node-postgres would send an array as a Postgres array.
+    [run, outcome, detail, json({ domain: "example.com", name: "An Example" }), json(keys && { subject: "person", keys }), extra.personId ?? null, json(extra.said), json(extra.cost), fingerprint((keys ?? []) as never)],
+  );
+  return id;
+}
+
+const sourcing = async () => rows("select * from acquisition.sourcing_result order by created_at, id");
+const counts = async () =>
+  (await rows(
+    `select (select count(*) from relations.person)::int as person, (select count(*) from acquisition.sourcing_result)::int as sourcing_result,
+       (select count(*) from acquisition.enrolment_skip)::int as enrolment_skip, (select count(*) from core.run)::int as run`,
+  ))[0];
+
+describe("the reference case — what was done by hand (0049)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  it("deletes the person, and keeps every history row, naming nobody, by id and by keys", async () => {
+    const [{ id }] = await rows("insert into relations.person (email, external_id) values ('ada@example.com', 'network_a:ada-1') returning id");
+    await rows("insert into relations.person (email) values ('bob@example.org')");
+    const live = await aRun("acquisition.source");
+    const later = await aRun("acquisition.source");
+    const dry = await aRun("acquisition.source", true);
+    // Kept and recorded: names Ada by id, and carries every key, the handle included.
+    const kept = await result(live, "kept", "kept and recorded", [ada.email, ada.id, ada.handle], {
+      personId: id,
+      said: [{ key: ada.email, status: "accepts everything" }],
+      cost: [{ provider: "a source", cost: { amount: 1, unit: "credits" } }],
+    });
+    // Excluded by a later run: names her only by her address, spelt another way, and quotes the CRM's id for her.
+    const excluded = await result(later, "known_to_crm", "known to the CRM as crm-0001", [{ kind: "email", value: "ADA@Example.com" }]);
+    // A dry run: names her only by the handle, which only the kept row says is hers.
+    const simulated = await result(dry, "simulated", "a dry run", [ada.handle]);
+    // Bob — and a handle spelt like hers on another network — are not her.
+    await result(later, "kept", "kept and recorded", [{ kind: "email", value: "bob@example.org" }]);
+    await result(later, "duplicate", "already met in this run", [{ kind: "social_profile_handle", network: "network_b", value: "ada-h" }]);
+    await client.query("insert into acquisition.enrolment_skip (run_id, sequence_key, channel, reason, detail, person, company, subject) values ($1, 's', 'email', 'duplicate', 'enrolled already', $2, '{}', 'person:k1')", [later, { subject: "person", keys: [ada.email] }]);
+    await client.query("insert into acquisition.enrolment_skip (run_id, sequence_key, channel, reason, detail, person, company, subject) values ($1, 's', 'email', 'duplicate', 'enrolled already', $2, '{}', 'person:k2')", [later, { subject: "person", keys: [{ kind: "email", value: "bob@example.org" }] }]);
+
+    const before = await sourcing();
+    const others = before.filter((r) => ![kept, excluded, simulated].includes(r.id));
+    const original = before.find((r) => r.id === kept)!.subject;
+    assert.equal(original, fingerprint([ada.email, ada.id, ada.handle]), "the fingerprint is testable against keys someone holds");
+    assert.deepEqual(await counts(), { person: 2, sourcing_result: 5, enrolment_skip: 2, run: 3 });
+
+    const plan = await planErasure(db, [relations, acquisition], id);
+    assert.deepEqual(plan.filter((s) => s.keys).map((s) => `${s.table}:${s.rows}/${s.byKeys}`), ["sourcing_result:3/2", "enrolment_skip:1/1"]);
+    assert.deepEqual(await sourcing(), before, "the plan changes nothing");
+
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" });
+    assert.equal(r.steps.at(-1)?.outcome, "deleted", "nothing points at the person any more: the row is deleted, not emptied");
+    assert.deepEqual(await counts(), { person: 1, sourcing_result: 5, enrolment_skip: 2, run: 4 });
+
+    const after = await sourcing();
+    for (const was of before.filter((r) => [kept, excluded, simulated].includes(r.id))) {
+      const now = after.find((r) => r.id === was.id)!;
+      // What happened stays: the run, the company targeted, the outcome, the times, the cost.
+      for (const column of ["run_id", "pass", "outcome", "company", "cost", "created_at"]) assert.deepEqual(now[column], was[column], `${column} changed`);
+      // Who it was about does not.
+      assert.equal(now.person_id, null);
+      assert.equal(now.person, null);
+      assert.equal(now.detail, "erased (decision 0049); the outcome stands");
+      assert.match(now.subject, /^erased:[0-9a-f-]{36}$/);
+    }
+    assert.deepEqual(after.find((r) => r.id === kept)!.said, [{ key: { kind: "email" }, status: "accepts everything" }], "the provider's status stays, the address does not");
+    assert.equal(new Set(after.map((r) => r.subject)).size, 5, "a value derived from nothing is not shared by two rows");
+    const hers = after.filter((r) => [kept, excluded, simulated].includes(r.id));
+    assert.ok(!/ada|crm-0001/i.test(JSON.stringify(hers)), JSON.stringify(hers));
+    assert.ok(!after.some((r) => before.some((b) => b.subject === r.subject && b.id !== r.id)));
+    assert.deepEqual(after.filter((r) => ![kept, excluded, simulated].includes(r.id)), others, "nobody else's row changed");
+
+    const skips = await rows("select person, subject, detail, reason from acquisition.enrolment_skip order by subject");
+    assert.deepEqual(skips.find((s) => s.subject === "person:k2"), { person: { subject: "person", keys: [{ kind: "email", value: "bob@example.org" }] }, subject: "person:k2", detail: "enrolled already", reason: "duplicate" });
+    const erased = skips.find((s) => s.subject !== "person:k2")!;
+    assert.deepEqual([erased.person, erased.detail, erased.reason], [null, "erased (decision 0049); the reason stands", "duplicate"]);
+    assert.match(erased.subject, /^erased:/);
+  });
+
+  it("reaches by the person's own keys rows no row by id leads to: the address, and the profile id held as network:value", async () => {
+    const [{ id }] = await rows("insert into relations.person (email, external_id) values ('ada@example.com', 'network_a:ada-1') returning id");
+    const run = await aRun("acquisition.source");
+    await result(run, "opted_out", "opted out", [ada.email]);
+    await result(run, "protected", "an address it already had is on a protected domain", [ada.id]);
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" });
+    assert.equal(r.steps.find((s) => s.table === "sourcing_result")?.byKeys, 2);
+    assert.deepEqual((await sourcing()).map((s) => s.person), [null, null]);
+  });
+
+  it("does not let the opt-out survive: a person found again later is a new person, contactable (0049 names the hole)", async () => {
+    const [{ id }] = await rows("insert into relations.person (email, opted_out_at) values ('ada@example.com', now()) returning id");
+    await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" });
+    const again = await recordPerson(db, { subject: "person", keys: [ada.email] });
+    assert.ok("id" in again && again.id !== id);
+    assert.deepEqual(await rows("select opted_out_at from relations.person"), [{ opted_out_at: null }]);
   });
 });

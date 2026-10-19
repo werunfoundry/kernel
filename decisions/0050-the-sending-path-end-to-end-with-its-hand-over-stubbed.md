@@ -39,11 +39,11 @@ For the experiment's drafts whose person is on the list, approved or queued
 
 | Step | What is evaluated | On refusal |
 | ---- | ----------------- | ---------- |
-| 4. **Read protection**, once per run, fresh, failing closed, through `readProtection` as enrolment does (0019, 0044). Unchanged. | The person's addresses, and the company `relations` recorded for them. | The run stops before anything is written, as enrolment's does. A protected person's draft is dropped by the system, with the reason. |
+| 4. **Read protection**, once per run, fresh, failing closed, through `readProtection` as enrolment does (0019, 0044). Unchanged. | The person's addresses, and the company `relations` recorded for them (see *The missing affiliation*). | Unreadable or stale: the run stops before anything is written. A protected person's draft is dropped by the system, with the reason. |
 | 5. **Write the message** (`writeMessage`, 0038). Key: `acquisition.draft:<draft id>`, so a replay is one message. | Consent (the global opt-out); cadence (the cap, below); lane (the approval). | The draft stays approved, and the report names every reason. A cadence refusal is *not yet*: a later run may pass once the window has moved. |
 | 6. **Queue the draft** (`queue`, 0027). | The experiment is running; the opt-out, read again. | Opted out: dropped by the system. Not running: stays approved. |
-| 7. **Hand over**, with the message's key as the idempotency key. | Nothing, by the kernel: this is the seam. | Not retryable: the draft is `failed`. Retryable: the run stops, `partial`, the draft stays queued and the next run resumes it. |
-| 8. **Record the touch and settle the draft**, in one transaction: an outbound touch (`recordTouch`) naming the message by its key, and the draft queued → `sent`. | — | — |
+| 7. **Hand over**, with the message's key as the idempotency key. | Nothing, by the kernel: this is the seam. | Not retryable: the draft is `failed`, and says why. Retryable: the run stops, `partial`, the draft stays queued and the next run resumes it. |
+| 8. **Record the touch and settle the draft**, in one transaction: an outbound touch (`recordTouch`) that names its message, under the provider's own event id, and the draft queued → `sent`. | — | — |
 
 **Whether a send is unsolicited is said by the caller of run 2, with no
 default**, as `writeMessage` asks it. A cap is required when it is.
@@ -52,16 +52,33 @@ default**, as `writeMessage` asks it. A cap is required when it is.
 *Would reverse it*). A message with no touch is a hand-over nobody
 confirmed: a crash, a failed hand-over, or a queue refused between steps 5
 and 6. Replaying the run resumes a queued one: `writeMessage` returns the
-same message, the hand-over is idempotent on its key, and the touch's own
-key holds it once.
+same message, the hand-over is idempotent on its key, and the touch is held
+once by its key and by its message.
+
+### Two columns, in one migration slot
+
+- **`relations.touch.message_id`** — the message a touch confirms the
+  hand-over of. Null for every other touch: an inbound one, a pulled one, a
+  send the sequencer made on its own. Unique where set: a message is handed
+  over once, and that protects the send path's touch write. Cascade: only an
+  erasure deletes a message, and it deletes the person's touches with it.
+  Not `provider_event_id`, which is the provider's id for its event: a
+  kernel key stored there would make the name lie, and break on the first
+  real one.
+- **`acquisition.draft.failure_reason`** — why a `failed` draft failed,
+  required by a check when it is.
+
+Two files, not one: a migration belongs to the layer whose schema it
+changes (0002), and `relations` cannot migrate `acquisition`'s table. They
+land in the same pull request, which holds the slot: decision 0049 needs no
+migration, and if that changes, it waits for this one.
 
 ### The cap reads touches — superseding 0038 in part
 
 0038 counts the unsolicited *messages* to the person in the window.
 Constraint 4 says the cap is read from touches. From now on it counts **the
 unsolicited outbound touches to the person in the window, plus the unsolicited
-messages in the window that no touch confirms yet** — a message whose own
-touch, recorded under its key, is not there.
+messages in the window that no touch names yet**.
 
 - A message and its touch count once.
 - A message handed over and never confirmed still counts, so a crash between
@@ -70,18 +87,13 @@ touch, recorded under its key, is not there.
 - A touch any writer records — a send the sequencer made on its own, once
   something records it — counts without having passed through this gate.
 
-**No migration.** `touch.unsolicited` exists (0036); the touch index on
-(person, occurred_at) serves the read; the link from a touch to its message
-is the message's key, written as the touch's `provider_event_id` by the one
-path that records it.
-
 ## The three known defects
 
 1. **Nothing read a list.** Run 1 does. **Enrolment still reads a sourcing
-   run (0032), and is not changed here**: enrolment hands a person to a
-   sequence that sends on its own, past this gate, and reading a list
-   instead would not bring those sends through it. Moving enrolment onto
-   lists is its own change, and would carry limit 4 below with it.
+   run (0032), and is not changed here.** Enrolment hands a person to a
+   sequence that sends on its own, and every one of those sends bypasses
+   this gate. That bypass is exactly what a single gate will have to close:
+   that work exists, and comes after this decision.
 2. **The cap does not count what the sequencer sends on its own.** Still
    true, and now one step from closed: the cap reads touches, and nothing
    records those sends as touches — the inbound pull writes inbound touches
@@ -92,22 +104,55 @@ path that records it.
    This path sends what `acquisition` sends, which the global opt-out is right
    to refuse; what it costs a domain that invoices, 0041 already says.
 
-## Limits this path has, noticed while deciding it
+## The missing affiliation
 
-4. **Protection judges a list member by the company `relations` recorded,
-   not by the one the target list gives now** — 0041's guarantee, which holds
-   for enrolment because enrolment reads the target list. A list holds
-   people, not the target list's answer about them. A person who moved to a
-   customer, with neither their recorded company nor their address changed,
-   is not seen. Asking the target list per member is a change to protection,
-   outside this decision.
-5. **A failed draft says nothing about why.** `draft` has no column for it;
-   the reason is in the run's report and in its error. A column is a
-   migration.
-6. **A send the provider later reports under its own id is counted twice** —
-   once as the message's touch, once as the pulled one. Too strict, never too
-   loose; the real hand-over decides how a provider's id meets the message's
-   key.
+**Protection at sending judges a list member by the company `relations`
+recorded, not by where they work now.** For enrolment, 0041's guarantee
+holds because enrolment reads the target list, whose answer is current. A
+list holds people, and nothing in the record knows where a person works
+*now*: a person who moved to a customer, with neither their recorded company
+nor their address changed, is not seen.
+
+That is not a limit of its own. It is the root defect 0047 names (*Noticed*,
+2): **there is no person–company affiliation bounded in time.**
+`relations.person.company_id` is one reference, with no dates, filled once
+and never overwritten. Two symptoms of the one missing structure:
+
+- a relationship declared on a company, as an approximation of a person's
+  affiliation (0047, constraint 3);
+- protection at sending that reads a company which may no longer be the
+  person's.
+
+Both go when the bounded affiliation exists. Asking the target list per
+member instead would be a change to protection, outside this decision.
+
+## Limits this path has
+
+- **A send the provider later reports under its own id is counted twice** —
+  once as the message's touch, once as the pulled one, which names no
+  message. Too strict, never too loose; the real hand-over decides how a
+  pulled send finds its message.
+- **The channel a sent touch records is its template's, checked against no
+  declared vocabulary.** The inbound pull refuses an undeclared channel
+  (0039); this path does not yet. The real hand-over, which is bound per
+  channel (0015), is where an undeclared one is refused.
+
+## Noticed: a decision describes behaviour the code does not have
+
+Third time in two days. **0036** says the cap, *when it is built, reads
+unsolicited touches only*, and the comment on `touch.unsolicited` says, in
+the present tense, that *the solicitation cap reads unsolicited touches
+only*. **0038** then built the cap on messages — and said so — while stating
+as a future condition ("when touches say whether they were solicited") one
+0036 had already met. Until this decision, `touch.unsolicited` had no reader.
+
+The two earlier cases: 0047 misstated the trigger an erasure opens its run
+with (0048, *Erratum*); and the erasure 0040 built deleted a history that
+0049 finds should have been anonymised.
+
+Nothing checks that what a decision asserts is what the code does. This is
+a finding, not a fix: what to do about it is decided once this decision and
+0049 are merged.
 
 ## Rules out
 
@@ -115,11 +160,12 @@ path that records it.
 - A message handed over before it is written, or a touch recorded before the
   hand-over.
 - A cap that counts only what passed through the gate.
+- A kernel key stored in a provider's field.
 - A hand-over, a provider call or a command shipped by this decision.
 
 ## Would reverse it
 
 A provider that cannot take a send before reporting it (0038, *Would reverse
-it*). A real hand-over that must tell the kernel its own id before the touch
-is recorded: then the link from a touch to its message is a column, not the
-key, and that is a migration.
+it*): the message would record what happened rather than gate what may. A
+bounded affiliation: protection at sending reads it, and *The missing
+affiliation* goes.

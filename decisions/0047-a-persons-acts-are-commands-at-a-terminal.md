@@ -3,6 +3,9 @@
 > Superseded in part by [0048](0048-a-runs-trigger-is-the-channel-its-command-says.md):
 > an erasure opened its run as `manual`, not `cli` as *Noticed* 5 says, and
 > every command now passes `cli` to its verb.
+>
+> Completed by [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md):
+> the sending path reads a list.
 
 Completes [0036](0036-a-state-is-declared-and-kept.md),
 [0037](0037-a-list-is-frozen-and-is-not-a-permission.md) and

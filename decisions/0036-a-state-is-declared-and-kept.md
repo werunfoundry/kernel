@@ -5,6 +5,9 @@
 >
 > Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
 > called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+>
+> Superseded in part by [0047](0047-a-persons-acts-are-commands-at-a-terminal.md):
+> a relationship is declared on a company, never on a person alone.
 
 ## Decided
 

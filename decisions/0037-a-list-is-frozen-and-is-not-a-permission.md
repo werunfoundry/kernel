@@ -1,5 +1,9 @@
 # 0037 — A list is frozen, and is not a permission
 
+> Completed by [0047](0047-a-persons-acts-are-commands-at-a-terminal.md): a
+> person constitutes a list with `kernel-list`, from a run's result or a
+> hand selection.
+
 ## Decided
 
 **`relations.audience` becomes `relations.list`**, and `audience_member`

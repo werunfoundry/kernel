@@ -2,6 +2,9 @@
 
 > Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
 > called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+>
+> Completed by [0047](0047-a-persons-acts-are-commands-at-a-terminal.md): a
+> person records a decision with `kernel-decide`.
 
 Completes [0017](0017-inbound-is-pulled.md), which fixed the contract and
 left the loop and its cursor to a decision of their own.

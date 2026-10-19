@@ -8,7 +8,16 @@
  * other actor and any rewrite; a mistaken declaration is corrected by
  * another, which says why. Nothing here is computed: the domain that
  * observes a payment should one day write `customer` itself, and does not
- * exist yet.
+ * exist yet. This domain is where it waits, not where that is satisfied
+ * (0047).
+ *
+ * Declared on a company only (0047). Being a customer is a property of a
+ * person's affiliation to a company, bounded in time; that affiliation does
+ * not exist, and the company is the closest subject the record has. The
+ * schema still accepts a person: the refusal is here, for every caller.
+ *
+ * A declaration feeds no protection: protection reads its own source, never
+ * this (0041).
  */
 
 import { eq } from "drizzle-orm";
@@ -39,11 +48,51 @@ export function checkDeclaration(input: { at: Date; by: string }, now = new Date
   return undefined;
 }
 
-/** A person declares a relationship. Replaying the same one keeps one row, and says so. */
+/**
+ * The moment a state became true, as a person types it: an ISO time with its
+ * zone, or a date, read as that day at 00:00 UTC. A time without a zone is
+ * refused — read in the terminal's zone, the same words would name another
+ * moment elsewhere.
+ */
+export function readMoment(text: string): { at: Date } | { refused: string } {
+  const t = text.trim();
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(t);
+  if (!dateOnly && !/^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:?\d{2})$/i.test(t)) {
+    return { refused: `"${t}" is neither a date (2026-09-01) nor a time with its zone (2026-09-01T09:30:00Z)` };
+  }
+  const at = new Date(dateOnly ? `${t}T00:00:00Z` : t);
+  return Number.isNaN(at.getTime()) ? { refused: `"${t}" is not a moment` } : { at };
+}
+
+/**
+ * What a declaration would do, read before anything is written (0047). The
+ * same declaration as the current one writes nothing. The same state from
+ * another moment is refused: a second row would only move "since when". A
+ * different state is declared, and becomes current only when it is not
+ * dated before the current one — otherwise it is history.
+ */
+export type DeclarationPlan = { already: true } | { refused: string } | { declare: true; current: boolean };
+
+export function planDeclaration(current: { state: string; at: Date } | undefined, input: { state: string; at: Date }): DeclarationPlan {
+  if (!current) return { declare: true, current: true };
+  if (current.state === input.state) {
+    if (current.at.getTime() === input.at.getTime()) return { already: true };
+    return { refused: `it already stands as ${current.state} since ${current.at.toISOString()}; a second declaration would only move that moment` };
+  }
+  return { declare: true, current: input.at.getTime() >= current.at.getTime() };
+}
+
+/**
+ * A person declares a company's relationship. Replaying the same one keeps
+ * one row, and says so. A person is refused as a subject (0047).
+ */
 export async function declareRelationship(
   db: Database,
-  input: { subject: Subject; status: RelationshipStatus; at: Date; reason?: string; by: string },
+  input: { subject: { companyId: string }; status: RelationshipStatus; at: Date; reason?: string; by: string },
 ): Promise<{ runId: string; declared: boolean }> {
+  if ("personId" in input.subject || !input.subject.companyId) {
+    throw new Error("a relationship is declared on a company, not on a person alone (decision 0047)");
+  }
   const refused = checkDeclaration(input);
   if (refused) throw new Error(refused);
   const by = input.by.trim();
@@ -52,7 +101,7 @@ export async function declareRelationship(
     const written = await db
       .insert(relationship)
       .values({
-        ...input.subject,
+        companyId: input.subject.companyId,
         status: input.status,
         at: input.at,
         ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),

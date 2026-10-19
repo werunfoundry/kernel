@@ -74,16 +74,21 @@ export interface ListRead {
   key: string;
   query: unknown;
   sealedAt: Date | null;
+  createdAt: Date;
+  actorId: string | null;
   members: { personId: string | null; companyId: string | null; reason: string | null }[];
 }
 
 /** A list as it was constituted: its query and its members. Reads only. */
 export async function readList(db: Database, key: string): Promise<ListRead | undefined> {
-  const [row] = await db.select({ id: list.id, key: list.key, query: list.query, sealedAt: list.sealedAt }).from(list).where(eq(list.key, key));
+  const [row] = await db
+    .select({ id: list.id, key: list.key, query: list.query, sealedAt: list.sealedAt, createdAt: list.createdAt, actorId: list.actorId })
+    .from(list)
+    .where(eq(list.key, key));
   if (!row) return undefined;
   const members = await db
     .select({ personId: listMember.personId, companyId: listMember.companyId, reason: listMember.reason })
     .from(listMember)
     .where(eq(listMember.listId, row.id));
-  return { key: row.key, query: row.query, sealedAt: row.sealedAt, members };
+  return { key: row.key, query: row.query, sealedAt: row.sealedAt, createdAt: row.createdAt, actorId: row.actorId, members };
 }

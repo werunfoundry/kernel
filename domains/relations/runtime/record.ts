@@ -92,6 +92,41 @@ export async function findCompany(db: Database, identity: Identity): Promise<Fou
   return settle(byImmutable, byMutable, keys.externalId, "company");
 }
 
+const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A recorded subject, from what a person types at a terminal (decision 0047):
+ * its row id, or its key — an address for a person, a domain for a company.
+ * Reads only. A key that names nothing is refused: a command never creates
+ * what it declares about.
+ */
+export type Named = { id: string; label: string } | { refused: string };
+
+export async function namePerson(db: Database, typed: string): Promise<Named> {
+  const key = typed.trim();
+  if (uuidShape.test(key)) {
+    const [row] = await db.select({ id: person.id, email: person.email }).from(person).where(eq(person.id, key));
+    return row ? { id: row.id, label: row.email ?? row.id } : { refused: `no person ${key} is on record` };
+  }
+  if (!key.includes("@")) return { refused: `"${key}" is neither an address nor a person's id` };
+  const found = await findPerson(db, { subject: "person", keys: [{ kind: "email", value: key }] });
+  if ("conflict" in found) return { refused: found.conflict };
+  return "none" in found ? { refused: `no person with the address ${key} is on record` } : { id: found.id, label: key.toLowerCase() };
+}
+
+export async function nameCompany(db: Database, typed: string): Promise<Named> {
+  const key = typed.trim();
+  if (uuidShape.test(key)) {
+    const [row] = await db.select({ id: company.id, domain: company.domain, name: company.name }).from(company).where(eq(company.id, key));
+    return row ? { id: row.id, label: row.domain ?? row.name } : { refused: `no company ${key} is on record` };
+  }
+  // An empty host is refused by findCompany: it has no key to find a company by.
+  const domain = hostOf(key);
+  const found = await findCompany(db, { subject: "company", keys: [{ kind: "domain", value: domain }] });
+  if ("conflict" in found) return { refused: found.conflict };
+  return "none" in found ? { refused: `no company with the domain ${domain} is on record` } : { id: found.id, label: domain };
+}
+
 /**
  * The company's row, made if there is none. `name` is required by the table;
  * without one the domain stands in, which is a label, not an invented fact.

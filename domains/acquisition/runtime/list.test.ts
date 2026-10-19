@@ -108,6 +108,10 @@ describe("a list from a hand selection", { skip: base ? false : "TEST_DATABASE_U
     assert.match(String(selection.query.sha256), /^[0-9a-f]{64}$/);
   });
 
+  it("refuses a file that names nobody", async () => {
+    await assert.rejects(selectFromLines(db, "# only a comment\n\n", "picked.txt"), /picked\.txt names nobody/);
+  });
+
   it("selects nobody when one line names no recorded subject, and names that line", async () => {
     await aPerson("ada@example.com");
     await assert.rejects(selectFromLines(db, "ada@example.com\nbob@example.com\n", "picked.txt"), /bob@example\.com: no person with the address/);

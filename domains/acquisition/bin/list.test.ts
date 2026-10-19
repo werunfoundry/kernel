@@ -110,6 +110,13 @@ describe("kernel-list", { skip: base ? false : "TEST_DATABASE_URL is not set" },
     assert.deepEqual([await count("relations.list"), await count("core.run")], [1, 1]);
   });
 
+  it("refuses a selection from a run and a file at once", async () => {
+    const r = await run([...fromFile, "--from-run", "00000000-0000-0000-0000-000000000000"], { terminal: true, typed: "october\n" });
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.out, /one of --from-run or --from-file, are required/);
+    assert.deepEqual([await count("relations.list"), await count("core.run")], [0, 0]);
+  });
+
   it("refuses a file with a line that names nobody on record, and names it", async () => {
     writeFileSync(picked, "ada@example.com\neve@example.com\n");
     const r = await run(fromFile, { terminal: true, typed: "october\n" });

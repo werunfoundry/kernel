@@ -120,8 +120,8 @@ export async function nameCompany(db: Database, typed: string): Promise<Named> {
     const [row] = await db.select({ id: company.id, domain: company.domain, name: company.name }).from(company).where(eq(company.id, key));
     return row ? { id: row.id, label: row.domain ?? row.name } : { refused: `no company ${key} is on record` };
   }
+  // An empty host is refused by findCompany: it has no key to find a company by.
   const domain = hostOf(key);
-  if (!domain) return { refused: `"${key}" is neither a domain nor a company's id` };
   const found = await findCompany(db, { subject: "company", keys: [{ kind: "domain", value: domain }] });
   if ("conflict" in found) return { refused: found.conflict };
   return "none" in found ? { refused: `no company with the domain ${domain} is on record` } : { id: found.id, label: domain };

@@ -57,7 +57,10 @@ const relativePath = z
   .refine((p) => !p.startsWith("/"), "must be relative to the instance root")
   .refine((p) => !p.split("/").includes(".."), "must not climb out of the instance");
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/, "expected an ISO date");
+/** A path into a JSON object, `key.value`: each segment a field name, never an expression. */
+const jsonPath = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)*$/, "field names joined by dots");
+
+const isoDate =z.string().regex(/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/, "expected an ISO date");
 
 /* -------------------------------------------------------------------------- */
 /* Schemas                                                                     */
@@ -89,15 +92,36 @@ export const domainManifestSchema = z.object({
       }),
     )
     .optional(),
-  // Decision 0040: what erasing a subject does to each table that names it.
-  // `keep` without a basis is refused: a row kept against a right to erasure
-  // says why, or it is not kept.
+  // Decisions 0040 and 0049: what erasing a subject does to each table that
+  // names it. `keep` without a basis is refused: a row kept against a right
+  // to erasure says why, or it is not kept. What a union cannot say — a rule
+  // reaches its rows somehow, an anonymisation changes something — is held
+  // in `validateDomain`.
   erasure: z
     .array(
       z.discriminatedUnion("do", [
-        z.object({ table: identifier, column: identifier, do: z.literal("delete"), ifStillNamed: z.array(identifier).min(1).optional() }).strict(),
-        z.object({ table: identifier, column: identifier, do: z.literal("anonymise"), columns: z.array(identifier).min(1) }).strict(),
-        z.object({ table: identifier, column: identifier, do: z.literal("keep"), basis: z.string().trim().min(1) }).strict(),
+        z
+          .object({
+            table: identifier,
+            column: identifier,
+            do: z.literal("delete"),
+            ifStillNamed: z.array(identifier).min(1).optional(),
+            keyColumns: z.record(identifier, identifier).optional(),
+          })
+          .strict(),
+        z
+          .object({
+            table: identifier,
+            column: identifier.optional(),
+            keys: identifier.optional(),
+            do: z.literal("anonymise"),
+            columns: z.array(identifier).min(1).optional(),
+            strip: z.record(identifier, z.array(jsonPath).min(1)).optional(),
+            random: z.array(identifier).min(1).optional(),
+            text: z.record(identifier, z.string().trim().min(1)).optional(),
+          })
+          .strict(),
+        z.object({ table: identifier, column: identifier.optional(), keys: identifier.optional(), do: z.literal("keep"), basis: z.string().trim().min(1) }).strict(),
       ]),
     )
     .optional(),
@@ -191,6 +215,26 @@ export function validateDomain(input: unknown): ValidationResult & { manifest?: 
   for (const [i, key] of (m.eventTypes ?? []).entries()) {
     if (!key.startsWith(`${m.name}.`)) {
       issues.push(issue("error", `eventTypes.${i}`, `an event type is namespaced by its domain: expected "${m.name}.…"`, 1));
+    }
+  }
+  for (const [i, rule] of (m.erasure ?? []).entries()) {
+    const at = `erasure.${i}`;
+    if (rule.do !== "delete") {
+      // A rule that names no way to its rows reaches none, and would read as covered.
+      if (rule.column === undefined && rule.keys === undefined) issues.push(issue("error", at, "a rule reaches its rows by `column`, by `keys`, or both"));
+    }
+    if (rule.do === "anonymise") {
+      const changed = [...(rule.columns ?? []), ...Object.keys(rule.strip ?? {}), ...(rule.random ?? []), ...Object.keys(rule.text ?? {})];
+      if (changed.length === 0) issues.push(issue("error", at, "an anonymisation that changes no column leaves the row as it was"));
+      for (const c of new Set(changed)) {
+        if (changed.indexOf(c) !== changed.lastIndexOf(c)) issues.push(issue("error", at, `"${c}" is given two answers`));
+      }
+    }
+    if (rule.do === "delete" && rule.keyColumns) {
+      if (rule.column !== "id") issues.push(issue("error", `${at}.keyColumns`, "only the subject's own row, a rule on `id`, says where its keys are"));
+      for (const kind of Object.keys(rule.keyColumns)) {
+        if (!kinds.has(kind)) issues.push(issue("error", `${at}.keyColumns.${kind}`, `"${kind}" is not an identity key this domain declares`));
+      }
     }
   }
 

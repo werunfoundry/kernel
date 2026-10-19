@@ -79,7 +79,9 @@ describe("a list from what a sourcing run kept", { skip: base ? false : "TEST_DA
     const runId = await aSourcingRun();
     await aResult(runId, "kept", ada, "person:0a1b");
     await aResult(runId, "kept", bob, "person:2c3d");
-    await aResult(runId, "protected", null, "email:eve@example.com");
+    await aResult(runId, "protected", null, "person:4e5f");
+    // Excluded, though recorded: an opted-out person is on record, and is not kept.
+    await aResult(runId, "opted_out", await aPerson("eve@example.com", true), "person:6a7b");
     const selection = await selectFromRun(db, runId);
     assert.deepEqual(selection.query, { from: "acquisition.sourcing_result", runId, outcome: "kept" });
     assert.deepEqual(selection.members.map((m) => ("personId" in m ? m.personId : undefined)).sort(), [ada, bob].sort());

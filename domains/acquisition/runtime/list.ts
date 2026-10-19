@@ -15,7 +15,7 @@
 
 import { createHash } from "node:crypto";
 
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { run as runTable } from "@werunfoundry/core/db/schema";
 import type { Database } from "@werunfoundry/core/runtime/run";
@@ -52,12 +52,13 @@ export async function selectFromRun(db: Database, runId: string): Promise<Select
   if (source.status !== "succeeded" && source.status !== "partial") {
     throw new Error(`run ${runId} ${source.status === "running" ? "is still running" : `ended as ${source.status}`}; only a finished sourcing run can be selected from`);
   }
-  // Shown by the address recorded, not by the run's subject: that is a digest of the keys, which no person can read.
+  // The inner join keeps a recorded person only. Shown by the address recorded, not by the run's subject: that is a
+  // digest of the keys, which no person can read.
   const rows = await db
     .select({ personId: sourcingResult.personId, email: person.email, detail: sourcingResult.detail })
     .from(sourcingResult)
     .innerJoin(person, eq(person.id, sourcingResult.personId))
-    .where(and(eq(sourcingResult.runId, runId), eq(sourcingResult.outcome, "kept"), isNotNull(sourcingResult.personId)));
+    .where(and(eq(sourcingResult.runId, runId), eq(sourcingResult.outcome, "kept")));
   return {
     query: { from: "acquisition.sourcing_result", runId, outcome: "kept" },
     members: rows.map((r) => ({ personId: r.personId!, reason: r.detail })),

@@ -71,7 +71,9 @@ function run(args: string[], opts: { terminal?: boolean; typed?: string } = {}):
   child.stdout.on("data", (d) => (out += d));
   child.stderr.on("data", (d) => (out += d));
   child.stdin.end(opts.typed ?? "");
-  return new Promise((resolve) => child.on("close", (status) => resolve({ status, out })));
+  // A command left waiting — on a confirmation nobody will type — is stopped, and reads as a failure.
+  const stop = setTimeout(() => child.kill("SIGKILL"), 20_000);
+  return new Promise((resolve) => child.on("close", (status) => (clearTimeout(stop), resolve({ status, out }))));
 }
 
 const decide = ["--experiment", "autumn-test", "--conclusion", "killed: below the threshold", "--readings", readings, "--by", "an operator"];

@@ -61,7 +61,7 @@ async function main(): Promise<number> {
       console.log("erase: the id did not match. Nothing was changed.");
       return 1;
     }
-    const r = await erase(connection.db, booted.domains, { subjectId: personId, by, processKey: "relations.person.erase" });
+    const r = await erase(connection.db, booted.domains, { subjectId: personId, by, processKey: "relations.person.erase", trigger: "cli" });
     console.log(`run: ${r.runId} — erased; the person's row was ${r.steps.at(-1)?.outcome ?? "not declared"}.`);
     return 0;
   } finally {

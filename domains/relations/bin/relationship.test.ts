@@ -91,6 +91,7 @@ describe("kernel-relationship", { skip: base ? false : "TEST_DATABASE_URL is not
     assert.match(r.out, /declared: example\.com customer from 2026-09-01T00:00:00\.000Z/);
     const [row] = (await client.query("select r.status, r.at, r.reason, r.actor_id, k.process_key, k.actor_type from relations.relationship r join core.run k on k.id = r.run_id")).rows;
     assert.deepEqual(row, { status: "customer", at: new Date("2026-09-01T00:00:00Z"), reason: "signed", actor_id: "an operator", process_key: "relations.relationship.declare", actor_type: "human" });
+    assert.deepEqual((await client.query("select trigger from core.run")).rows, [{ trigger: "cli" }], "a command says its channel: cli (0048)");
   });
 
   it("writes nothing when what is typed does not match", async () => {

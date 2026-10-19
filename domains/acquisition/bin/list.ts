@@ -99,7 +99,7 @@ async function main(): Promise<number> {
       console.log("list: what was typed does not match. Nothing was written.");
       return 1;
     }
-    const r = await constituteSelection(connection.db, { key, ...(description ? { description } : {}), selection, by });
+    const r = await constituteSelection(connection.db, { key, ...(description ? { description } : {}), selection, by, trigger: "cli" });
     console.log(`run: ${r.runId} — ${r.constituted ? `list ${key} constituted and sealed, ${r.members} members` : `a list ${key} was constituted meanwhile; it stands, and nothing changed`}`);
     return 0;
   } catch (error) {

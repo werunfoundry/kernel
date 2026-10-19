@@ -103,7 +103,7 @@ async function main(): Promise<number> {
       console.log("decide: what was typed does not match. Nothing was written.");
       return 1;
     }
-    const r = await recordDecision(connection.db, { experimentId: experiment.id, conclusion, ...(why ? { rationale: why } : {}), readings: checked.readings, by });
+    const r = await recordDecision(connection.db, { experimentId: experiment.id, conclusion, ...(why ? { rationale: why } : {}), readings: checked.readings, by, trigger: "cli" });
     console.log(`run: ${r.runId} — decision ${r.decisionId} recorded on ${slug}`);
     return 0;
   } finally {

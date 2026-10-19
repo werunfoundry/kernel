@@ -89,6 +89,7 @@ describe("kernel-stage", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     assert.match(r.out, /cannot be corrected: a stage has no neutral value/);
     const [row] = (await client.query("select s.stage, s.at, s.actor_id, k.process_key from acquisition.person_state s join core.run k on k.id = s.run_id")).rows;
     assert.deepEqual(row, { stage: "engaged", at: new Date("2026-09-01T09:30:00Z"), actor_id: "an operator", process_key: "acquisition.stage.declare" });
+    assert.deepEqual((await client.query("select trigger from core.run")).rows, [{ trigger: "cli" }], "a command says its channel: cli (0048)");
   });
 
   it("writes nothing when what is typed does not match", async () => {

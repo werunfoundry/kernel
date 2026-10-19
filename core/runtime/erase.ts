@@ -17,7 +17,7 @@
 import { sql } from "drizzle-orm";
 
 import type { DomainManifest, ErasureRule } from "../manifest/types.js";
-import type { Database } from "./run.js";
+import type { Database, Trigger } from "./run.js";
 import { openRun } from "./run.js";
 
 export interface ErasureStep {
@@ -70,15 +70,18 @@ export async function planErasure(db: Database, domains: readonly DomainManifest
   return plan;
 }
 
-/** Carries the plan out, as a person's run. All of it, or none of it. */
+/**
+ * Carries the plan out, as a person's run. All of it, or none of it. The caller
+ * says how the run was reached (decision 0048).
+ */
 export async function erase(
   db: Database,
   domains: readonly DomainManifest[],
-  input: { subjectId: string; by: string; processKey: string },
+  input: { subjectId: string; by: string; processKey: string; trigger: Trigger },
 ): Promise<{ runId: string; steps: ErasureStep[] }> {
   const by = input.by.trim();
   if (by === "") throw new Error("who erases is required: erasing is a person's act");
-  const open = await openRun(db, { processKey: input.processKey, trigger: "manual", actor: { type: "human", id: by }, dryRun: false });
+  const open = await openRun(db, { processKey: input.processKey, trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false });
   try {
     const done = (await db.transaction(async (tx) => {
       const out: ErasureStep[] = [];

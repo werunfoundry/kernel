@@ -128,6 +128,7 @@ async function main(): Promise<number> {
       at: moment.at,
       ...(why ? { reason: why } : {}),
       by,
+      trigger: "cli",
     });
     console.log(`run: ${r.runId} — ${r.declared ? `declared: ${what}` : "the same declaration is already on record, in the history or written meanwhile; nothing changed"}`);
     return 0;

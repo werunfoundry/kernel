@@ -135,17 +135,18 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
 
   it("does what each domain declares, as a person's run, and deletes the person", async () => {
     const id = await someone();
-    const r = await erase(db, [relations, acquisition], { subjectId: id, by: "an operator", processKey: "relations.person.erase" });
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" });
     assert.equal(await total(id), "0");
     assert.equal((await rows("select count(*)::int as n from relations.person"))[0].n, 0);
     assert.equal(r.steps.at(-1)?.outcome, "deleted");
     assert.deepEqual((await rows("select actor_type, actor_id, status from core.run where id = $1", [r.runId]))[0], { actor_type: "human", actor_id: "an operator", status: "succeeded" });
+    assert.equal((await rows("select trigger from core.run where id = $1", [r.runId]))[0].trigger, "cli", "the run keeps the channel its caller gave (0048)");
   });
 
   it("keeps what a domain keeps under its basis, and empties the person it still names instead of deleting it", async () => {
     const id = await someone();
     const keeping: DomainManifest = { ...relations, erasure: relations.erasure!.map((r) => (r.table === "touch" ? { table: "touch", column: "person_id", do: "keep", basis: "an obligation the test invents" } : r)) };
-    const r = await erase(db, [keeping, acquisition], { subjectId: id, by: "an operator", processKey: "relations.person.erase" });
+    const r = await erase(db, [keeping, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" });
     assert.equal((await rows("select count(*)::int as n from relations.touch"))[0].n, 1);
     assert.deepEqual(await rows("select email, full_name from relations.person where id = $1", [id]), [{ email: null, full_name: null }]);
     assert.deepEqual(r.steps.map((s) => s.outcome).filter(Boolean), ["kept", "emptied"]);
@@ -155,7 +156,7 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
     const id = await someone();
     // An answer the schema refuses — touches are append-only — fails the whole erasure.
     const wrong: DomainManifest = { ...relations, erasure: relations.erasure!.map((r) => (r.table === "touch" ? { table: "touch", column: "person_id", do: "anonymise", columns: ["sender"] } : r)) };
-    await assert.rejects(erase(db, [wrong, acquisition], { subjectId: id, by: "an operator", processKey: "relations.person.erase" }), (e: Error) => /append-only/.test(String((e.cause as Error | undefined)?.message ?? e.message)));
+    await assert.rejects(erase(db, [wrong, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }), (e: Error) => /append-only/.test(String((e.cause as Error | undefined)?.message ?? e.message)));
     assert.equal(await total(id), "9");
   });
 });

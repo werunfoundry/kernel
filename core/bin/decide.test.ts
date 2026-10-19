@@ -97,6 +97,7 @@ describe("kernel-decide", { skip: base ? false : "TEST_DATABASE_URL is not set" 
       actor_id: "an operator",
       process_key: "core.decision.record",
     });
+    assert.deepEqual((await client.query("select trigger from core.run")).rows, [{ trigger: "cli" }], "a command says its channel: cli (0048)");
   });
 
   it("records a second decision when run again, after showing the first", async () => {

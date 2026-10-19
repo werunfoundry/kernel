@@ -112,7 +112,7 @@ export async function constituteSelection(
   if (input.selection.members.length === 0) throw new Error("the selection names nobody: an empty list is not constituted");
   const existing = await readList(db, key);
   if (existing) throw new Error(`a list ${key} already exists, constituted on ${existing.createdAt.toISOString()} by ${existing.actorId ?? "nobody named"} with ${existing.members.length} members`);
-  return withRun(db, { processKey: "acquisition.list.constitute", trigger: "cli", actor: { type: "human", id: by }, dryRun: false }, async (context) => {
+  return withRun(db, { processKey: "acquisition.list.constitute", trigger: "manual", actor: { type: "human", id: by }, dryRun: false }, async (context) => {
     const made = await constituteList(db, {
       key,
       ...(input.description ? { description: input.description } : {}),

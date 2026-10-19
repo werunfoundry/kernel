@@ -1,0 +1,1 @@
+ALTER TYPE "gtm"."sourcing_outcome" ADD VALUE 'off_target' BEFORE 'known_to_crm';

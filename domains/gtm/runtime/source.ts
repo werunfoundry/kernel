@@ -68,12 +68,12 @@ import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target
 import { sourcingResult } from "../db/schema.js";
 import { readAcknowledged } from "./acknowledge.js";
 import type { Protection } from "./protection.js";
-import { readProtection } from "./protection.js";
+import { ancestry, isHost, readProtection } from "./protection.js";
 
 /** The contract names this path asks the registry for. */
 export const SOURCING_CONTRACTS = { targetList: "target_list", peopleSource: "people_source", enrichment: "enrichment", crm: "crm" } as const;
 
-export type Outcome = "kept" | "protected" | "unreadable_key" | "known_to_crm" | "opted_out" | "duplicate" | "incomplete" | "unreachable" | "not_reached" | "simulated";
+export type Outcome = "kept" | "protected" | "unreadable_key" | "off_target" | "known_to_crm" | "opted_out" | "duplicate" | "incomplete" | "unreachable" | "not_reached" | "simulated";
 
 export interface SourceRequest {
   query?: TargetQuery;
@@ -194,6 +194,17 @@ function total(costs: { provider: string; cost: Cost }[]) {
     sums.set(k, s);
   }
   return [...sums.values()];
+}
+
+/**
+ * The domains of a person's addresses that are not at the targeted company
+ * — neither its domain nor under it, by the walk protection uses (0045).
+ * Every address counts: whatever contacts the person later may use any of
+ * them. Empty when all are at the company.
+ */
+export function addressesElsewhere(addresses: readonly string[], targetHost: string): string[] {
+  const elsewhere = addresses.map((a) => hostOf(a.split("@")[1] ?? "")).filter((h) => !(isHost(h) && ancestry(h).includes(targetHost)));
+  return [...new Set(elsewhere)];
 }
 
 /** Candidates read per batch of the company pass (0043). */
@@ -522,6 +533,15 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
         }
         if (protection.person(person)) {
           await excludeAfter("protected", "an address completion gave it is on a protected domain");
+          continue;
+        }
+        // Every address at the company that was targeted — its domain or under
+        // it, by the walk protection uses (0045). A person whose address is
+        // elsewhere is excluded, never filed under the company it names.
+        const target = hostOf(company.domain ?? "");
+        const elsewhere = addressesElsewhere(addresses, target);
+        if (elsewhere.length > 0) {
+          await excludeAfter("off_target", `its address is at ${elsewhere.join(", ")}, not at ${target}, the company targeted`);
           continue;
         }
         let knownAs: string | undefined;

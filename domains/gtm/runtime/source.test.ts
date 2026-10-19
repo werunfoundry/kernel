@@ -31,7 +31,7 @@ import type { PeopleSource } from "@werunfoundry/relations/contracts/people-sour
 
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
 import type { SourceRequest } from "./source.js";
-import { companiesWanted, source } from "./source.js";
+import { addressesElsewhere, companiesWanted, source } from "./source.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_source_${process.pid}`;
@@ -657,5 +657,48 @@ describe("the person pass walks the ancestors of an address (decision 0044)", { 
     const zoe = r.looked.find((l) => l.person?.keys.some((k) => k.value === "zoe@mail.customer.example.org"));
     assert.deepEqual([zoe?.pass, zoe?.outcome, zoe?.detail], ["person", "protected", "an address completion gave it is on a protected domain"]);
     assert.ok(!kept(r).includes("zoe@mail.customer.example.org"), "a person on a protected subdomain was kept");
+  });
+});
+
+describe("a kept person is at the company that was targeted (decision 0045)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const looked = (r: Awaited<ReturnType<typeof run>>, address: string) => r.looked.find((l) => l.person?.keys.some((k) => k.value === address));
+
+  it("excludes, after completion, a person whose address is at another company — and asks the CRM nothing about them", async () => {
+    // Listed at the targeted company by the people source; completion says they work elsewhere now.
+    world.people.set("open.example.com", [{ id: "401", handle: "ivy", name: "Ivy", email: "ivy@elsewhere.example.net" }]);
+    const r = await run();
+    const ivy = looked(r, "ivy@elsewhere.example.net");
+    assert.deepEqual([ivy?.pass, ivy?.outcome, ivy?.detail], ["person", "off_target", "its address is at elsewhere.example.net, not at open.example.com, the company targeted"]);
+    // One lookup: the company's, in the company pass. None for the person.
+    assert.equal(world.crmCalls, 1, "the CRM was asked about a person already excluded");
+    assert.deepEqual(kept(r), []);
+    assert.deepEqual(await recorded(), [], "a person off target was recorded");
+  });
+
+  it("keeps a person whose address is under the targeted company's domain", async () => {
+    world.people.set("open.example.com", [{ id: "402", handle: "jo", name: "Jo", email: "jo@eu.open.example.com" }]);
+    const r = await run();
+    assert.deepEqual(kept(r), ["jo@eu.open.example.com"]);
+  });
+
+  it("needs every address at the targeted company, not one of them", () => {
+    assert.deepEqual(addressesElsewhere(["kit@open.example.com", "kit@elsewhere.example.net"], "open.example.com"), ["elsewhere.example.net"]);
+    assert.deepEqual(addressesElsewhere(["kit@open.example.com", "kit@eu.open.example.com"], "open.example.com"), []);
+  });
+
+  it("calls an address with no readable domain elsewhere: it cannot be shown to be at the company", () => {
+    assert.deepEqual(addressesElsewhere(["kit@not a host"], "open.example.com"), ["not a host"]);
+  });
+
+  it("says protected first when an address is both protected and elsewhere", async () => {
+    world.people.set("open.example.com", [{ id: "404", handle: "lu", name: "Lu", email: "lu@customer.example.org" }]);
+    const r = await run();
+    assert.equal(looked(r, "lu@customer.example.org")?.outcome, "protected");
+  });
+
+  it("does not file the person under the company their address names", async () => {
+    world.people.set("open.example.com", [{ id: "405", handle: "mo", name: "Mo", email: "mo@elsewhere.example.net" }]);
+    await run();
+    assert.deepEqual((await client.query("select domain from relations.company")).rows, []);
   });
 });

@@ -429,6 +429,8 @@ export const sourcingOutcome = gtm.enum("sourcing_outcome", [
   "protected",
   // A domain that is not a host could match nothing: excluded, fail closed (0044).
   "unreadable_key",
+  // An address completion gave at another company than the one targeted (0045).
+  "off_target",
   "known_to_crm",
   "opted_out",
   "duplicate",

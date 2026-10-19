@@ -141,9 +141,10 @@ async function main(): Promise<number> {
     console.log(`  before paying — excluded: ${report.avoidedBeforeCompletion}, each one completion spared`);
     list("duplicate", by("person", "duplicate"));
     list("protected", protectedBefore);
-    const personPass = [...protectedAfter, ...by("person", "known_to_crm"), ...by("person", "opted_out")];
+    const personPass = [...protectedAfter, ...by("person", "off_target"), ...by("person", "known_to_crm"), ...by("person", "opted_out")];
     console.log(`  person pass, after completion — excluded: ${personPass.length}; already paid for, see below`);
     list("protected", protectedAfter);
+    list("off_target", by("person", "off_target"));
     list("known_to_crm", by("person", "known_to_crm"));
     list("opted_out", by("person", "opted_out"));
     for (const o of ["incomplete", "unreachable", "not_reached", "simulated"] as const) list(o, by("person", o));

@@ -82,6 +82,8 @@ describe("a list from what a sourcing run kept", { skip: base ? false : "TEST_DA
     await aResult(runId, "protected", null, "person:4e5f");
     // Excluded, though recorded: an opted-out person is on record, and is not kept.
     await aResult(runId, "opted_out", await aPerson("eve@example.com", true), "person:6a7b");
+    // Kept but naming nobody recorded: a live run does not write one, and the schema does not bar it.
+    await aResult(runId, "kept", null, "person:8c9d");
     const selection = await selectFromRun(db, runId);
     assert.deepEqual(selection.query, { from: "acquisition.sourcing_result", runId, outcome: "kept" });
     assert.deepEqual(selection.members.map((m) => ("personId" in m ? m.personId : undefined)).sort(), [ada, bob].sort());

@@ -68,6 +68,8 @@ export const domainManifestSchema = z.object({
   version: z.string().min(1),
   description: z.string().min(1),
   schema: identifier,
+  // Decision 0046: the names a renamed domain was known by.
+  formerly: z.array(identifier).optional(),
   dependsOn: z.array(identifier).default([]),
   channels: z.array(identifier).optional(),
   experimentTypes: z.array(identifier).optional(),
@@ -181,6 +183,10 @@ export function validateDomain(input: unknown): ValidationResult & { manifest?: 
     if (!(m.experimentTypes ?? []).includes(type)) {
       issues.push(issue("error", `experimentMetrics.${type}`, `"${type}" is not an experiment type this domain declares`));
     }
+  }
+  for (const [i, former] of (m.formerly ?? []).entries()) {
+    if (former === m.name) issues.push(issue("error", `formerly.${i}`, `"${former}" is this domain's current name, not a former one`, 1));
+    else if ((m.formerly ?? []).indexOf(former) !== i) issues.push(issue("error", `formerly.${i}`, `"${former}" is listed twice`, 1));
   }
   for (const [i, key] of (m.eventTypes ?? []).entries()) {
     if (!key.startsWith(`${m.name}.`)) {

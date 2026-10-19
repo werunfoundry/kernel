@@ -150,8 +150,20 @@ history, never current. A row can be deleted in SQL — the triggers refuse an
 update, not a delete — but that leaves no run and no trace, and no command
 offers it. Erasing the person removes their stages with everything else, and
 is not a correction. Each command says this before it asks for confirmation.
-Fixing it — a withdrawal, or a neutral stage — changes 0036's model, and is
-its own decision.
+**The SQL delete is a hole, not a workaround.** In a record kept by
+appending, a row that disappears without a run is exactly what the record
+exists to prevent: what it said on a given date can no longer be read back.
+It is named here so that nobody mistakes it for the way to correct.
+
+**What comes next is a retraction verb.** A person retracts a declaration:
+a new row, in its own run, naming the declaration it retracts and why, and
+the published view stops reading the retracted one. It supersedes and never
+erases, so it is compatible with appending only: the mistake and its
+retraction both stay, each with who and when. It covers every line of the
+table — the wrong moment, the wrong subject, a stage where there should be
+none — without a neutral stage. It changes 0036's model and its views, and
+needs a migration, so it is its own decision; it is not built here, and a
+correction by deletion is not to be built in its place.
 
 ## Rules out
 
@@ -178,12 +190,14 @@ its own decision.
    `acquisition.lifecycle_stage` as an enum holding `customer` and `lost`,
    which 0036 replaced.
 5. **Two triggers for one kind of act.** A declared stage or relationship,
-   a list and a decision open their run as `manual`; an acknowledgement and
-   an erasure, as `cli`. All are a person at a terminal.
+   a list, a decision and an erasure open their run as `manual`; an
+   acknowledgement, as `cli` — as the commands that run unattended do. All
+   are a person at a terminal, and each verb sets its trigger itself rather
+   than being told how it was reached.
 
 ## Would reverse it
 
 A verified actor identity (0040): `--by` gives way to it. A domain that
 observes the payment: `customer` is written there. A bounded affiliation:
-the relationship moves onto it, and the company-only rule goes. A way to
-withdraw a declaration: the table of mistakes above shrinks.
+the relationship moves onto it, and the company-only rule goes. A retraction
+verb: the table of mistakes above empties, and the commands stop warning.

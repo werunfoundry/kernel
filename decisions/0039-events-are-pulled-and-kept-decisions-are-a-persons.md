@@ -1,5 +1,8 @@
 # 0039 — Events are pulled and kept; a decision is a person's
 
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+
 Completes [0017](0017-inbound-is-pulled.md), which fixed the contract and
 left the loop and its cursor to a decision of their own.
 

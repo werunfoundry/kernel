@@ -1,5 +1,8 @@
 # 0043 — The company pass asks only what the run needs
 
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+
 Supersedes in part [0031](0031-the-sourcing-path-and-the-crm-as-exclusion.md):
 its company pass ran "over every candidate", and "every company looked at
 gets a row" no longer holds when the CRM fails.

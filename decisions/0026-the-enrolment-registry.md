@@ -1,5 +1,8 @@
 # 0026 — The enrolment registry
 
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+
 Completes [0019](0019-the-enrolment-path.md), whose outcomes were returned
 and printed, not stored, and [0013](0013-an-identity-is-a-set-of-keys.md),
 whose identities had nowhere to be recorded.

@@ -5,6 +5,9 @@
 >
 > Completed by [0042](0042-a-reactive-reply-is-licensed-by-the-persons-inbound-touch.md):
 > the reactive lane is licensed by the person's inbound touch.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 ## Decided
 

@@ -2,6 +2,9 @@
 
 > Completed by [0028](0028-a-domain-is-compared-as-a-host.md): a key that
 > names a host is compared as the host.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 ## Decided
 

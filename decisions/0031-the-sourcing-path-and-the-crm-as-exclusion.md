@@ -9,6 +9,9 @@
 > Completed by [0045](0045-a-kept-person-is-at-the-targeted-company.md): a kept
 > person's every address must be at the targeted company, or they are
 > excluded as `off_target`.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 Completes [0019](0019-the-enrolment-path.md), which read the people at each
 company inside the enrolment path, and [0030](0030-sources-in-sequence-by-what-they-find.md),

@@ -2,6 +2,9 @@
 
 > Completed by [0041](0041-which-fact-governs-a-guard.md): protection reads
 > the source, never the declaration.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 ## Decided
 

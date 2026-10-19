@@ -5,6 +5,9 @@
 >
 > Completed by [0042](0042-a-reactive-reply-is-licensed-by-the-persons-inbound-touch.md):
 > `lane:reactive` is accepted on the same license.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 Completes [0027](0027-a-draft-waits-on-its-lane.md), whose gate is on the
 draft.

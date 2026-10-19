@@ -2,6 +2,9 @@
 
 > Completed by [0039](0039-events-are-pulled-and-kept-decisions-are-a-persons.md):
 > the loop, its cursor and the event's write path.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 ## Decided
 

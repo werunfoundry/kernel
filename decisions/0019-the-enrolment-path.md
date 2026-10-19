@@ -6,6 +6,9 @@
 > Completed by [0031](0031-the-sourcing-path-and-the-crm-as-exclusion.md): a sourcing path, with the CRM as a second exclusion source.
 >
 > Completed by [0033](0033-protection-matches-the-company-id-and-is-not-an-identity.md): protection matches the company id too, and is not an identity source.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 Completes [0004](0004-protection-is-its-own-route.md), which decided that
 protection is its own route and is re-checked at enrolment, and

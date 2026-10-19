@@ -1,6 +1,9 @@
 # 0018 — Measurement reads little, and says what it cannot read
 
 > Superseded in part by [0021](0021-a-metric-may-not-apply.md): what `read` returns may be "not applicable", never zero.
+>
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
 ## Decided
 

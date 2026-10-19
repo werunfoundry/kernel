@@ -1,5 +1,8 @@
 # 0045 — A kept person's address is at the company that was targeted
 
+> Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
+> called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+
 Completes [0031](0031-the-sourcing-path-and-the-crm-as-exclusion.md), whose
 person pass checked the completed identity against protection and the CRM
 but never against the company it was sourced for.

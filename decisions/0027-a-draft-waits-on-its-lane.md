@@ -8,6 +8,9 @@
 >
 > Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
 > called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+>
+> Completed by [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md):
+> the sending path writes `sent` and `failed`, and a failed draft says why.
 
 ## Decided
 

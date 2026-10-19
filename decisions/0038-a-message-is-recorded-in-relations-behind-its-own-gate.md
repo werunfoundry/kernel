@@ -8,6 +8,9 @@
 >
 > Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
 > called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+>
+> Superseded in part by [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md):
+> the cap counts unsolicited touches, and the messages no touch confirms yet.
 
 Completes [0027](0027-a-draft-waits-on-its-lane.md), whose gate is on the
 draft.

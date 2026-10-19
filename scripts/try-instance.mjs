@@ -387,6 +387,48 @@ try {
     const triggers = (await client.query("select distinct trigger from core.run where process_key in ('acquisition.list.constitute', 'core.decision.record')")).rows;
     expect(JSON.stringify(triggers) === JSON.stringify([{ trigger: "cli" }]), `a person's acts recorded their channel as ${JSON.stringify(triggers)}, not cli (0048)`);
 
+    // The sending path (0050), from the packs, on plain Node: the list just
+    // constituted, drafted, approved, sent through the message's gate and
+    // recorded as a touch. The hand-over is a stub written here: the kernel
+    // ships none, and nothing in this step reaches a provider.
+    step("the sending path, from the list, with a stub hand-over");
+    const experimentId = (await client.query("insert into core.experiment (slug, type, hypothesis_ref, lane, status) values ('try-send', 'campaign', 'https://example.com/h', 'reviewed', 'running') returning id")).rows[0].id;
+    const templateId = (await client.query("insert into acquisition.template (experiment_id, variant, step, channel, body) values ($1, 'a', 1, 'email', 'A first line.') returning id", [experimentId])).rows[0].id;
+    const sendScript = `
+      import { boot } from "@werunfoundry/core/runtime/boot";
+      import { connect } from "@werunfoundry/core/runtime/connect";
+      import { approve } from "@werunfoundry/acquisition/runtime/draft";
+      import { draftFromList, sendFromList } from "@werunfoundry/acquisition/runtime/send";
+      const root = process.cwd();
+      const booted = await boot({ root, env: process.env });
+      if (!booted.ok) throw new Error("boot refused: " + booted.issues.map((i) => i.message).join("; "));
+      const { db, end } = await connect(process.env.DATABASE_URL, root, "try-send");
+      const handed = [];
+      const stub = { provider: "stub-handover", async handOver(m) { handed.push(m.idempotencyKey); return { ok: true, value: { providerEventId: "stub:" + m.idempotencyKey, at: new Date().toISOString() } }; } };
+      const actor = { type: "agent", id: "a drafting agent" };
+      const drafted = await draftFromList(db, { listKey: "sourced", experimentId: ${JSON.stringify(experimentId)}, templateId: ${JSON.stringify(templateId)}, compose: (_p, t) => ({ body: t.body }), gate: { autonomyAfter: 5 }, dryRun: false, trigger: "cli", actor });
+      for (const d of drafted.drafted) await approve(db, d.draftId, { by: "an operator" }, { actor: { type: "human", id: "an operator" } });
+      const request = { listKey: "sourced", experimentId: ${JSON.stringify(experimentId)}, unsolicited: true, cap: { max: 1, withinDays: 30 }, protectedMaxAgeMinutes: 60, dryRun: false, trigger: "cli", actor: { type: "system", id: "try-instance" } };
+      const sent = await sendFromList({ db, registry: booted.registry, handOver: stub }, request);
+      const again = await sendFromList({ db, registry: booted.registry, handOver: stub }, request);
+      await end();
+      console.log(JSON.stringify({ drafted: drafted.drafted.map((d) => d.outcome), sent: sent.drafts.map((d) => d.outcome), again: again.drafts.length, handed: handed.length }));
+    `;
+    const sending = await spawnAsync(process.execPath, ["--input-type=module", "-e", sendScript], { cwd: root, env });
+    show(sending);
+    expect(sending.status === 0, "the sending path did not run from the packs");
+    const said = JSON.parse(sending.stdout.trim().split("\n").pop() || "{}");
+    expect(JSON.stringify(said) === JSON.stringify({ drafted: ["awaiting_review"], sent: ["sent"], again: 0, handed: 1 }), `the sending path reported ${JSON.stringify(said)}`);
+    const crossed = (
+      await client.query(
+        "select m.key, t.direction, t.unsolicited, t.provider, d.state from relations.message m join relations.touch t on t.message_id = m.id join acquisition.draft d on m.key = 'acquisition.draft:' || d.id",
+      )
+    ).rows;
+    expect(
+      crossed.length === 1 && crossed[0].direction === "outbound" && crossed[0].unsolicited === true && crossed[0].provider === "stub-handover" && crossed[0].state === "sent",
+      `the database does not hold one message, its touch and a sent draft: ${JSON.stringify(crossed)}`,
+    );
+
     // The one act that cannot be undone, on what the runs above really wrote:
     // Ada sourced, kept, listed and enrolled (0040, 0049).
     step("an erasure: planned, refused without a terminal, done at one, the runs' history kept naming nobody");

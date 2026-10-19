@@ -162,6 +162,8 @@ export const draft = acquisition.table(
     decidedBy: text("decided_by"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     dropReason: text("drop_reason"),
+    /** Why the hand-over failed, for a `failed` draft (decision 0050). */
+    failureReason: text("failure_reason"),
 
     /**
      * True when a human changed the body before approving. This is what
@@ -198,6 +200,8 @@ export const draft = acquisition.table(
     ),
     /** A drop without a reason is a judgement nobody can learn from. */
     check("draft_dropped_has_reason", sql`${t.state} <> 'dropped' or ${t.dropReason} is not null`),
+    /** A failure without a reason cannot be retried or learnt from either. */
+    check("draft_failed_has_reason", sql`${t.state} <> 'failed' or ${t.failureReason} is not null`),
   ],
 );
 

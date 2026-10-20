@@ -52,7 +52,7 @@ import { person as personTable } from "@werunfoundry/relations/db/schema";
 import { findPerson, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequencer.js";
-import { remainingOf } from "../contracts/sequencer.js";
+import { readDeclaration, remainingOf } from "../contracts/sequencer.js";
 import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
 import { enrolment, enrolmentSkip, sourcingResult } from "../db/schema.js";
 import { readAcknowledged } from "./acknowledge.js";
@@ -62,7 +62,7 @@ import { readProtection } from "./protection.js";
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", peopleSource: "people_source", sequencer: "sequencer" } as const;
 
-export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable";
+export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable" | "suspended";
 
 export interface EnrolRequest {
   sequenceKey: string;
@@ -156,6 +156,13 @@ export interface EnrolDeps {
 class Stop extends Error {}
 
 /**
+ * The bound sequencer cannot suspend one person, or does not say it can
+ * (decision 0051). Thrown before a run is opened, like every other refusal
+ * of configuration: nobody could be enrolled, so there is no run.
+ */
+export class CannotSuspend extends Error {}
+
+/**
  * A domain as protection compares it: the host it names (decision 0028). The
  * target list's two routes come from different sources, and one spelling a
  * company as `http://Example.com` must not let it past the other's `example.com`.
@@ -216,6 +223,11 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
   if (!targets) throw new Error(`no adapter is bound to "${CONTRACTS.targetList}"`);
   if (!people && !request.fromSourcingRun) throw new Error(`no adapter is bound to "${CONTRACTS.peopleSource}"`);
   if (!sequencer) throw new Error(`no "${CONTRACTS.sequencer}" adapter takes the channel "${request.channel}"`);
+  // An enrolment nobody can stop until its sequence ends is protection that
+  // lasts until the next step fires (0004, 0051). Dry runs too: a dry run
+  // shows what the live run would do, and the live run would do nothing.
+  const declared = readDeclaration(sequencer);
+  if (!declared.suspends) throw new CannotSuspend(declared.refusal);
   if (!(request.protectedMaxAgeMinutes > 0)) throw new Error("protectedMaxAgeMinutes must be a positive number of minutes");
 
   // A sourcing run is read before this run is opened: a run that names one
@@ -435,6 +447,19 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         let row = "id" in known ? await registryRow(known.id) : undefined;
         if (row?.state === "enrolled") {
           await skip({ reason: "duplicate", person, company, detail: "already enrolled in this sequence, by the registry" });
+          continue;
+        }
+        // Terminal (0051): a person suspended from a sequence is not enrolled
+        // in it again. Whatever the provider now says of them is not asked:
+        // the registry, not the provider, records the decision to stop.
+        //
+        // What this does not reach: a suspension erased with the person.
+        // Erasure deletes their enrolment rows, suspended ones included, so a
+        // person suspended and then erased has no row here, and is enrolled
+        // again if a later run finds them. Nothing refuses that delete — a
+        // guard would make erasure fail; suspend-then-erase is 0051's to build.
+        if (row?.state === "suspended") {
+          await skip({ reason: "suspended", person, company, detail: "suspended from this sequence, by the registry: not enrolled in it again (decision 0051)" });
           continue;
         }
         // A replay repeats the key the provider was given, whatever the

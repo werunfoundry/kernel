@@ -51,13 +51,38 @@ export const enrolmentState = acquisition.enum("enrolment_state", [
   "pending", // written, the provider not yet heard back from: reconciled on the next run
   "enrolled", // the provider confirmed it
   "refused", // the provider refused it — invalid, or held under another key
+  /**
+   * The kernel stopped this person in this sequence (decision 0051). Reached
+   * from `enrolled` only, and terminal: resuming would contact again someone
+   * the kernel decided to stop, which is a new enrolment decided anew. The
+   * migration's trigger refuses every other move, whoever writes the row.
+   *
+   * What it does not reach: a delete. Erasure deletes the person's
+   * enrolment rows (`domain.yaml`), suspended ones included, so a person
+   * suspended and then erased leaves no row behind, and a later run can
+   * enrol them in the same sequence again. No guard refuses the delete:
+   * it would make erasure fail. Erasure that suspends before it deletes is
+   * 0051's to build, with the order suspend-then-erase decided there.
+   */
+  "suspended",
 ]);
 
 /**
  * Why someone was not enrolled. Never folded into one (0019). A company whose
  * domain is not a host is `unreadable_key`, not `protected` (0044).
  */
-export const skipReason = acquisition.enum("skip_reason", ["protected", "capacity", "duplicate", "unreachable", "opted_out", "unreadable_key"]);
+export const skipReason = acquisition.enum("skip_reason", [
+  "protected",
+  "capacity",
+  "duplicate",
+  "unreachable",
+  "opted_out",
+  "unreadable_key",
+  // Suspended from this sequence (0051): not a duplicate, which would make
+  // every reading by reason wrong. See `enrolment_state.suspended` for what
+  // this does not reach.
+  "suspended",
+]);
 
 /**
  * The stages of the addressing motion, and only those (decision 0036). Being
@@ -356,6 +381,21 @@ export const enrolment = acquisition.table(
     refusal: text("refusal"),
     enrolledAt: timestamp("enrolled_at", { withTimezone: true }),
 
+    /**
+     * For `suspended` (0051): the kernel's record of the stop, because the
+     * provider's is not one — its status may keep reading active, and its
+     * reference disappears with the object it points to. When the suspension
+     * was asked, by which run, what the adapter read back from the provider
+     * afterwards, and the way it stopped the person with the costs it
+     * declared for it, as declared at that moment.
+     */
+    suspensionAskedAt: timestamp("suspension_asked_at", { withTimezone: true }),
+    /** Attribution: losing the run keeps the suspension. */
+    suspensionRunId: uuid("suspension_run_id").references(() => run.id, { onDelete: "set null" }),
+    suspensionReadBack: jsonb("suspension_read_back"),
+    suspensionMethod: text("suspension_method"),
+    suspensionCosts: jsonb("suspension_costs"),
+
     /** Doctrine 5: the run that last wrote this row. */
     actorType: actorType("actor_type").notNull(),
     actorId: text("actor_id"),
@@ -377,6 +417,19 @@ export const enrolment = acquisition.table(
 
     /** `listPendingEnrolments` — what a crashed run left to reconcile. */
     index("enrolment_pending_idx").on(t.updatedAt).where(sql`${t.state} = 'pending'`),
+
+    /**
+     * A suspended row carries its whole record, and any other row carries
+     * none of it — not even a part. Compared as text: the value is added in
+     * the same migration, and a constraint may not use an enum value added in
+     * its own transaction. `suspension_run_id` is attribution, and may be
+     * null on either side.
+     */
+    check(
+      "enrolment_suspension_recorded",
+      sql`(${t.state}::text = 'suspended' and ${t.suspensionAskedAt} is not null and ${t.suspensionReadBack} is not null and ${t.suspensionMethod} is not null and ${t.suspensionCosts} is not null)
+       or (${t.state}::text <> 'suspended' and ${t.suspensionAskedAt} is null and ${t.suspensionRunId} is null and ${t.suspensionReadBack} is null and ${t.suspensionMethod} is null and ${t.suspensionCosts} is null)`,
+    ),
   ],
 );
 

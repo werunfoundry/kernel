@@ -120,6 +120,13 @@
       "when": 1792434420480,
       "tag": "0016_draft_says_why_it_failed",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792526787095,
+      "tag": "0017_enrolment_suspended",
+      "breakpoints": true
     }
   ]
 }

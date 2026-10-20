@@ -147,6 +147,7 @@ describe("the API", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () 
     assert.deepEqual(steps.find((s) => s.table === "person"), { domain: "relations", table: "person", column: "id", do: "delete", rows: 1 });
     assert.deepEqual(steps.find((s) => s.table === "sourcing_result"), { domain: "acquisition", table: "sourcing_result", column: "person_id", keys: "person", do: "anonymise", rows: 0, byKeys: 0 });
     assert.ok(notReached.some((n) => n.startsWith("backups")) && notReached.some((n) => n.includes("opt-out")), "the plan says what it does not reach (0049)");
+    assert.ok(notReached.some((n) => n.startsWith("the sequencer:")), "the plan says it does not reach the sequencer");
     assert.equal((await rows("select count(*)::int as n from relations.person"))[0].n, 1);
   });
 

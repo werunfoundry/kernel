@@ -116,7 +116,7 @@ describe("kernel-erase", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     assert.equal(r.status, 0, r.out);
     assert.match(r.out, /acquisition\.sourcing_result: 2 rows \(1 by keys\) — anonymise/);
     assert.match(r.out, /erased; the person's row was deleted/);
-    assert.match(r.out, /Not reached by this command \(decision 0049\)[\s\S]*backups[\s\S]*execution logs[\s\S]*working copies[\s\S]*core\.event[\s\S]*the opt-out does not survive/);
+    assert.match(r.out, /Not reached by this command \(decision 0049\)[\s\S]*backups[\s\S]*execution logs[\s\S]*working copies[\s\S]*core\.event[\s\S]*the sequencer: a person enrolled in a running sequence stays in it[\s\S]*the opt-out does not survive/);
     assert.deepEqual(await state(), { people: 1, runs: 2, results: 2, naming: 0 });
     assert.deepEqual((await client.query("select email from relations.person")).rows, [{ email: "bob@example.org" }]);
     const [erasure] = (await client.query("select trigger, actor_type, actor_id, status, process_key from core.run where process_key = 'relations.person.erase'")).rows;

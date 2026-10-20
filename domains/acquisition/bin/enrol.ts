@@ -32,7 +32,8 @@ import { join } from "node:path";
 import { boot } from "@werunfoundry/core/runtime/boot";
 import { connect } from "@werunfoundry/core/runtime/connect";
 
-import { enrol } from "../runtime/enrol.js";
+import { readDeclaration, type Sequencer } from "../contracts/sequencer.js";
+import { CannotSuspend, CONTRACTS, enrol } from "../runtime/enrol.js";
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(`--${name}`);
@@ -57,6 +58,19 @@ async function main(): Promise<number> {
     for (const i of booted.issues) console.log(`  ✖ ${i.at.replace(`${root}/`, "")}\n      ${i.message}`);
     console.log("\nenrol: boot refused. Nothing was opened or called.");
     return 1;
+  }
+  // What the bound sequencer says it cannot do, and what stopping someone
+  // costs through it (0051), before anyone is enrolled — and before the
+  // database is reached, so a refusal needs nothing else to be read.
+  const sequencer = booted.registry.forChannel<Sequencer>(CONTRACTS.sequencer, channel);
+  if (sequencer) {
+    const declared = readDeclaration(sequencer);
+    for (const line of declared.lines) console.log(line);
+    if (!declared.suspends) {
+      console.log(`\nenrol: refused — ${declared.refusal}. Nobody was enrolled and no provider was called.`);
+      return 1;
+    }
+    console.log("");
   }
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -90,6 +104,10 @@ async function main(): Promise<number> {
       },
       );
     } catch (error) {
+      if (error instanceof CannotSuspend) {
+        console.log(`enrol: refused — ${error.message}. Nobody was enrolled and no provider was called.`);
+        return 1;
+      }
       // Configuration or the database — not an outcome of the run, and never
       // a stack trace in place of a sentence.
       const cause = (error as Error).cause;
@@ -126,7 +144,7 @@ async function main(): Promise<number> {
       console.log(`  reconciled, enrolled by an earlier run that stopped before recording it: ${report.reconciled.length}`);
       for (const e of report.reconciled) console.log(`    = ${shown(e.person)} (${e.state})`);
     }
-    const reasons = ["protected", "unreadable_key", "opted_out", "capacity", "duplicate", "unreachable"] as const;
+    const reasons = ["protected", "unreadable_key", "opted_out", "suspended", "capacity", "duplicate", "unreachable"] as const;
     for (const reason of reasons) {
       const these = report.skipped.filter((s) => s.reason === reason);
       if (these.length === 0) continue;

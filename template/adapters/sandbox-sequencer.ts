@@ -21,6 +21,20 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
     provider: "sandbox-sequencer",
     channels: ["email"],
 
+    // Decision 0051. The sandbox sends nothing, and stops someone by deleting
+    // their enrolment from its state file — the only way it has.
+    declares: {
+      enrol: { serves: "yes" },
+      pullTouches: { serves: "no", why: "the sandbox records enrolments, not sends" },
+      suspend: {
+        serves: "yes",
+        method: "deleting the enrolment from the state file",
+        costs: { person: ["sequence_link_lost", "provider_record_lost", "irreversible"], sequence: [] },
+        gap: { known: true, minutes: 0, basis: "by construction: the sandbox sends nothing, and the deletion is synchronous", measuredOn: "2026-10-20" },
+      },
+      pullUnsubscribes: { serves: "no", why: "nobody can unsubscribe from the sandbox" },
+    },
+
     async probe(): Promise<CallResult<void>> {
       const state = loadState(path);
       return state.ok ? { ok: true, value: undefined } : state;

@@ -30,6 +30,7 @@ import type {
   CallResult,
 } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityKey } from "@werunfoundry/core/identity";
+import type { ValidationIssue } from "@werunfoundry/core/manifest/types";
 
 /** The mailbox or profile a touch leaves from. Capacity is per sender and channel. */
 export interface SenderRef {
@@ -179,9 +180,191 @@ export interface Suppression {
   notApplicable: IdentityKey[];
 }
 
+/* -------------------------------------------------------------------------- */
+/* What an adapter declares it can do (decision 0051)                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether an adapter serves one of the four verbs the kernel needs. Not
+ * serving it is a fact of the system, reported as such — never an error,
+ * never smoothed into a success — and a partial service says why.
+ */
+export type Serves =
+  | { serves: "yes" }
+  | { serves: "partially"; why: string }
+  | { serves: "no"; why: string };
+
+/** What a way of suspending costs the person, in 0051's vocabulary. */
+export const PERSON_COSTS = [
+  "provider_status_stays_active", // the provider's status keeps reading active
+  "sequence_link_lost", // the provider's link to the original sequence is lost
+  "provider_record_lost", // the provider's record of the person is lost
+  "irreversible", // the act cannot be undone
+] as const;
+export type PersonCost = (typeof PERSON_COSTS)[number];
+
+/** What a way of suspending costs the sequence everyone else is in. */
+export const SEQUENCE_COSTS = [
+  "shared_state_changes", // the shared sequence's own state changes, for everyone else in it
+] as const;
+export type SequenceCost = (typeof SEQUENCE_COSTS)[number];
+
+/**
+ * How long after a suspension's read-back a step already picked to send can
+ * still leave. A touch inside it is in the gap, not a breach. It carries the
+ * measurement it rests on and its date, or says it is unknown: a delay
+ * nobody measured is not a delay, whatever number would look reasonable.
+ */
+export type SuspensionGap =
+  | { known: true; minutes: number; basis: string; measuredOn: string }
+  | { known: false; why: string };
+
+interface SuspensionMethod {
+  /** The way the provider is asked to stop, as the adapter names it. */
+  method: string;
+  /** Empty lists are a declaration too: no cost, on that side. */
+  costs: { person: readonly PersonCost[]; sequence: readonly SequenceCost[] };
+  gap: SuspensionGap;
+  /**
+   * Set when the adapter does not take the least destructive way its
+   * provider offers among those that assert nothing about the person: which
+   * one it passed over, and why.
+   */
+  notTheLeastDestructive?: { available: string; why: string };
+}
+
+export type SuspendDeclaration =
+  | ({ serves: "yes" } & SuspensionMethod)
+  | ({ serves: "partially"; why: string } & SuspensionMethod)
+  | { serves: "no"; why: string };
+
+/**
+ * Everything an adapter says about itself, read without calling the
+ * provider: a constant on the adapter, like its channels.
+ */
+export interface SequencerDeclaration {
+  enrol: Serves;
+  pullTouches: Serves;
+  suspend: SuspendDeclaration;
+  pullUnsubscribes: Serves;
+}
+
+const VERBS = ["enrol", "pullTouches", "suspend", "pullUnsubscribes"] as const;
+const SERVES = new Set(["yes", "partially", "no"]);
+const isText = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
+
+/**
+ * Everything wrong with a declaration, at once. Checked at run time as well
+ * as by the compiler: an instance's adapter may be plain JavaScript (0005).
+ */
+export function checkDeclaration(declaration: unknown): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const error = (at: string, message: string) => issues.push({ severity: "error", at, message });
+  if (typeof declaration !== "object" || declaration === null) {
+    error("declares", "not an object");
+    return issues;
+  }
+  const d = declaration as Record<string, unknown>;
+  for (const verb of VERBS) {
+    const v = d[verb] as Record<string, unknown> | undefined;
+    if (typeof v !== "object" || v === null) {
+      error(verb, "missing: every verb is declared, served or not");
+      continue;
+    }
+    if (!SERVES.has(v.serves as string)) {
+      error(`${verb}.serves`, `"${String(v.serves)}" is not yes, partially or no`);
+      continue;
+    }
+    if (v.serves !== "yes" && !isText(v.why)) error(`${verb}.why`, `a verb served ${v.serves === "no" ? "not at all" : "partially"} says why`);
+    if (verb !== "suspend" || v.serves === "no") continue;
+
+    if (!isText(v.method)) error("suspend.method", "a suspension names the way it stops the person");
+    const costs = v.costs as { person?: unknown; sequence?: unknown } | undefined;
+    if (!costs || !Array.isArray(costs.person) || !Array.isArray(costs.sequence)) {
+      error("suspend.costs", "declares both sides, the person and the shared sequence, even when a side costs nothing");
+    } else {
+      for (const c of costs.person) if (!(PERSON_COSTS as readonly unknown[]).includes(c)) error("suspend.costs.person", `"${String(c)}" is not in 0051's vocabulary`);
+      for (const c of costs.sequence) if (!(SEQUENCE_COSTS as readonly unknown[]).includes(c)) error("suspend.costs.sequence", `"${String(c)}" is not in 0051's vocabulary`);
+    }
+    const gap = v.gap as Record<string, unknown> | undefined;
+    if (!gap || typeof gap.known !== "boolean") {
+      error("suspend.gap", "declared, as a measured delay or as unknown");
+    } else if (gap.known) {
+      if (typeof gap.minutes !== "number" || !Number.isFinite(gap.minutes) || gap.minutes < 0) error("suspend.gap.minutes", "a delay is a number of minutes, zero or more");
+      if (!isText(gap.basis)) error("suspend.gap.basis", "a measured delay says what it was measured from");
+      if (typeof gap.measuredOn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(gap.measuredOn) || Number.isNaN(Date.parse(gap.measuredOn))) {
+        error("suspend.gap.measuredOn", "a measured delay carries the date it was measured, as YYYY-MM-DD");
+      }
+    } else if (!isText(gap.why)) {
+      error("suspend.gap.why", "an unknown delay says why it is unknown");
+    }
+    const passed = v.notTheLeastDestructive as Record<string, unknown> | undefined;
+    if (passed !== undefined && (!isText(passed.available) || !isText(passed.why))) {
+      error("suspend.notTheLeastDestructive", "names the way passed over, and why");
+    }
+  }
+  return issues;
+}
+
+const SAID: Record<PersonCost | SequenceCost, string> = {
+  provider_status_stays_active: "the provider's status keeps reading active",
+  sequence_link_lost: "the link to the original sequence is lost at the provider",
+  provider_record_lost: "the provider's record of the person is lost",
+  irreversible: "it cannot be undone",
+  shared_state_changes: "the sequence's own state changes, for everyone else in it",
+};
+
+const served = (s: Serves) => (s.serves === "yes" ? "serves" : s.serves === "partially" ? `serves partially — ${s.why}` : `does not serve — ${s.why}`);
+
+/**
+ * What an adapter declares, as the lines a command prints before it enrols
+ * anyone, and whether the kernel may enrol through it. It may only when the
+ * adapter declares, validly, that it can suspend: a declaration that is
+ * missing or malformed says nothing, and nothing is not "can suspend".
+ */
+export function readDeclaration(sequencer: Pick<Sequencer, "provider" | "declares">): { suspends: boolean; lines: string[]; refusal?: string } {
+  const head = `the sequencer "${sequencer.provider}" declares (decision 0051):`;
+  if (sequencer.declares === undefined) {
+    const refusal = `the sequencer "${sequencer.provider}" declares nothing about what it can do; the kernel enrols only through one that declares it can suspend (decision 0051)`;
+    return { suspends: false, lines: [`the sequencer "${sequencer.provider}" declares nothing (decision 0051)`], refusal };
+  }
+  const issues = checkDeclaration(sequencer.declares);
+  if (issues.length > 0) {
+    const refusal = `the sequencer "${sequencer.provider}" declares itself in a form the kernel cannot read: ${issues.map((i) => `${i.at}: ${i.message}`).join("; ")}`;
+    return { suspends: false, lines: [head, ...issues.map((i) => `  ✖ ${i.at}: ${i.message}`)], refusal };
+  }
+  const d = sequencer.declares;
+  const lines = [head, `  enrol: ${served(d.enrol)}`, `  pull the touches: ${served(d.pullTouches)}`, `  pull the unsubscribes: ${served(d.pullUnsubscribes)}`];
+  const s = d.suspend;
+  if (s.serves === "no") {
+    lines.push(`  suspend one person: does not serve — ${s.why}`);
+    const refusal = `the sequencer "${sequencer.provider}" cannot suspend one person in a sequence (${s.why}); the kernel does not enrol through it (decision 0051)`;
+    return { suspends: false, lines, refusal };
+  }
+  lines.push(`  suspend one person: ${s.serves === "yes" ? "serves" : `serves partially — ${s.why}`}, by ${s.method}`);
+  const costs = (list: readonly (PersonCost | SequenceCost)[]) => (list.length ? list.map((c) => SAID[c]).join("; ") : "none declared");
+  lines.push(`    costs the person: ${costs(s.costs.person)}`);
+  lines.push(`    costs the shared sequence: ${costs(s.costs.sequence)}`);
+  if (s.notTheLeastDestructive) lines.push(`    not the least destructive way: ${s.notTheLeastDestructive.available} was passed over — ${s.notTheLeastDestructive.why}`);
+  lines.push(
+    s.gap.known
+      ? `    gap: ${s.gap.minutes} minutes after the read-back (${s.gap.basis}, measured ${s.gap.measuredOn})`
+      : `    gap: unknown — ${s.gap.why}; every touch after a suspension is reported, neither a breach nor accepted`,
+  );
+  return { suspends: true, lines };
+}
+
 export interface Sequencer extends Contract {
   /** The channels this adapter serves, from the enabled domains' `channels`. */
   readonly channels: readonly string[];
+
+  /**
+   * What this adapter can and cannot do (decision 0051), read without
+   * calling the provider. Optional so that an adapter written before it
+   * still loads; but an adapter that declares nothing is one the kernel does
+   * not enrol through — nothing said is not "can suspend".
+   */
+  readonly declares?: SequencerDeclaration;
 
   /**
    * Per channel, what an enrolment waits on before it reaches anyone — the

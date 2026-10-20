@@ -28,11 +28,11 @@ import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
 
-import type { CapacityLimit, Sequencer } from "../contracts/sequencer.js";
+import type { CapacityLimit, Sequencer, SequencerDeclaration } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
 import type { EnrolRequest } from "./enrol.js";
 import { acknowledgeUncovered, withdrawAcknowledgement } from "./acknowledge.js";
-import { enrol } from "./enrol.js";
+import { CannotSuspend, enrol } from "./enrol.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_enrol_${process.pid}`;
@@ -139,9 +139,26 @@ const people: PeopleSource = {
 
 const emailOf = (p: Identity) => p.keys.find((k) => k.kind === "email")?.value ?? "";
 
+/** A sequencer that can suspend (0051), as every test but the refusal's assumes. */
+const canSuspend = (): SequencerDeclaration => ({
+  enrol: { serves: "yes" },
+  pullTouches: { serves: "no", why: "not in this test" },
+  suspend: {
+    serves: "yes",
+    method: "parking the person in a far-off step",
+    costs: { person: ["provider_status_stays_active"], sequence: ["shared_state_changes"] },
+    gap: { known: false, why: "never measured" },
+  },
+  pullUnsubscribes: { serves: "no", why: "not in this test" },
+});
+let declared: SequencerDeclaration | undefined = canSuspend();
+
 const sequencer: Sequencer = {
   provider: "memory-sequencer",
   channels: ["email"],
+  get declares() {
+    return declared;
+  },
   async enrol(e, ctx) {
     world.enrolCalls++;
     world.keysSent.push(e.idempotencyKey);
@@ -238,6 +255,7 @@ beforeEach(async () => {
   world.enrolCalls = 0;
   world.remaining = 100;
   world.limits = () => [{ unit: "messages", window: "day", remaining: world.remaining }];
+  declared = canSuspend();
 });
 
 /* -------------------------------------------------------------------------- */
@@ -799,5 +817,134 @@ describe("an uncovered customer", { skip: base ? false : "TEST_DATABASE_URL is n
     await withdrawAcknowledgement(db, { customerId: "cust-z", by: "an operator" });
     const withdrawn = await run({ dryRun: true });
     assert.equal(withdrawn.status, "failed");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* What the sequencer declares, and the state it leads to (decision 0051)      */
+/* -------------------------------------------------------------------------- */
+
+describe("a sequencer that cannot suspend (0051)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const runs = async () => (await client.query("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).rows[0].n as number;
+
+  /** Refused before anything: no run, no protection read, no provider call, nobody held. */
+  async function refusedOutright(pattern: RegExp, dryRun = false) {
+    const before = await runs();
+    await assert.rejects(run({ dryRun }), (e: Error) => e instanceof CannotSuspend && pattern.test(e.message));
+    assert.equal(await runs(), before, "a run was opened for an enrolment that could not happen");
+    assert.deepEqual([world.enrolCalls, world.statusCalls, world.lookedUp.length, held().length], [0, 0, 0, 0]);
+  }
+
+  it("is refused when it declares nothing — nothing said is not \"can suspend\"", async () => {
+    declared = undefined;
+    await refusedOutright(/declares nothing about what it can do/);
+  });
+
+  it("is refused in a dry run too: the dry run shows what the live one would do", async () => {
+    declared = undefined;
+    await refusedOutright(/declares nothing/, true);
+  });
+
+  it("is refused when it declares that it cannot suspend, and the refusal carries its reason", async () => {
+    declared = { ...canSuspend(), suspend: { serves: "no", why: "the provider has no way to stop one person" } };
+    await refusedOutright(/cannot suspend one person in a sequence \(the provider has no way to stop one person\)/);
+  });
+
+  it("is refused when its declaration cannot be read: a measured gap without its date", async () => {
+    const s = canSuspend().suspend as Extract<SequencerDeclaration["suspend"], { serves: "yes" }>;
+    declared = { ...canSuspend(), suspend: { ...s, gap: { known: true, minutes: 5, basis: "a live test" } as never } };
+    await refusedOutright(/suspend\.gap\.measuredOn/);
+  });
+
+  it("is refused when it names a cost outside 0051's vocabulary: the registry's jsonb would take anything", async () => {
+    const s = canSuspend().suspend as Extract<SequencerDeclaration["suspend"], { serves: "yes" }>;
+    declared = { ...canSuspend(), suspend: { ...s, costs: { person: ["mildly_annoying" as never], sequence: [] } } };
+    await refusedOutright(/suspend\.costs\.person: "mildly_annoying" is not in 0051's vocabulary/);
+  });
+
+  it("enrols through one that can suspend, with its gap still unknown", async () => {
+    const r = await run();
+    assert.equal(r.status, "succeeded", r.stoppedBy);
+    assert.deepEqual(held(), ["ada@open.example.com", "bo@open.example.com"]);
+  });
+});
+
+describe("the suspended state (0051)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  /** A person enrolled in `welcome`, as the registry holds one. */
+  async function enrolledRow(email: string, state = "enrolled"): Promise<string> {
+    const person = (await client.query("insert into relations.person (email) values ($1) returning id", [email])).rows[0].id;
+    return (
+      await client.query(
+        "insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type) values ($1, 'welcome', 'email', 'k-' || $2, $3, 'memory-sequencer', 'system') returning id",
+        [person, email, state],
+      )
+    ).rows[0].id as string;
+  }
+  const aRun = async () =>
+    (await client.query("insert into core.run (process_key, trigger, status, actor_type, dry_run) values ('acquisition.suspend.test', 'cli', 'running', 'system', false) returning id")).rows[0].id as string;
+  const suspend = async (id: string, runId: string) =>
+    client.query(
+      `update acquisition.enrolment set state = 'suspended', suspension_asked_at = now(), suspension_run_id = $2,
+         suspension_read_back = '{"state":"active","asOf":"2026-10-20T07:34:23Z"}', suspension_method = 'parking the person in a far-off step',
+         suspension_costs = '{"person":["provider_status_stays_active"],"sequence":["shared_state_changes"]}'
+       where id = $1`,
+      [id, runId],
+    );
+
+  it("is reached from enrolled, carrying when it was asked, by which run, what was read back and the method's costs", async () => {
+    const id = await enrolledRow("ada@open.example.com");
+    const runId = await aRun();
+    await suspend(id, runId);
+    const [row] = (await client.query("select state, suspension_run_id, suspension_method, suspension_costs, suspension_read_back from acquisition.enrolment where id = $1", [id])).rows;
+    assert.deepEqual(
+      [row.state, row.suspension_run_id, row.suspension_method, row.suspension_costs.sequence, row.suspension_read_back.state],
+      ["suspended", runId, "parking the person in a far-off step", ["shared_state_changes"], "active"],
+    );
+  });
+
+  it("is refused without its record, and a record is refused on a row that is not suspended", async () => {
+    const id = await enrolledRow("ada@open.example.com");
+    await assert.rejects(client.query("update acquisition.enrolment set state = 'suspended' where id = $1", [id]), /enrolment_suspension_recorded/);
+    await assert.rejects(client.query("update acquisition.enrolment set suspension_method = 'x' where id = $1", [id]), /enrolment_suspension_recorded/);
+  });
+
+  it("is reached from enrolled only: neither created suspended nor reached from pending or refused", async () => {
+    const runId = await aRun();
+    for (const from of ["pending", "refused"]) {
+      const id = await enrolledRow(`${from}@open.example.com`, from);
+      await assert.rejects(suspend(id, runId), new RegExp(`${from} to suspended is not a move an enrolment makes`));
+    }
+    const person = (await client.query("insert into relations.person (email) values ('new@open.example.com') returning id")).rows[0].id;
+    await assert.rejects(
+      client.query(
+        `insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type, suspension_asked_at, suspension_read_back, suspension_method, suspension_costs)
+         values ($1, 'welcome', 'email', 'k', 'suspended', 'memory-sequencer', 'system', now(), '{}', 'm', '{"person":[],"sequence":[]}')`,
+        [person],
+      ),
+      /cannot be created suspended/,
+    );
+  });
+
+  it("is terminal: it does not become enrolled again, and its record does not change", async () => {
+    const id = await enrolledRow("ada@open.example.com");
+    await suspend(id, await aRun());
+    await assert.rejects(client.query("update acquisition.enrolment set state = 'enrolled', suspension_asked_at = null, suspension_read_back = null, suspension_method = null, suspension_costs = null where id = $1", [id]), /terminal/);
+    await assert.rejects(client.query("update acquisition.enrolment set suspension_method = 'something else' where id = $1", [id]), /terminal/);
+    // Attribution, not the record: losing the run keeps the suspension.
+    await client.query("update acquisition.enrolment set suspension_run_id = null where id = $1", [id]);
+  });
+
+  it("is never enrolled again by a run, and the provider is not even asked", async () => {
+    const id = await enrolledRow("ada@open.example.com");
+    await suspend(id, await aRun());
+    const r = await run();
+    assert.equal(r.status, "succeeded", r.stoppedBy);
+    assert.deepEqual(held(), ["bo@open.example.com"]);
+    const skip = r.skipped.find((s) => s.person && emailOf(s.person) === "ada@open.example.com");
+    assert.equal(skip?.reason, "suspended");
+    assert.match(skip?.detail ?? "", /suspended from this sequence/);
+    const kept = (await client.query("select reason from acquisition.enrolment_skip where run_id = $1 and reason = 'suspended'", [r.runId])).rows;
+    assert.equal(kept.length, 1, "the suspended skip was not kept under its own reason");
+    assert.equal(world.statusCalls, 1, "the provider was asked about the suspended person");
   });
 });

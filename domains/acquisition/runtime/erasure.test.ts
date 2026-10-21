@@ -18,6 +18,8 @@ import { loadDomain } from "@werunfoundry/core/manifest/load";
 import type { DomainManifest } from "@werunfoundry/core/manifest/types";
 import { validateDomain } from "@werunfoundry/core/manifest/validate";
 import { erase, planErasure } from "@werunfoundry/core/runtime/erase";
+import { fingerprinter, fingerprintOf, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
+import { identityVocabulary } from "@werunfoundry/core/identity";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import * as relationsSchema from "@werunfoundry/relations/db/schema";
 import { recordPerson } from "@werunfoundry/relations/runtime/record";
@@ -131,8 +133,11 @@ const registry: Registry = {
   sequence: () => [],
   list: () => [],
 };
-/** Resolved for real, from this package: the module `domain.yaml` names, not one handed in. */
-const reach: ErasureReach = { registry, root: join(import.meta.dirname, "..") };
+/** The register's version for these tests: generated, as every secret is (0058). */
+const SECRET = generateSecret();
+const vocabulary = identityVocabulary([relations, acquisition], ["network_a"]);
+/** Resolved for real, from this package: the modules `domain.yaml` names, not ones handed in. */
+const reach: ErasureReach = { registry, root: join(import.meta.dirname, ".."), fingerprints: fingerprinter("T1", SECRET, [], vocabulary) };
 
 /** A person named by a row in every table that can name one. */
 async function someone(): Promise<string> {
@@ -267,7 +272,7 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
 
   it("does what each domain declares, as a person's run, and deletes the person", async () => {
     const id = await someone();
-    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
     assert.equal(await total(id), "0");
     assert.equal((await rows("select count(*)::int as n from relations.person"))[0].n, 0);
     assert.equal((await rows("select count(*)::int as n from acquisition.sourcing_result"))[0].n, 1, "the run's history stays, naming nobody (0049)");
@@ -279,7 +284,7 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
   it("keeps what a domain keeps under its basis, and empties the person it still names instead of deleting it", async () => {
     const id = await someone();
     const keeping: DomainManifest = { ...relations, erasure: relations.erasure!.map((r) => (r.table === "touch" ? { table: "touch", column: "person_id", do: "keep", basis: "an obligation the test invents" } : r)) };
-    const r = await erase(db, [keeping, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+    const r = await erase(db, [keeping, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
     assert.equal((await rows("select count(*)::int as n from relations.touch"))[0].n, 1);
     assert.deepEqual(await rows("select email, full_name from relations.person where id = $1", [id]), [{ email: null, full_name: null }]);
     assert.deepEqual(r.steps.map((s) => s.outcome).filter(Boolean), ["kept", "emptied"]);
@@ -289,7 +294,7 @@ describe("erasing a person", { skip: base ? false : "TEST_DATABASE_URL is not se
     const id = await someone();
     // An answer the schema refuses — touches are append-only — fails the whole erasure.
     const wrong: DomainManifest = { ...relations, erasure: relations.erasure!.map((r) => (r.table === "touch" ? { table: "touch", column: "person_id", do: "anonymise", columns: ["sender"] } : r)) };
-    await assert.rejects(erase(db, [wrong, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach), (e: Error) => /append-only/.test(String((e.cause as Error | undefined)?.message ?? e.message)));
+    await assert.rejects(erase(db, [wrong, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach), (e: Error) => /append-only/.test(String((e.cause as Error | undefined)?.message ?? e.message)));
     assert.equal(await total(id), "9");
   });
 });
@@ -360,7 +365,7 @@ describe("the reference case — what was done by hand (0049)", { skip: base ? f
     assert.deepEqual(plan.filter((s) => s.keys).map((s) => `${s.table}:${s.rows}/${s.byKeys}`), ["sourcing_result:3/2", "enrolment_skip:1/1"]);
     assert.deepEqual(await sourcing(), before, "the plan changes nothing");
 
-    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
     assert.equal(r.steps.at(-1)?.outcome, "deleted", "nothing points at the person any more: the row is deleted, not emptied");
     assert.deepEqual(await counts(), { person: 1, sourcing_result: 5, enrolment_skip: 2, run: 4 });
 
@@ -402,14 +407,17 @@ describe("the reference case — what was done by hand (0049)", { skip: base ? f
     const run = await aRun("acquisition.source");
     await result(run, "opted_out", "opted out", [ada.email]);
     await result(run, "protected", "an address it already had is on a protected domain", [ada.id]);
-    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
     assert.equal(r.steps.find((s) => s.table === "sourcing_result")?.byKeys, 2);
     assert.deepEqual((await sourcing()).map((s) => s.person), [null, null]);
   });
 
-  it("does not let the opt-out survive: a person found again later is a new person, contactable (0049 names the hole)", async () => {
+  it("keeps the opt-out as a fingerprint, which nothing reads yet: a person found again is a new person, contactable until 0055's reader (0052)", async () => {
     const [{ id }] = await rows("insert into relations.person (email, opted_out_at) values ('ada@example.com', now()) returning id");
-    await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
+    assert.deepEqual(await rows("select fingerprint, chain from relations.suppression"), [{ fingerprint: fingerprintOf(SECRET, ada.email, vocabulary), chain: ["T1"] }]);
+    assert.deepEqual(r.during, [{ domain: "relations", acts: [{ what: "entries written in the register, one per key of a person who objected (decision 0052)", rows: 1 }] }]);
+    // The hole 0049 named stays open on the reading side: 0055's reader is not built.
     const again = await recordPerson(db, { subject: "person", keys: [ada.email] });
     assert.ok("id" in again && again.id !== id);
     assert.deepEqual(await rows("select opted_out_at from relations.person"), [{ opted_out_at: null }]);
@@ -460,7 +468,7 @@ describe("an enrolment, once its person is erased (0053)", { skip: base ? false 
 
   it("keeps every enrolment row, naming nobody: the suspension stays as the proof that it happened", async () => {
     const { id, suspendedBy } = await enrolled();
-    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
     assert.deepEqual([r.steps.find((s) => s.table === "enrolment")?.do, r.steps.find((s) => s.table === "enrolment")?.rows], ["anonymise", 3]);
     assert.equal((await rows("select count(*)::int as n from relations.person"))[0].n, 0, "the person is still on record");
     const after = await enrolments();
@@ -479,7 +487,7 @@ describe("an enrolment, once its person is erased (0053)", { skip: base ? false 
 
   it("leaves nothing of her: not the read-back, not the provider's refusal, not the key derived from her keys", async () => {
     const { id } = await enrolled();
-    await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+    await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
     const after = await enrolments();
     const byKey = Object.fromEntries(after.map((e) => [e.sequence_key, e]));
     assert.deepEqual(byKey.winback.suspension_read_back, MARK);
@@ -551,7 +559,7 @@ describe("an enrolment, once its person is erased (0053)", { skip: base ? false 
 
 describe("before erasure, the person is stopped at the provider (0056)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
   const MARK = { erased: "decision 0053" };
-  const erasing = (id: string) => erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+  const erasing = (id: string) => erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
 
   /** Ada, enrolled in each sequence given, the provider holding those marked held. */
   async function ada(enrolments: { sequence: string; state?: string; held?: boolean; provider?: string }[]): Promise<string> {
@@ -652,7 +660,7 @@ describe("before erasure, the person is stopped at the provider (0056)", { skip:
   it("is refused when it is given no bound adapters, and forgets nobody", async () => {
     const id = await ada([]);
     // Not `erasing(id, undefined)`: a default parameter takes undefined as absent.
-    await assert.rejects(erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }), (e: Error) => e instanceof ErasureRefused && /given no bound adapters/.test(e.message));
+    await assert.rejects(erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }), (e: Error) => e instanceof ErasureRefused && /given no bound adapters/.test(e.message));
     assert.equal(await people(), 1);
   });
 
@@ -683,7 +691,7 @@ describe("before erasure, the person is stopped at the provider (0056)", { skip:
 
 describe("a person attests a stop, only where retrying cannot help (0056)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
   const MARK = { erased: "decision 0053" };
-  const erasing = (id: string) => erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" }, reach);
+  const erasing = (id: string) => erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
   async function enrolledAda(): Promise<{ person: string; enrolment: string }> {
     const [{ id }] = await rows("insert into relations.person (email) values ('ada@example.com') returning id");
     const [{ id: e }] = await rows("insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type) values ($1, 'welcome', 'email', 'key-welcome', 'enrolled', 'memory', 'system') returning id", [id]);

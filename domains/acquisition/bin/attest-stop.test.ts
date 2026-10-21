@@ -8,22 +8,32 @@
 
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
 
 import { Client } from "pg";
 
+import { checkValueOf, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
+
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_attest_bin_${process.pid}`;
-// The command boots an instance, so it runs from one: the template's root, where the domains resolve.
-const cwd = join(import.meta.dirname, "../../../template");
+// The command boots an instance, so it runs from one: the template's files,
+// where the domains resolve, and a manifest that declares the register's
+// version that writes — the template ships none, since a secret is generated (0058).
+const template = join(import.meta.dirname, "../../../template");
+const SECRET = generateSecret();
+let cwd: string;
 const command = join(import.meta.dirname, "attest-stop.ts");
 let admin: Client;
 let client: Client;
 let url: string;
 
 before(async () => {
+  cwd = mkdtempSync(join(tmpdir(), "kernel-attest-"));
+  for (const entry of readdirSync(template)) if (entry !== ".sandbox-state.json" && entry !== "manifest.yaml") symlinkSync(join(template, entry), join(cwd, entry));
+  writeFileSync(join(cwd, "manifest.yaml"), `${readFileSync(join(template, "manifest.yaml"), "utf8")}\nfingerprints:\n  writes: T1\n  versions:\n    - { label: T1, check: ${checkValueOf(SECRET)}, reason: "a test" }\n`);
   if (!base) return;
   admin = new Client({ connectionString: base });
   await admin.connect();
@@ -40,6 +50,7 @@ before(async () => {
 });
 
 after(async () => {
+  rmSync(cwd, { recursive: true, force: true });
   await client?.end();
   if (admin) {
     await admin.query(`drop database if exists ${database} with (force)`);
@@ -65,10 +76,10 @@ const quote = (a: string) => `'${a.replace(/'/g, `'\\''`)}'`;
 
 /** The command as a process. `terminal` runs it on a pseudo-terminal; `typed` is what the person types. */
 function run(args: string[], opts: { terminal?: boolean; typed?: string } = {}): Promise<{ status: number | null; out: string }> {
-  const argv = [process.execPath, "--import", "tsx", command, ...args];
+  const argv = [process.execPath, "--import", import.meta.resolve("tsx"), command, ...args];
   const child = opts.terminal
-    ? spawn("script", ["-qec", argv.map(quote).join(" "), "/dev/null"], { cwd, env: { ...process.env, DATABASE_URL: url } })
-    : spawn(argv[0]!, argv.slice(1), { cwd, env: { ...process.env, DATABASE_URL: url } });
+    ? spawn("script", ["-qec", argv.map(quote).join(" "), "/dev/null"], { cwd, env: { ...process.env, DATABASE_URL: url, KERNEL_FINGERPRINT_T1: SECRET } })
+    : spawn(argv[0]!, argv.slice(1), { cwd, env: { ...process.env, DATABASE_URL: url, KERNEL_FINGERPRINT_T1: SECRET } });
   let out = "";
   child.stdout.on("data", (d) => (out += d));
   child.stderr.on("data", (d) => (out += d));

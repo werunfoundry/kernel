@@ -20,6 +20,8 @@ import { after, before, beforeEach, describe, it } from "node:test";
 
 import { Client } from "pg";
 
+import { checkValueOf, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
+
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_stop_protected_bin_${process.pid}`;
 const template = join(import.meta.dirname, "../../../template");
@@ -28,10 +30,13 @@ let admin: Client;
 let client: Client;
 let url: string;
 let cwd: string;
+/** The register's version that writes: the template ships none, since a secret is generated (0058). */
+const SECRET = generateSecret();
 
 before(async () => {
   cwd = mkdtempSync(join(tmpdir(), "kernel-stop-protected-"));
-  for (const entry of readdirSync(template)) if (entry !== ".sandbox-state.json") symlinkSync(join(template, entry), join(cwd, entry));
+  for (const entry of readdirSync(template)) if (entry !== ".sandbox-state.json" && entry !== "manifest.yaml") symlinkSync(join(template, entry), join(cwd, entry));
+  writeFileSync(join(cwd, "manifest.yaml"), `${readFileSync(join(template, "manifest.yaml"), "utf8")}\nfingerprints:\n  writes: T1\n  versions:\n    - { label: T1, check: ${checkValueOf(SECRET)}, reason: "a test" }\n`);
   if (!base) return;
   admin = new Client({ connectionString: base });
   await admin.connect();
@@ -85,7 +90,7 @@ beforeEach(async () => {
 
 function run(args: string[]): Promise<{ status: number | null; out: string }> {
   // The loader from here: the throwaway root does not resolve it on its own.
-  const child = spawn(process.execPath, ["--import", import.meta.resolve("tsx"), command, ...args], { cwd, env: { ...process.env, DATABASE_URL: url } });
+  const child = spawn(process.execPath, ["--import", import.meta.resolve("tsx"), command, ...args], { cwd, env: { ...process.env, DATABASE_URL: url, KERNEL_FINGERPRINT_T1: SECRET } });
   let out = "";
   child.stdout.on("data", (d) => (out += d));
   child.stderr.on("data", (d) => (out += d));

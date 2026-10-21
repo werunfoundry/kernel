@@ -78,6 +78,13 @@
       "when": 1792434418741,
       "tag": "0010_touch_names_its_message",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792603829613,
+      "tag": "0011_suppression_register",
+      "breakpoints": true
     }
   ]
 }

@@ -98,7 +98,7 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
         const saved = saveState(path, state.value);
         if (!saved.ok) return saved;
       }
-      return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { applied, notApplicable } };
+      return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { applied, notApplicable, asOf: new Date().toISOString() } };
     },
 
     async status({ person, sequenceKey }) {

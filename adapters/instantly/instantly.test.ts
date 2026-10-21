@@ -34,11 +34,13 @@ interface Seen {
 
 /** The fake's state: what Instantly would hold. */
 const state = {
-  leads: [] as { id: string; email: string; campaign: string; status: number; payload?: Record<string, unknown>; subsequence_id?: string }[],
+  leads: [] as { id: string; email: string; campaign: string; status: number; payload?: Record<string, unknown>; subsequence_id?: string; timestamp_updated?: string }[],
   /** Subsequences by id, with the campaign each belongs to. */
   subsequences: { s1: { parent_campaign: "c1" }, s9: { parent_campaign: "c9" } } as Record<string, { parent_campaign: string }>,
   /** When set, a move answers 200 and moves nothing — what a status write did live (README). */
   moveDoesNothing: false,
+  /** When set, an upload answers `leads_uploaded: 1` and stores nothing — a success that did nothing. */
+  addDoesNothing: false,
   blocklist: [] as string[],
   /** When set, a blocklist write answers 200 and stores nothing — a success that did nothing. */
   blockDoesNothing: false,
@@ -108,6 +110,7 @@ before(async () => {
         return reply(200, { leads_uploaded: 0, in_blocklist: 0, duplicated_leads: 1, created_leads: [] });
       }
       const id = `lead-${state.leads.length + 1}`;
+      if (state.addDoesNothing) return reply(200, { leads_uploaded: 1, in_blocklist: 0, duplicated_leads: 0, created_leads: [{ index: 0, id }] });
       state.leads.push({ id, email: lead.email, campaign: String(body?.campaign_id), status: 1, ...(lead.custom_variables ? { payload: lead.custom_variables } : {}) });
       return reply(200, { leads_uploaded: 1, in_blocklist: 0, duplicated_leads: 0, created_leads: [{ index: 0, id }] });
     }
@@ -163,6 +166,7 @@ beforeEach(() => {
   state.forceStatus = 0;
   state.missNextList = false;
   state.moveDoesNothing = false;
+  state.addDoesNothing = false;
   state.blockDoesNothing = false;
   state.sentToday = 15;
   state.accounts["sender@example.com"] = { daily_limit: 40, status: 1 };
@@ -249,6 +253,19 @@ describe("enrol", () => {
       engine_experiment: "exp",
       engine_variant: "a",
     });
+    // Read back (0051): the lead is read again after the upload.
+    const uploaded = seen.findIndex((s) => s.path === "/api/v2/leads/add");
+    assert.ok(seen.slice(uploaded + 1).some((s) => s.path === "/api/v2/leads/list"), "the lead was not read back after the upload");
+  });
+
+  it("is an error, not a success, when Instantly reports the lead uploaded and it does not read back", async () => {
+    state.addDoesNothing = true;
+    const r = await adapter().enrol(enrolment(), ctx(false));
+    assert.equal(r.ok, false, JSON.stringify(r));
+    if (!r.ok) {
+      assert.equal(r.error.code, "unknown");
+      assert.match(r.error.message, /does not read back/);
+    }
   });
 
   it("returns the same enrolment when replayed with the same key, and writes once", async () => {
@@ -420,10 +437,15 @@ describe("suppress", () => {
   const company = (...keys: Identity["keys"]): Identity => ({ subject: "company", keys });
 
   it("blocklists a whole domain, in Instantly's format, and says what it applied", async () => {
+    const start = Date.now();
     const r = await adapter().suppress(request(company({ kind: "domain", value: "@Example.ORG" })), ctx(false));
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual(state.blocklist, ["example.org"]);
-    if (r.ok) assert.deepEqual(r.value.applied, [{ kind: "domain", value: "@Example.ORG" }]);
+    if (r.ok) {
+      assert.deepEqual(r.value.applied, [{ kind: "domain", value: "@Example.ORG" }]);
+      // Every answer carries the time of its read (0051).
+      assert.ok(Date.parse(r.value.asOf) >= start, `asOf ${String(r.value.asOf)} is not the time of the read-back`);
+    }
     // Read back (0051): the entry is read again after it is written.
     const written = seen.findIndex((s) => s.method === "POST" && s.path === "/api/v2/block-lists-entries");
     assert.ok(
@@ -492,6 +514,15 @@ describe("status", () => {
     const r = await adapter().status({ person: ada(), sequenceKey: "welcome" }, ctx(true));
     if (r.ok) assert.equal(r.value.state, "stopped");
     else assert.fail(JSON.stringify(r));
+  });
+
+  it("answers with the time of its read, never the lead's own modification time (0051)", async () => {
+    state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: 1, timestamp_updated: "2020-01-01T00:00:00.000Z" });
+    const before = Date.now();
+    const r = await adapter().status({ person: ada(), sequenceKey: "welcome" }, ctx(true));
+    if (!r.ok) return assert.fail(JSON.stringify(r));
+    assert.notEqual(r.value.asOf, "2020-01-01T00:00:00.000Z");
+    assert.ok(Date.parse(r.value.asOf) >= before, `asOf ${r.value.asOf} is older than the read`);
   });
 
   it("reads no enrolment as unknown, not as an error", async () => {

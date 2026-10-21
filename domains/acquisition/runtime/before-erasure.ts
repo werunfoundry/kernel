@@ -5,8 +5,10 @@
  * were forgotten.
  *
  * - `enrolled` is suspended through the sequencer bound to its channel.
- * - `pending` is asked of the provider too: one it holds is recorded
- *   enrolled, then suspended; one it does not hold stays pending.
+ * - `pending` is asked of the provider too: one it holds under the row's
+ *   key is recorded enrolled, then suspended; one it holds under no key or
+ *   another is stopped by address and stays pending (0060); one it does not
+ *   hold stays pending.
  * - `refused` and `suspended` leave nothing to stop.
  *
  * Every row is tried, so that a retry has less left to do; any refusal refuses
@@ -56,7 +58,12 @@ export const beforeErasure: BeforeErasure = async ({ db, registry, subjectId, ke
     const r = await suspendEnrolment({ db, registry }, row, person, ctx, "the person is being erased (decision 0056)");
     if ("suspended" in r) count("enrolments suspended at the provider, read back and recorded", r.through);
     else if ("notHeld" in r) count("enrolments the provider no longer holds: nothing to stop", r.through);
-    else if ("would" in r) count(r.would === "suspend" ? "enrolments it would suspend" : "enrolments the provider holds nothing of", r.through);
+    else if ("byAddress" in r) count("pending enrolments whose person was stopped by address, under no key of the kernel's: left pending, the stop not written on them (0060)", r.through);
+    else if ("would" in r)
+      count(
+        r.would === "suspend" ? "enrolments it would suspend" : r.would === "stop by address" ? "pending enrolments it would stop by address only, unconfirmed (0060)" : "enrolments the provider holds nothing of",
+        r.through,
+      );
     else {
       const { reason, ...said } = r.refused;
       refused.push({ contract: "sequencer", ...said, answered: `${said.answered} — enrolment ${row.id}, in "${row.sequenceKey}"` });

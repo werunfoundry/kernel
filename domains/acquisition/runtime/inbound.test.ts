@@ -150,7 +150,7 @@ describe("an opt-out, applied at the sequencer (0051)", { skip: base ? false : "
     await enrolledAda();
     const [r] = await pull(memory([ev("u1", "acquisition.unsubscribe", "ada@example.com", "email")]));
     assert.equal(r!.stoppedBy, undefined);
-    assert.deepEqual(r!.stopped, { suspended: 1, notHeld: 0, would: 0 });
+    assert.deepEqual(r!.stopped, { suspended: 1, notHeld: 0, byAddress: 0, would: 0 });
     assert.deepEqual(await state(), { state: "suspended", suspension_read_back: { sequenceKey: "welcome", held: false } });
     assert.equal(held.size, 0, "the sequencer still holds someone who asked to stop");
   });
@@ -164,7 +164,7 @@ describe("an opt-out, applied at the sequencer (0051)", { skip: base ? false : "
     sequencerDown = false;
     const [second] = await pull(memory([ev("u1", "acquisition.unsubscribe", "ada@example.com", "email")]));
     assert.equal(second!.read, 0, "the second pull read the event again");
-    assert.deepEqual(second!.stopped, { suspended: 1, notHeld: 0, would: 0 });
+    assert.deepEqual(second!.stopped, { suspended: 1, notHeld: 0, byAddress: 0, would: 0 });
     assert.equal((await state()).state, "suspended");
   });
 
@@ -172,7 +172,7 @@ describe("an opt-out, applied at the sequencer (0051)", { skip: base ? false : "
     const id = await enrolledAda();
     await client.query("update relations.person set opted_out_at = now() where id = $1", [id]);
     const [r] = await pull(memory([]), { dryRun: true });
-    assert.deepEqual(r!.stopped, { suspended: 0, notHeld: 0, would: 1 });
+    assert.deepEqual(r!.stopped, { suspended: 0, notHeld: 0, byAddress: 0, would: 1 });
     assert.equal((await state()).state, "enrolled");
     assert.equal(held.size, 1);
   });
@@ -188,7 +188,7 @@ describe("pulling inbound", { skip: base ? false : "TEST_DATABASE_URL is not set
       ev("r2", "acquisition.reply", "nobody@example.org", "email"),
     ]);
     const [r] = await pull(source);
-    assert.deepEqual({ ...r, runId: undefined }, { provider: "memory", runId: undefined, pages: 3, read: 4, recorded: 4, replayed: 0, touches: 2, optOuts: 1, unknownPeople: 1, stopped: { suspended: 0, notHeld: 0, would: 0 }, cursor: "4" });
+    assert.deepEqual({ ...r, runId: undefined }, { provider: "memory", runId: undefined, pages: 3, read: 4, recorded: 4, replayed: 0, touches: 2, optOuts: 1, unknownPeople: 1, stopped: { suspended: 0, notHeld: 0, byAddress: 0, would: 0 }, cursor: "4" });
     assert.equal((await rows("select count(*)::int as n from core.event"))[0].n, 4);
     assert.deepEqual(await rows("select provider_event_id as id, direction::text from relations.touch order by 1"), [{ id: "r1", direction: "inbound" }, { id: "u1", direction: "inbound" }]);
     assert.ok((await rows("select opted_out_at from relations.person where id = $1", [ada]))[0].opted_out_at instanceof Date);

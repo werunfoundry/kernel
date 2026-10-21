@@ -78,7 +78,7 @@ export interface SourceReport {
    * the pages were stored (0051): suspended, found already gone, or — on a
    * dry run — that would be suspended.
    */
-  stopped: { suspended: number; notHeld: number; would: number };
+  stopped: { suspended: number; notHeld: number; byAddress: number; would: number };
   cursor: string | null;
   stoppedBy?: string;
 }
@@ -103,7 +103,7 @@ async function pullSource(deps: PullDeps, request: PullRequest, provider: string
   const { db } = deps;
   const open = await openRun(db, { processKey: `acquisition.inbound.${provider}`, trigger: request.trigger, actor: request.actor, dryRun: request.dryRun });
   const ctx: CallContext = open.context;
-  const report: SourceReport = { provider, runId: open.id, pages: 0, read: 0, recorded: 0, replayed: 0, touches: 0, optOuts: 0, unknownPeople: 0, stopped: { suspended: 0, notHeld: 0, would: 0 }, cursor: null };
+  const report: SourceReport = { provider, runId: open.id, pages: 0, read: 0, recorded: 0, replayed: 0, touches: 0, optOuts: 0, unknownPeople: 0, stopped: { suspended: 0, notHeld: 0, byAddress: 0, would: 0 }, cursor: null };
 
   const check = (e: InboundEvent) => {
     const issues = checkInboundEvent(e, { eventTypes: deps.declared.eventTypes, identity: deps.identity });
@@ -182,7 +182,7 @@ async function pullSource(deps: PullDeps, request: PullRequest, provider: string
     // The opt-outs, applied at the provider once stored — never inside a
     // page's transaction, which a provider call cannot be rolled back with.
     const stopped = await suspendOptedOut({ db, registry: deps.registry }, ctx);
-    report.stopped = { suspended: stopped.suspended, notHeld: stopped.notHeld, would: stopped.would };
+    report.stopped = { suspended: stopped.suspended, notHeld: stopped.notHeld, byAddress: stopped.byAddress, would: stopped.would };
     if (stopped.refused.length > 0) {
       throw new Stop(`people who opted out could not be stopped at their provider; the next pull tries again: ${stopped.refused.join("; ")}`);
     }

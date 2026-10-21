@@ -16,6 +16,10 @@
  * in `suspension_attestation`, never in the column for what a provider read
  * back, under a run the person opened — whose attribution says who (0047).
  * It can be false, as any attestation can; the registry says who gave it.
+ *
+ * A pending row is stopped as it stands, `pending` → `suspended`, and never
+ * recorded `enrolled` on the way: that would write a provider's confirmation
+ * nobody gave (0060). The trigger allows the move under an attestation only.
  */
 
 import { and, eq, sql } from "drizzle-orm";
@@ -70,8 +74,8 @@ export async function attestStop(
   const open = await openRun(deps.db, { processKey: "acquisition.enrolment.attest", trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false });
   try {
     await deps.db.transaction(async (tx) => {
-      // The only move to `suspended` is from `enrolled` (0051).
-      if (row.state === "pending") await tx.update(enrolment).set({ state: "enrolled", updatedAt: sql`now()` }).where(and(eq(enrolment.id, row.id), eq(enrolment.state, "pending")));
+      // As it stands (0060): an enrolled row, or a pending one, which a
+      // person's word never makes `enrolled` — nobody confirmed it.
       const done = await tx
         .update(enrolment)
         .set({
@@ -81,7 +85,7 @@ export async function attestStop(
           suspensionAttestation: { case: seen, ...input.attested, ...(input.attested.kind === "stopped_by_hand" ? { how: words } : { said: words }) },
           updatedAt: sql`now()`,
         })
-        .where(and(eq(enrolment.id, row.id), eq(enrolment.state, "enrolled")))
+        .where(and(eq(enrolment.id, row.id), eq(enrolment.state, row.state)))
         .returning({ id: enrolment.id });
       if (done.length !== 1) throw new Error("the enrolment changed while it was being attested; nothing was recorded");
     });

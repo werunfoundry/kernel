@@ -496,18 +496,24 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           await skip({ reason: "unreachable", person, company, detail: `status unreadable: ${current.error.code}` });
           continue;
         }
-        if (row?.state === "pending" && current.value.state !== "unknown") {
-          // A run died after writing the registry: the enrolment landed, and
-          // is confirmed rather than made twice. It consumed its capacity then.
-          if (!request.dryRun) await settleRow(row.id, { state: "enrolled", enrolledAt: now() });
+        // A run died after writing the registry, and the provider holds the
+        // person. Only the row's key says the enrolment it holds is this one
+        // (0060): an address names a person, and someone else may have put
+        // them in the same sequence. Under the key, it is confirmed rather
+        // than made twice, having consumed its capacity then. Under no key or
+        // another, the key is replayed below: the provider answers this
+        // enrolment, or a conflict — never confirmed on a status alone.
+        const replaying = row?.state === "pending" && current.value.state !== "unknown";
+        if (replaying && current.value.idempotencyKey === row!.idempotencyKey) {
+          if (!request.dryRun) await settleRow(row!.id, { state: "enrolled", enrolledAt: now() });
           report.reconciled.push({ person, company, state: current.value.state });
           continue;
         }
-        if (current.value.state !== "unknown") {
+        if (!replaying && current.value.state !== "unknown") {
           await skip({ reason: "duplicate", person, company, detail: `already in the sequence (${current.value.state})` });
           continue;
         }
-        if (budget <= 0) {
+        if (!replaying && budget <= 0) {
           await skip({ reason: "capacity", person, company, detail: "no capacity left on the given senders" });
           continue;
         }
@@ -579,6 +585,11 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           throw new Stop(`enrolment interrupted: ${e.code}: ${e.message}`);
         }
         if (row && !request.dryRun) await settleRow(row.id, { state: "enrolled", enrolledAt: now() });
+        // Confirmed by the provider recognising the key: reconciled, not a new enrolment.
+        if (replaying) {
+          report.reconciled.push({ person, company, state: done.value.state });
+          continue;
+        }
         budget -= 1;
         report.enrolled.push({
           person,

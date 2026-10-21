@@ -70,6 +70,7 @@ beforeEach(async () => {
   memory.held.clear();
   memory.answer = undefined;
   memory.failing.clear();
+  memory.bare.clear();
   memory.declares = canSuspend();
   memory.calls = 0;
   bound = { sequencer: memorySequencer };
@@ -87,6 +88,8 @@ const memory = {
   answer: undefined as undefined | "down" | "silent",
   /** Keys whose withdrawal the provider does not answer. */
   failing: new Set<string>(),
+  /** Sequences where the person is held by address under no key — a lead the kernel did not put there. */
+  bare: new Set<string>(),
   declares: undefined as SequencerDeclaration | undefined,
   calls: 0,
 };
@@ -102,15 +105,21 @@ const memorySequencer = {
   get declares() {
     return memory.declares;
   },
+  // Found by the key it holds, or — for a sequence in `bare` — by address
+  // alone, a lead someone else put there under no key: it says the key its
+  // record carries (0060), and none for that one.
   async withdraw({ idempotencyKey, sequenceKey }: { idempotencyKey: string; sequenceKey: string }, ctx: { dryRun: boolean }) {
     memory.calls++;
     const asOf = new Date().toISOString();
     if (memory.answer === "down" || memory.failing.has(idempotencyKey)) return { ok: false, error: { code: "unavailable", message: "the provider did not answer", retryable: true } };
-    if (!memory.held.has(idempotencyKey)) return { ok: true, value: { found: false, asOf } };
-    if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf } };
-    memory.held.delete(idempotencyKey);
+    const bare = memory.bare.has(sequenceKey);
+    if (!bare && !memory.held.has(idempotencyKey)) return { ok: true, value: { found: false, asOf } };
+    const key = bare ? {} : { idempotencyKey };
+    if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, ...key, asOf } };
+    if (bare) memory.bare.delete(sequenceKey);
+    else memory.held.delete(idempotencyKey);
     // Answering success and reading nothing back proves nothing (0051).
-    return { ok: true, value: memory.answer === "silent" ? { found: true, asOf } : { found: true, readBack: { sequenceKey, held: false }, asOf } };
+    return { ok: true, value: memory.answer === "silent" ? { found: true, ...key, asOf } : { found: true, readBack: { sequenceKey, held: false }, ...key, asOf } };
   },
 } as unknown as Sequencer;
 let bound: Record<string, Contract | undefined> = {};
@@ -579,6 +588,16 @@ describe("before erasure, the person is stopped at the provider (0056)", { skip:
     assert.deepEqual((await enrolments()).map((e) => [e.sequence_key, e.state]), [["held", "suspended"], ["lost", "pending"]]);
   });
 
+  it("stops by address a pending row whose person the provider holds under no key of the kernel's, and leaves it pending (0060)", async () => {
+    const id = await ada([{ sequence: "theirs", state: "pending", held: false }]);
+    memory.bare.add("theirs");
+    const r = await erasing(id);
+    assert.equal(memory.bare.size, 0, "the person was not stopped");
+    assert.deepEqual((await enrolments()).map((e) => [e.sequence_key, e.state, e.suspension_read_back]), [["theirs", "pending", null]], "a lead the kernel did not make was written as its suspension");
+    assert.deepEqual(r.before[0]!.acts.map((a) => a.what), ["pending enrolments whose person was stopped by address, under no key of the kernel's: left pending, the stop not written on them (0060)"]);
+    assert.equal(await people(), 0, "the erasure did not go on");
+  });
+
   it("refuses the erasure when the provider does not answer, naming the adapter and saying retrying is the remedy — and forgets nobody", async () => {
     const id = await ada([{ sequence: "welcome" }]);
     memory.answer = "down";
@@ -719,6 +738,25 @@ describe("a person attests a stop, only where retrying cannot help (0056)", { sk
     await assert.rejects(suspend("suspension_method = 'm'"), /enrolment_suspension_recorded/);
     await assert.rejects(suspend(`suspension_attestation = '{"kind": "stopped_by_hand"}', suspension_method = 'm'`), /enrolment_suspension_recorded/);
     assert.equal((await row(enrolment)).state, "enrolled");
+  });
+
+  it("stops a pending row as it stands, never through enrolled (0060)", async () => {
+    const [{ id: person }] = await rows("insert into relations.person (email) values ('ada@example.com') returning id");
+    const [{ id: enrolment }] = await rows("insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type) values ($1, 'welcome', 'email', 'key-welcome', 'pending', 'memory', 'system') returning id", [person]);
+    bound = {};
+    // Every move the row makes, as the database sees it: what the attestation writes on the way, not only where it ends.
+    await client.query("create table if not exists public.moves (from_state text, to_state text)");
+    await client.query("truncate public.moves");
+    await client.query(`create or replace function public.log_move() returns trigger language plpgsql as $$ begin insert into public.moves values (OLD.state::text, NEW.state::text); return NEW; end $$`);
+    await client.query("drop trigger if exists log_move on acquisition.enrolment");
+    await client.query("create trigger log_move after update of state on acquisition.enrolment for each row execute function public.log_move()");
+    try {
+      const r = await attest(enrolment);
+      assert.ok("recorded" in r, JSON.stringify(r));
+      assert.deepEqual(await rows("select from_state, to_state from public.moves"), [{ from_state: "pending", to_state: "suspended" }], "the attestation wrote a provider's confirmation nobody gave");
+    } finally {
+      await client.query("drop trigger if exists log_move on acquisition.enrolment");
+    }
   });
 
   it("freezes an attested row's attestation, as it freezes a read-back (0051)", async () => {

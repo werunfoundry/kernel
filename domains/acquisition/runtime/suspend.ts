@@ -50,8 +50,15 @@ export type Suspension =
   | { suspended: true; through: string }
   /** The provider holds nothing to stop: nothing is recorded, and nothing sends. */
   | { notHeld: true; through: string }
+  /**
+   * A pending row whose person the provider held under no key, or another
+   * (0060): stopped all the same, by address, and read back — but nothing
+   * shows the lead stopped was this enrolment, so the row stays `pending`
+   * and the stop is not written on it. The report is its only record.
+   */
+  | { byAddress: true; through: string }
   /** A dry run: what the live one would do. */
-  | { would: "suspend" | "find nothing to stop"; through: string }
+  | { would: "suspend" | "stop by address" | "find nothing to stop"; through: string }
   | { refused: { reason: RefusalReason; binding: string; answered: string; retry: boolean; remedy?: string } };
 
 const ATTEST = "once the person is stopped at the provider by hand, a person may attest it with `kernel-attest-stop` (decision 0056)";
@@ -95,15 +102,20 @@ export async function suspendEnrolment(
   const asked = new Date();
   const r = await sequencer.withdraw({ idempotencyKey: row.idempotencyKey, person, sequenceKey: row.sequenceKey, reason }, ctx);
   if (!r.ok) return { refused: { reason: "unanswered", binding: sequencer.provider, answered: `${r.error.code}: ${r.error.message}`, retry: true } };
-  if (ctx.dryRun) return { would: r.value.found ? "suspend" : "find nothing to stop", through };
+  // What the provider holds for a pending row is this enrolment only if it
+  // carries the row's key (0060): an address names a person, and someone
+  // else may have put the same person in the same sequence.
+  const ours = r.value.found && r.value.idempotencyKey === row.idempotencyKey;
+  if (ctx.dryRun) return { would: !r.value.found ? "find nothing to stop" : row.state === "pending" && !ours ? "stop by address" : "suspend", through };
   if (!r.value.found) return { notHeld: true, through };
   if (r.value.readBack === undefined) {
     return { refused: { reason: "unanswered", binding: sequencer.provider, answered: "it answered that it stopped the person, and read nothing back to show it (decision 0051)", retry: true } };
   }
 
-  // A pending row the provider holds was enrolled: it is recorded so, then
-  // suspended — the only move to `suspended` the registry allows (0051).
   if (row.state === "pending") {
+    if (!ours) return { byAddress: true, through };
+    // The provider confirmed this enrolment by being read, by its key: it is
+    // recorded so, then suspended (0060).
     await deps.db.update(enrolment).set({ state: "enrolled", updatedAt: sql`now()` }).where(and(eq(enrolment.id, row.id), eq(enrolment.state, "pending")));
   }
   await deps.db
@@ -140,7 +152,7 @@ export function personIdentity(p: { email: string | null; externalId: string | n
 export async function suspendOptedOut(
   deps: { db: Database; registry: Registry },
   ctx: CallContext,
-): Promise<{ suspended: number; notHeld: number; would: number; refused: string[] }> {
+): Promise<{ suspended: number; notHeld: number; byAddress: number; would: number; refused: string[] }> {
   const rows = await deps.db
     .select({
       id: enrolment.id,
@@ -156,12 +168,13 @@ export async function suspendOptedOut(
     .innerJoin(person, eq(person.id, enrolment.personId))
     .where(and(isNotNull(person.optedOutAt), inArray(enrolment.state, ["enrolled", "pending"])))
     .orderBy(enrolment.id);
-  const out = { suspended: 0, notHeld: 0, would: 0, refused: [] as string[] };
+  const out = { suspended: 0, notHeld: 0, byAddress: 0, would: 0, refused: [] as string[] };
   for (const row of rows) {
     const r = await suspendEnrolment(deps, row as Suspendable, personIdentity(row), ctx, "the person opted out (decision 0041)");
     if ("suspended" in r) out.suspended++;
     else if ("notHeld" in r) out.notHeld++;
-    else if ("would" in r) out.would += r.would === "suspend" ? 1 : 0;
+    else if ("byAddress" in r) out.byAddress++;
+    else if ("would" in r) out.would += r.would === "find nothing to stop" ? 0 : 1;
     else out.refused.push(`enrolment ${row.id} in "${row.sequenceKey}": the sequencer bound as "${r.refused.binding}": ${r.refused.answered}`);
   }
   return out;

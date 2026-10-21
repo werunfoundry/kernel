@@ -4,6 +4,10 @@
 > verb is declared served only where the contract has a method for it, and
 > the declaration is checked against the adapter.
 
+> Completed by [0056](0056-erasure-stops-the-person-before-it-forgets-them.md):
+> erasure suspends every enrolment a provider may still hold, before it
+> anonymises the row.
+
 Completes:
 
 - [0014](0014-one-sequencer-contract-every-channel.md): the contract gains

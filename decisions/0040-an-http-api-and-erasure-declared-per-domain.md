@@ -4,6 +4,10 @@
 > erasure reaches a person by their keys too, and a run's history is
 > anonymised, not deleted as acquisition first declared it.
 
+> Completed by [0056](0056-erasure-stops-the-person-before-it-forgets-them.md):
+> a domain may declare a step the core runs before erasure, outside its
+> transaction, failing closed.
+
 ## Decided
 
 **An HTTP API, described by OpenAPI.** `api/openapi.json` is the contract;

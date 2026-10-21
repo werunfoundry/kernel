@@ -4,6 +4,10 @@
 > verb is declared served only where the contract has a method for it, and
 > the declaration is checked against the adapter.
 
+> Completed by [0056](0056-erasure-stops-the-person-before-it-forgets-them.md):
+> erasure suspends every enrolment a provider may still hold, before it
+> anonymises the row.
+
 > Completed by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
 > a newly protected account's recorded enrolments are suspended.
 

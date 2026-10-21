@@ -194,6 +194,51 @@ Afterwards, the lead and the campaign were deleted. Both read 404, and
 So `status` and `withdraw` read the key where it is kept, by both calls they
 make, and `enrol`'s read-back finds the key it uploaded (0060).
 
+## A whole message in a variable
+
+Decision 0064 rests on the kernel writing every step's message whole and
+passing it as a variable. Its storage was measured on 2026-10-21, under the
+same conditions as the write above: one campaign created for the test and
+never activated (draft, no sending account, no step), and one lead, an
+address of the operator's.
+
+**What was sent.** `POST /api/v2/leads/add`, with four values in
+`custom_variables`:
+- a key;
+- a subject;
+- a body of 19 lines and 619 bytes, written as a message. It held
+  paragraphs, a list and a signature, both a bare link and an `<a href>`,
+  and markup inside bare text (`<b>`, a bare `&`). It also held what a
+  normalisation would touch: a double space, a trailing space, a
+  non-breaking space, typographic quotes and an emoji;
+- the same message in markup only: `<p>`, `<ul>`, `<br/>`, `&nbsp;`,
+  `&amp;`. 486 bytes.
+
+**What came back.**
+- *Both reads.* The adapter's two reads returned all four values: `leads/list`
+  with `contacts`, as `findLead` sends it, on the first try; and
+  `GET /api/v2/leads/{id}`.
+- *Byte for byte.* Each value was identical, compared as UTF-8 bytes to
+  what was sent, on both reads.
+- *The comparison catches a change.* The same comparison, given the body
+  with its double space made single, one blank line removed, or its
+  non-breaking space made plain, reported each one as different.
+- *Nothing was sent.* The campaign stayed at `status` 0, and
+  `GET /api/v2/emails` listed nothing for it.
+- *Cleanup.* The lead and the campaign were deleted. Both then read 404,
+  and `leads/list` by the address, across the workspace, returned nothing.
+
+So the provider stores a whole message in a variable as it was given, and
+gives it back unchanged. That is storage only, not what a recipient
+receives.
+
+**No preview of the rendering exists in the API.** The OpenAPI document
+(v2.0.0) has no endpoint that renders a step for a lead without sending it.
+The nearest one, `POST /api/v2/emails/test` ("Send a test email"), sends a
+real email to the addresses it is given, from a connected account. It
+documents the body as HTML: "Use `<br/>` tags for delivered email line
+breaks". That is the documentation's word, not something observed.
+
 ## Not observed
 
 - `suppress`, the workspace blocklist, against a live workspace: the write
@@ -215,6 +260,11 @@ make, and `enrol`'s read-back finds the key it uploaded (0060).
   upload that landed: the run stops with the registry row left pending, and
   the next run confirms it from `status`. `status` now reports the key the
   lead carries, but the reconciliation does not compare it yet (0060).
+- Whether a step renders a whole message passed in a variable as it was
+  given: its line breaks, its markup, its links. Storage is measured above,
+  and comes back unchanged. Rendering takes a send, which was not made: the
+  API offers no preview without one. The documentation reads a body as HTML,
+  so a bare line break may not survive delivery. 0064 can fall on this.
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

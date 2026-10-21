@@ -26,7 +26,11 @@
  *   already in that campaign as `duplicated_leads` and does not re-add it. The
  *   caller's key is stored on the lead as a custom variable, so a replay is
  *   recognised as the same enrolment and a different key on the same person
- *   and campaign is reported as `conflict` (see the contract).
+ *   and campaign is reported as `conflict` (see the contract). After an
+ *   upload it reads the lead back in its campaign, and an upload answered
+ *   `leads_uploaded: 1` that does not read back is an error (0051).
+ * - **Every answer carries the time of its read** (0051), never a lead's
+ *   `timestamp_updated`, which every change to the record moves.
  * - **The sender is the campaign's.** Instantly rotates across the accounts a
  *   campaign lists; a lead cannot be pinned to one. An explicit sender is
  *   refused rather than accepted and ignored.
@@ -282,20 +286,34 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     return { ok: true, value: lead ?? null };
   }
 
+  /**
+   * The key the lead carries, as this read found it (0060): the lead is
+   * found by address, and only this says it is the enrolment the kernel
+   * made rather than another one under the same address. Absent when the
+   * lead carries none — enrolled outside this engine.
+   */
+  const keyOf = (lead: Lead): { idempotencyKey?: string } => {
+    const key = lead.payload?.[KEY];
+    return typeof key === "string" && key !== "" ? { idempotencyKey: key } : {};
+  };
+
   // A parked lead still reads active (README): it is stopped, by this adapter.
-  const statusOf = (lead: Lead, sequenceKey: string): EnrolmentStatus => ({
+  // `asOf` is when the lead was read, never its `timestamp_updated`: every
+  // change to the record moves that one (0051).
+  const statusOf = (lead: Lead, sequenceKey: string, readAt: string): EnrolmentStatus => ({
     state:
       lead.subsequence_id && lead.subsequence_id === parkingFor(sequenceKey) && lead.status === 1
         ? "stopped"
         : ((lead.status !== undefined ? STATES[lead.status] : undefined) ?? "unknown"),
     sequenceKey,
-    asOf: lead.timestamp_updated ?? new Date().toISOString(),
+    ...keyOf(lead),
+    asOf: readAt,
   });
 
   /** A lead that exists already: the same enrolment if it carries our key, a conflict otherwise. */
-  function existing(lead: Lead, enrolment: Enrolment): CallResult<EnrolmentStatus> {
+  function existing(lead: Lead, enrolment: Enrolment, readAt: string): CallResult<EnrolmentStatus> {
     const key = lead.payload?.[KEY];
-    if (key === enrolment.idempotencyKey) return { ok: true, value: statusOf(lead, enrolment.sequenceKey) };
+    if (key === enrolment.idempotencyKey) return { ok: true, value: statusOf(lead, enrolment.sequenceKey, readAt) };
     return fail(
       "conflict",
       key === undefined
@@ -345,7 +363,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
 
       const found = await findLead(email, campaign, ctx);
       if (!found.ok) return found;
-      if (found.value) return existing(found.value, enrolment);
+      if (found.value) return existing(found.value, enrolment, new Date().toISOString());
 
       if (ctx.dryRun) {
         // Every read the real call depends on, and no write: the campaign
@@ -385,13 +403,19 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         // replay of this very call. Read again and decide by the key.
         const again = await findLead(email, campaign, ctx);
         if (!again.ok) return again;
-        if (again.value) return existing(again.value, enrolment);
+        if (again.value) return existing(again.value, enrolment, new Date().toISOString());
         return fail("unknown", "Instantly reported a duplicate it then could not find");
       }
       if ((added.value.leads_uploaded ?? 0) !== 1) {
         return fail("unknown", `Instantly did not create the lead: ${JSON.stringify(added.value).slice(0, 200)}`);
       }
-      return { ok: true, value: { state: "active", sequenceKey: enrolment.sequenceKey, asOf: new Date().toISOString() } };
+      // Read back (0051): `leads_uploaded: 1` is the answer to the write, and
+      // proves nothing. Only the lead, read again in its campaign and
+      // carrying our key, says the person is enrolled.
+      const back = await findLead(email, campaign, ctx);
+      if (!back.ok) return back;
+      if (!back.value) return fail("unknown", "Instantly reported the lead uploaded, but it does not read back in the campaign");
+      return existing(back.value, enrolment, new Date().toISOString());
     },
 
     async withdraw(request, ctx): Promise<CallResult<Withdrawal>> {
@@ -416,7 +440,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       if (sub.value.parent_campaign !== campaign) {
         return fail("invalid", `the parking subsequence ${parking} belongs to another campaign than the sequence "${request.sequenceKey}"`);
       }
-      if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf: new Date().toISOString() } };
+      if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, ...keyOf(found.value), asOf: new Date().toISOString() } };
 
       const lead = found.value;
       if (lead.subsequence_id !== parking) {
@@ -434,7 +458,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
           `Instantly accepted the move, but the lead does not read back as parked: subsequence ${String(back.value.subsequence_id ?? "none")}, campaign ${String(back.value.campaign ?? "none")}`,
         );
       }
-      return { ok: true, value: { found: true, readBack: back.value, asOf: new Date().toISOString() } };
+      return { ok: true, value: { found: true, readBack: back.value, ...keyOf(back.value), asOf: new Date().toISOString() } };
     },
 
     async suppress(request, ctx): Promise<CallResult<Suppression>> {
@@ -456,9 +480,11 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       }
 
       const applied: IdentityKey[] = [];
+      let lastRead = "";
       for (const { key, value } of actionable) {
         const blocked = await isBlocked(value, ctx);
         if (!blocked.ok) return blocked;
+        lastRead = new Date().toISOString();
         if (!blocked.value && !ctx.dryRun) {
           const created = await call<unknown>("POST", "/api/v2/block-lists-entries", ctx, { bl_value: value });
           if (!created.ok) return created;
@@ -467,6 +493,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
           // entry, read again from the blocklist, says the value is refused.
           const back = await isListed(value, ctx);
           if (!back.ok) return back;
+          lastRead = new Date().toISOString();
           if (!back.value) {
             const confirmed = applied.length ? `; read back before it: ${applied.map((k) => k.value).join(", ")}` : "";
             return fail("unknown", `Instantly accepted the blocklist entry ${value}, but the blocklist does not read it back${confirmed}`);
@@ -474,7 +501,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         }
         applied.push(key);
       }
-      return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { applied, notApplicable } };
+      return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { applied, notApplicable, asOf: lastRead } };
     },
 
     async status(request, ctx): Promise<CallResult<EnrolmentStatus>> {
@@ -485,10 +512,9 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
 
       const found = await findLead(email, campaign, ctx);
       if (!found.ok) return found;
-      if (!found.value) {
-        return { ok: true, value: { state: "unknown", sequenceKey: request.sequenceKey, asOf: new Date().toISOString() } };
-      }
-      return { ok: true, value: statusOf(found.value, request.sequenceKey) };
+      const readAt = new Date().toISOString();
+      if (!found.value) return { ok: true, value: { state: "unknown", sequenceKey: request.sequenceKey, asOf: readAt } };
+      return { ok: true, value: statusOf(found.value, request.sequenceKey, readAt) };
     },
 
     async capacity({ sender, channel }, ctx): Promise<CallResult<Capacity>> {

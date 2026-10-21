@@ -1,5 +1,10 @@
 # 0055 — One passage reaches a person
 
+> Not built, on `main` at `350656e`: the passage — `clear`, `reach`, the one
+> reader, the threshold held by code, the sandbox moved into the package,
+> the two checks, a dry run through the gate. What stands is the provisional
+> guard (*The threshold is held by code*).
+
 Completes [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md),
 whose first defect said that a single gate would have to close the
 enrolment's bypass; and [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),

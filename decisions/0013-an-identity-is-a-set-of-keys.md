@@ -1,5 +1,12 @@
 # 0013 — An identity is a set of keys
 
+> Completed by [0024](0024-a-target-carries-its-keys.md):
+> a target list's company carries an identity, subject `company`.
+
+> Completed by [0026](0026-the-enrolment-registry.md):
+> identities are recorded: people and companies, written by `relations`
+> and found by their keys.
+
 > Completed by [0028](0028-a-domain-is-compared-as-a-host.md): a key that
 > names a host is compared as the host.
 >

@@ -6,6 +6,10 @@
 > Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
 > called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
 
+> Completed by [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
+> an unsubscribe a sequencer can only observe as a state comes back by a
+> second path; `Inbound` is unchanged.
+
 ## Decided
 
 `gtm` gains an `Inbound` contract for the events it already declares —

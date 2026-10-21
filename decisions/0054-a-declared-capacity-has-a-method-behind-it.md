@@ -1,5 +1,10 @@
 # 0054 — A declared capacity has a method behind it
 
+> Not built, on `main` at `350656e`: the declaration's type still lets both
+> pulls be served, `checkDeclaration` reads the declaration alone, and boot
+> checks no declaration. Only the test double is held to its declaration
+> (`170f4a2`).
+
 Completes [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md),
 whose declaration is checked for its form and against nothing else.
 

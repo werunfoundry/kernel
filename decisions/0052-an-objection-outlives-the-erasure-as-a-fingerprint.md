@@ -1,5 +1,9 @@
 # 0052 — An objection outlives the erasure, as a fingerprint and nothing else
 
+> Completed by [0053](0053-an-enrolment-is-history-once-its-person-is-erased.md):
+> the enrolment row is anonymised, not deleted, the question this decision
+> left open.
+
 > Superseded in part by [0055](0055-one-passage-reaches-a-person.md): its count
 > of the reads — five, in four files, with three answers for a person not on
 > record; the read in `queue` belongs to the sending run, not to drafting.
@@ -8,6 +12,10 @@
 > an entry can be wrapped under a new secret without the key in clear; the
 > rewrap on a compromise is the one other writer and the one edit the
 > register admits, and an entry's version is the chain it is keyed under.
+
+> Not built, on `main` at `350656e`: none of it — no register, no question
+> at `kernel-erase`, no one reader. A live enrolment is refused once an
+> erasure has run, provisionally (0055, *The threshold is held by code*).
 
 Completes [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md),
 which named the hole this decision closes and set the threshold it is due

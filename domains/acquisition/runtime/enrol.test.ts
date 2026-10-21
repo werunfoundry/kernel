@@ -188,7 +188,7 @@ const sequencer: Sequencer = {
     return ok({ found: true, readBack: { state: "parked", email: held }, asOf: NOW.toISOString() });
   },
   async suppress() {
-    return ok({ applied: [], notApplicable: [] });
+    return ok({ applied: [], notApplicable: [], asOf: NOW.toISOString() });
   },
   async status({ person }) {
     world.statusCalls++;

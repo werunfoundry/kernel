@@ -36,6 +36,8 @@ it comes from. Do not propose a commit that has not passed it.
 It checks secrets, fixtures, provider names and — rule 2 — that every import
 and every foreign key between layers is one the importing domain declared in
 its `domain.yaml`. A dependency you did not declare does not compile past it.
+Under `decisions/`, it refuses a decision cited by line, and a decision that
+completes, supersedes or reverses another without a pointer back (0059).
 
 Never commit on `main`. Branch first: `git switch -c <type>/<short-name>`, with
 `feat/`, `fix/`, `docs/`, `chore/` or `ci/`. The pre-commit hook enforces both,
@@ -134,8 +136,9 @@ restate §0, §4 and §6 on purpose: this is the one list to read before acting.
   up-to-date `main`. After each merge, bring the next pull request up to date
   with `main` and wait for a fresh green check before merging it: a check
   computed before another pull request landed says nothing about the result.
-- **A merged decision is never edited**, except for the one-line pointer that
-  `decisions/README.md` describes.
+- **A merged decision is never edited**, except for the cross-references
+  `decisions/README.md` lists: a pointer, a citation's address, a *Not built*
+  note (decision 0059).
 - **Nothing is written to a real provider workspace** without explicit
   agreement in the conversation. Everything else runs as a dry run.
 - **Before carrying out a prompt, check its premises in the code**, and say

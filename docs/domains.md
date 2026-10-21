@@ -98,7 +98,8 @@ and nothing else that is recorded.
 - the addressing domain: `template` (the copy, with no recipient), `draft`,
   `person_state`, `company_state` (stages declared and kept as a history —
   0036), `enrolment`, `enrolment_skip`, `sourcing_result`,
-  `protection_acknowledgement`.
+  `protection_acknowledgement`, `inbound_cursor` (where each inbound source
+  was last read up to — 0039).
 
 ## The boundaries, and why
 

@@ -4,7 +4,14 @@
 
 > Completed by [0012](0012-one-provider-workspace-per-instance.md): a provider blocklist is defence in depth, not protection.
 
-> Completed by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
+> Completed by [0024](0024-a-target-carries-its-keys.md):
+> a candidate company carries its keys, beside its domain.
+
+> Completed by [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
+> protection that becomes true mid-sequence suspends every enrolment the
+> registry holds at the account, beside `suppress`.
+
+> Superseded in part by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
 > a newly protected account is stopped when an enrolment run or its own
 > command looks, and only as often.
 

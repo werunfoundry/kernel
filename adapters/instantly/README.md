@@ -72,6 +72,29 @@ live workspace (below).
 Before this, `suppress` read before it wrote and never after, and reported
 the key applied on the write's status code.
 
+`enrol` reads back what it uploaded (0051):
+
+1. It looks the person up in the campaign (`POST /api/v2/leads/list`): a
+   lead already there is the same enrolment if it carries the caller's key,
+   and a conflict otherwise.
+2. Otherwise it uploads the lead (`POST /api/v2/leads/add`).
+3. It looks the person up again, and answers only with the lead that read
+   shows, decided by the key as in step 1. An upload answered
+   `leads_uploaded: 1` whose lead does not read back is an error.
+
+Before this, `enrol` answered `active` on `leads_uploaded: 1` alone.
+
+Every answer carries the time of the read it rests on. `status` used to give
+a lead's `timestamp_updated`, which every change to the record moves (0051).
+
+`status` and `withdraw` find a lead by address, and say which enrolment it
+is (0060): each answer carries the key the lead holds in
+`engine_idempotency_key`, as the read found it — the read-back's lead, for
+`withdraw` — or no key when the lead holds none, as a lead enrolled outside
+this engine does. The adapter compares nothing: the requests carry no
+enrolment key, and a lead without the key is still parked, by address.
+Matching the key to the registry's row is the kernel's.
+
 ## Pulling what was sent
 
 `GET /api/v2/emails?campaign_id=…&email_type=sent&min_timestamp_created=<ISO, ms>`
@@ -126,6 +149,23 @@ them.
 - `{{unsubscribe_url}}` renders as an empty string. No unsubscribe variable is
   documented: the help centre inserts the link from the editor.
 
+## Payload
+
+Read on 2026-10-21, against a live workspace, with a read-only key and
+nothing written: existing leads of two campaigns, five from each. None of
+the ten carries an `engine_` variable, which this adapter sets on every
+lead it uploads.
+
+- `POST /api/v2/leads/list` by campaign returned `payload` on all ten leads:
+  an object, never empty, holding the lead's custom variables.
+- On one of them, the two calls the adapter makes — `leads/list` with
+  `contacts`, as `findLead` sends it, and `GET /api/v2/leads/{id}` — both
+  returned `payload`, identical: nine keys, six of them beyond the core lead
+  fields.
+
+So `status` and `withdraw` read the key where it is kept, by both calls they
+make (0060).
+
 ## Not observed
 
 - `suppress`, the workspace blocklist, against a live workspace: the write
@@ -140,6 +180,21 @@ them.
   - whether a domain's entry refuses the addresses under it, as the help
     centre says. The adapter counts an address under a listed domain as
     already blocked.
+- `enrol`'s read-back. The live test of 0051 read leads by id
+  (`GET /api/v2/leads/{id}`); this README records nothing of:
+  - whether a lead uploaded with `POST /api/v2/leads/add` is returned by
+    `POST /api/v2/leads/list` as soon as the upload answers. If it lags, the
+    adapter reports an error for an upload that landed: the run stops with
+    the registry row left pending, and the next run confirms it from
+    `status`. `status` now reports the key the lead carries, but the
+    reconciliation does not compare it yet (0060);
+  - whether a custom variable set by `leads/add` comes back in `payload`.
+    The read-back decides by the key kept there; without it, a landed upload
+    reads back as a conflict. What was read is below (*Payload*).
+- Whether `engine_idempotency_key` itself comes back in `payload`. None of
+  the leads read (*Payload*) carries an `engine_` variable: that a custom
+  variable set at upload is returned is what those leads show for theirs,
+  not a read of ours. Seeing it takes one upload, which is a write.
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

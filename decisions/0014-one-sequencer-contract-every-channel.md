@@ -2,6 +2,10 @@
 
 > Superseded in part by [0020](0020-capacity-carries-every-limit.md): capacity carries every limit, and the tightest applies.
 
+> Completed by [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
+> the contract gains the two pulls, and a declaration of what an adapter
+> cannot do and what its suspension costs.
+
 Supersedes in part [0011](0011-the-sequencer-after-a-real-provider.md): what
 `suppress` takes, and what `capacity` is.
 

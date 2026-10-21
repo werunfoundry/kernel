@@ -1,5 +1,11 @@
 # 0050 — The sending path, end to end, with its hand-over stubbed
 
+> Completed by [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
+> the sends a sequencer makes on its own get a verb, the touches pull.
+
+> Completed by [0055](0055-one-passage-reaches-a-person.md):
+> the single gate the first defect called for is the one passage.
+
 Completes [0027](0027-a-draft-waits-on-its-lane.md), whose `sent` and
 `failed` had no writer; [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md),
 whose gate had no caller but its tests; and

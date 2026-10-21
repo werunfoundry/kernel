@@ -7,6 +7,12 @@
 > and erasure says, among what it does not reach, that a running sequence
 > keeps sending.
 
+> Built by #106: all of it. `erase()` runs each domain's step before its
+> rules, outside its transaction, and is refused when one cannot do its
+> part; acquisition's step suspends every enrolment a provider may hold;
+> `kernel-attest-stop` opens in the four cases only, into
+> `suspension_attestation`; the sequencer leaves `NOT_REACHED`.
+
 Completes [0040](0040-an-http-api-and-erasure-declared-per-domain.md),
 whose domains declare what erasure does to their tables and nothing it does
 elsewhere; [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md),

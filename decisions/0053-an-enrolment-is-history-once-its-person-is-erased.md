@@ -7,6 +7,10 @@
 > first. Erasure calls no adapter, and anonymises a row the provider may
 > still be sending to (0056, *What was found*).
 
+> Built by #106: erasure now suspends before it anonymises (0056), so the
+> anonymised row follows a suspension, a stop a person attested, or a
+> provider that held nothing.
+
 Completes [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),
 which left this open, and [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md),
 whose `text` it narrows. Reverses the answer `acquisition` gave

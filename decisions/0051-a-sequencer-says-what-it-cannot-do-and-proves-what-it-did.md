@@ -21,6 +21,10 @@
 > established. Nothing calls a suspension. The shipped sequencer adapter's
 > `enrol` answers from its write, not from a read-back.
 
+> Built by #106, in part: a suspension is now called, by erasure (0056) and
+> by the opt-out, read back and recorded. The two pulls are still not
+> built.
+
 Completes:
 
 - [0014](0014-one-sequencer-contract-every-channel.md): the contract gains

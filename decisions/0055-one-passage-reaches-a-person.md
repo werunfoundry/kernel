@@ -151,14 +151,14 @@ declaration, never a name.
 against a sentence. It does not guard against someone patching the kernel's
 installed code: that is changing the kernel.
 
-**Until the passage exists, a provisional guard holds the line** (#97).
-`kernel-enrol` refuses `--live` once an erasure run is on record.
+**Until the passage exists, a provisional guard holds the line.** The
+command refuses `--live` as soon as a non-dry erasure run is on record, and
+the runtime refuses it too.
 
-- *What it reads.* One row of `core.run` whose `process_key` is
-  `relations.person.erase` and whose `dry_run` is false
-  (`acquisition/bin/enrol.ts:103-107` in #97).
-- *What it does on a match.* It returns before any run is opened and
-  before the enrolment is called.
+- *Where it lives.* In `kernel-enrol` (`domains/acquisition/bin/enrol.ts`),
+  and in the enrolment's runtime.
+- *What it does.* Nobody is enrolled and no provider is called. A dry run
+  is still allowed.
 - *How it ends.* #94's declaration merges behind it. It is removed in the
   change that brings `clear`'s threshold, and never before.
 
@@ -174,27 +174,25 @@ installed code: that is changing the kernel.
 **What the provisional guard does not reach.**
 - *A deletion outside `kernel-erase`*, which opens no run of that
   process.
-- *An erasure run deleted by hand.* `core.run` is not append-only, and the
-  guard says itself that such a deletion reopens the window.
-- *A caller of the enrolment's runtime.* The guard is in the command, not
-  in `enrol`. Today only the tests call `enrol` without the command.
+- *An erasure run deleted by hand.* `core.run` is not append-only, so
+  deleting the run reopens the window.
 - *The hand-over*, which no command calls.
 
 **What it refuses too broadly.**
 - It refuses every live enrolment once one erasure run is on record,
   whoever was erased and whether they objected.
-- It reads neither the run's status nor what it erased, so a failed
-  erasure counts too.
+- A failed erasure is an erasure run on record too, and counts.
 
 Both err on the side of refusing.
 
 **The CI keeps its live path, and exercises the refusal.** `try-instance`
-runs every live enrolment before its erasure. In #97 it then asks for one
-more, after the erasure (`try-instance.mjs:453`).
-- *What it expects.* `--live` is refused with the guard's reason; the
-  refusal opens no run; a dry run still reads.
-- *Counter-checked.* With the guard removed and the step kept, run,
-  `try-instance` fails at that step.
+(`scripts/try-instance.mjs`) runs every live enrolment before its
+erasure, then asks for one more after it.
+- *What it expects.* `--live` is refused with the guard's reason, and a dry
+  run still reads.
+- *Counter-checked.* Without the guard, `try-instance` fails at that step.
+  This was run when the guard stood in the command alone: with it removed
+  and the step kept.
 - *What it exercises.* The refusal, not the harm. Unguarded, that live run
   enrolled nobody, because the sandbox's state file still holds the erased
   person and the run skipped them as a duplicate.

@@ -86,6 +86,13 @@ describe("recordPerson", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     assert.deepEqual(await rows("select email from relations.person"), [{ email: "ada@example.com" }]);
   });
 
+  it("finds a person by any of the identity's keys, not the first of each kind (0013)", async () => {
+    const ada = await recordPerson(db, person(email("ada@example.com"), profile("42")));
+    assert.ok("id" in ada);
+    assert.deepEqual(await findPerson(db, person(email("ada.work@example.com"), email("Ada@Example.com"))), { id: (ada as { id: string }).id });
+    assert.deepEqual(await findPerson(db, person({ kind: "social_profile_id", value: "7", network: "net_b" }, profile("42"))), { id: (ada as { id: string }).id });
+  });
+
   it("refuses to merge two recorded people that each hold one of the keys", async () => {
     await recordPerson(db, person(email("ada@example.com")));
     await recordPerson(db, person(profile("42")));

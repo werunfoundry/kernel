@@ -78,7 +78,8 @@ const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOStri
 const world = {
   candidates: [] as TargetCompany[],
   protected: [] as ProtectedAccount[],
-  people: new Map<string, { email: string; name: string }[]>(),
+  /** `also`: further addresses the people source attests, after the first. */
+  people: new Map<string, { email: string; name: string; also?: string[] }[]>(),
   protectedAsOf: minutesAgo(5),
   /** When set, the named read fails. */
   failing: new Set<string>(),
@@ -132,7 +133,10 @@ const people: PeopleSource = {
     const people = world.people.get(domain) ?? [];
     return ok({
       asOf: minutesAgo(60),
-      items: people.map((p) => ({ identity: { subject: "person", keys: [{ kind: "email", value: p.email }] }, display: { fullName: p.name } })),
+      items: people.map((p) => ({
+        identity: { subject: "person", keys: [p.email, ...(p.also ?? [])].map((value) => ({ kind: "email", value })) },
+        display: { fullName: p.name },
+      })),
     });
   },
 };
@@ -555,7 +559,7 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     try {
       const r = await run({ dryRun: true });
       assert.deepEqual(r.enrolled, []);
-      assert.match(r.skipped.find((s) => s.person)?.detail ?? "", /registry cannot tell who this is: the person.s id and its other key name two recorded people/);
+      assert.match(r.skipped.find((s) => s.person)?.detail ?? "", /registry cannot tell who this is: the person.s keys name two recorded people/);
       assert.equal(world.enrolCalls, 0);
     } finally {
       people.peopleAt = withId;
@@ -649,6 +653,29 @@ describe("what the people source is asked", { skip: base ? false : "TEST_DATABAS
 /* -------------------------------------------------------------------------- */
 
 describe("the opt-out", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  // P1 and P1c (0013: an identity is a set of keys). Bo opted out under one
+  // address; the people source attests two. Only the order differs between
+  // the two probes: P1c, with the opted-out address first, is what shows
+  // that P1 can fail for the order alone.
+  const bo = (keys: string[]) => world.people.set("open.example.com", [{ email: keys[0]!, name: "Bo", also: keys.slice(1) }]);
+  const optedOut = () => client.query("insert into relations.person (email, opted_out_at) values ('bo@open.example.com', now())");
+
+  it("P1 — skips a person who opted out under an address that is not the identity's first", async () => {
+    await optedOut();
+    bo(["bo.work@open.example.com", "bo@open.example.com"]);
+    const r = await run();
+    assert.deepEqual(held(), [], "a person who opted out was enrolled");
+    assert.deepEqual(r.skipped.filter((s) => s.person?.keys.some((k) => k.value.startsWith("bo"))).map((s) => s.reason), ["opted_out"]);
+  });
+
+  it("P1c — skips them with the opted-out address first, the order P1 only changes", async () => {
+    await optedOut();
+    bo(["bo@open.example.com", "bo.work@open.example.com"]);
+    const r = await run();
+    assert.deepEqual(held(), []);
+    assert.deepEqual(r.skipped.filter((s) => s.person?.keys.some((k) => k.value.startsWith("bo"))).map((s) => s.reason), ["opted_out"]);
+  });
+
   // Ada is at an open company, unprotected, never enrolled: only her opt-out
   // can stop her.
   it("skips a person who opted out, and the sequencer never holds them", async () => {

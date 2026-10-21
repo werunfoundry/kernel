@@ -6,6 +6,10 @@
 > Completed by [0055](0055-one-passage-reaches-a-person.md):
 > the single gate the first defect called for is the one passage.
 
+> Superseded in part by [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md):
+> the hand-over is withdrawn with run 2's steps 6 to 8, and the cap is
+> judged ahead, at the enrolment.
+
 Completes [0027](0027-a-draft-waits-on-its-lane.md), whose `sent` and
 `failed` had no writer; [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md),
 whose gate had no caller but its tests; and

@@ -6,6 +6,9 @@
 > the contract gains the two pulls, and a declaration of what an adapter
 > cannot do and what its suspension costs.
 
+> Superseded in part by [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md):
+> `enrol` names a sequence, and the sequence's steps name its channels.
+
 Supersedes in part [0011](0011-the-sequencer-after-a-real-provider.md): what
 `suppress` takes, and what `capacity` is.
 

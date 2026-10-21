@@ -5,6 +5,10 @@
 > the two checks, a dry run through the gate. What stands is the provisional
 > guard (*The threshold is held by code*).
 
+> Superseded in part by [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md):
+> the whole of section 2 — cadence and lane move to the enrolment — the
+> hand-over among section 1's contact verbs, and "for a send" in section 5.
+
 Completes [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md),
 whose first defect said that a single gate would have to close the
 enrolment's bypass; and [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),

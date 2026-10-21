@@ -219,7 +219,13 @@ function anonymisation(rule: Extract<ErasureRule, { do: "anonymise" }>): SQL {
   }
   // Derived from nothing: not a hash of what was there, under any algorithm or salt.
   for (const c of rule.random ?? []) set.push(sql`${sql.identifier(c)} = 'erased:' || gen_random_uuid()::text`);
-  for (const [c, text] of Object.entries(rule.text ?? {})) set.push(sql`${sql.identifier(c)} = ${text}`);
+  // Only where the column holds something (0053): a rule never invents a
+  // sentence where there was none, nor fills a column a check keeps empty.
+  // Comparing to the column itself lets a jsonb column take a JSON document.
+  for (const [c, text] of Object.entries(rule.text ?? {})) {
+    const column = sql.identifier(c);
+    set.push(sql`${column} = case when ${column} is null then ${column} else ${text} end`);
+  }
   return sql.join(set, sql`, `);
 }
 

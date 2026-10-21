@@ -13,12 +13,21 @@
  * by `suppress`, which is never about one channel: a person suppressed on one
  * channel and reachable on another is a hole in protection, not a scope.
  *
- * `suppress` is as important as `enrol`, and is the reason this contract
- * exists at all rather than a fire-and-forget send. An account can become
- * protected after enrolment (decision 0004); without a way to stop every
- * running sequence reaching it, protection is a promise that holds only until
- * the next step fires. `withdraw` is the narrower, ordinary act — this
- * person, out of this sequence (decision 0011).
+ * Stopping someone is why this contract exists rather than a
+ * fire-and-forget send, and it takes two acts that are not the same
+ * (decision 0057, which supersedes 0011 in part):
+ *
+ * - `withdraw` suspends one person in one sequence and reads it back; its
+ *   caller records the suspension in the enrolment registry (0051). It is
+ *   the act 0057 keeps 0004's promise with — an account that becomes
+ *   protected after enrolment is stopped — for the people this engine
+ *   enrolled, and the one an opt-out and an erasure are to call (0051,
+ *   0056).
+ * - `suppress` stops the provider reaching a person or a whole account, on
+ *   every channel, including colleagues this engine never enrolled. It goes
+ *   beyond that promise, and is defence in depth, not the record (0012): it
+ *   writes nothing in the registry, and a provider's blocklist may be
+ *   emptied in one request, as the shipped adapter's can.
  *
  * A single message is a one-step sequence. There is no `send` here, so that
  * there is one path and one place where suppression is checked.
@@ -406,6 +415,10 @@ export interface Sequencer extends Contract {
    * answers only with what that read shows (0051): a write whose effect the
    * read does not show is an error, never a success.
    *
+   * What protection after enrolment rests on, for the people this engine
+   * enrolled (0057): read back here, and recorded in the registry by the
+   * caller.
+   *
    * Idempotent: withdrawing someone who is not enrolled succeeds, with
    * `found: false`; withdrawing someone already withdrawn succeeds again.
    */
@@ -422,18 +435,21 @@ export interface Sequencer extends Contract {
 
   /**
    * Stop this provider reaching a person or a whole account, on every
-   * channel it serves, at once, and keep it stopped. What protection needs
-   * after enrolment (decision 0004). Takes an identity, not a string: the
-   * adapter applies every key of it that it can act on, and says which.
+   * channel it serves, at once, and keep it stopped. Defence in depth
+   * (0012, 0057): it reaches people this engine never enrolled, and records
+   * nothing in the registry; protection after enrolment rests on
+   * `withdraw`, and this goes beyond it. Takes an identity, not a string:
+   * the adapter applies every key of it that it can act on, and says which.
    *
    * An identity with no key this provider can act on is refused as
    * `invalid`: a suppression that applied nothing has protected nothing, and
    * must not look like one that did.
    *
-   * On success, no further step of an already running sequence reaches the
-   * target through this provider. Refusing future enrolments is the engine's
-   * job, which re-checks protection at enrolment; a provider that can also
-   * refuse them, does. Idempotent.
+   * On success, every key reported applied reads back as refused at the
+   * provider (0051), and no further step of an already running sequence
+   * reaches the target through this provider. Refusing future enrolments
+   * is the engine's job, which re-checks protection at enrolment; a
+   * provider that can also refuse them, does. Idempotent.
    */
   suppress(
     request: {

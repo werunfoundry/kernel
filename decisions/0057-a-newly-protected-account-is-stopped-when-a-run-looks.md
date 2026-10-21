@@ -4,8 +4,9 @@ Completes [0004](0004-protection-is-its-own-route.md), whose promise that
 a newly protected account is withdrawn from running sequences nothing
 keeps; and [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md),
 whose suspension nothing calls. Supersedes in part
-[0011](0011-the-sequencer-after-a-real-provider.md): protection after
-enrolment depends on `suppress` *and* `withdraw`, not on `suppress` alone.
+[0011](0011-the-sequencer-after-a-real-provider.md), whose ground 0051
+moved: protection after enrolment depends on `withdraw` *and* `suppress`,
+not on `suppress` alone.
 
 ## What was found
 
@@ -38,18 +39,25 @@ protection as enrolment does: fresh, failing closed, with the same verdict
 `enrolled` row, it does two things:
 
 1. **It suspends each of those rows** through the sequencer bound to its
-   channel, read back and recorded as 0051 has it. This is the record: the
-   kernel can say whom it stopped, when, by which run, and how.
+   channel, read back and recorded as 0051 has it. **This keeps 0004's
+   promise.** That promise is about running sequences, so about the people
+   the kernel enrolled: the kernel can say whom it stopped, when, by which
+   run, and how.
 2. **It suppresses the account at the provider**: by the account's keys,
    and by the address of each person enrolled through it that those keys do
-   not cover. This is what reaches whom the kernel never enrolled, as 0011
-   required. Following 0012, it is defence in depth, not the record.
+   not cover. **This goes beyond the promise**, to the colleague the kernel
+   never enrolled, who is in no sequence the kernel started. Following
+   0012, it is defence in depth, not the record.
+   [0056](0056-erasure-stops-the-person-before-it-forgets-them.md) refuses
+   the same write for an erased person: there, the address would keep a
+   datum about someone the kernel has forgotten; here, it stops a contact
+   with someone still on record.
 
-**Why both, and why that supersedes 0011 in part.**
-- *Suppression alone records nothing.* It records nothing in the registry
-  and reads nothing back. One request at the provider undoes it.
-- *Withdrawal alone misses people.* It misses whoever the registry does not
-  hold.
+**Why this supersedes 0011 in part, and not on a judgment.** 0011 put
+protection after enrolment on `suppress` before 0051 existed. 0051 requires
+an effect to be proved by a read-back and recorded. A `suppress` that is not
+read back, and writes nothing in the registry, cannot satisfy it. This
+decision only records that the ground moved.
 
 0011 ruled out protection built from per-person withdrawals *alone*. That
 stands.

@@ -2,7 +2,10 @@
 
 Supersedes in part [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
 `suspended` is reached from `enrolled`, or from `pending` under a person's
-attestation. Completes [0056](0056-erasure-stops-the-person-before-it-forgets-them.md),
+attestation. Supersedes in part [0026](0026-the-enrolment-registry.md),
+whose reconciliation confirmed a pending row on "a status by person and
+sequence" — "enrolled there means confirmed here": a pending row is now
+confirmed by its key, never by the person. Completes [0056](0056-erasure-stops-the-person-before-it-forgets-them.md),
 whose attestation had no recordable outcome on a pending row, and
 [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md),
 whose act reached `enrolled` rows only.

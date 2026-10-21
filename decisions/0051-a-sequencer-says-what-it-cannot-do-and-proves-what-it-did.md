@@ -11,6 +11,11 @@
 > Completed by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
 > a newly protected account's recorded enrolments are suspended.
 
+> Not built, on `main` at `350656e`: verbs 2 and 4, the two pulls: the
+> contract has no method for either (0054), so no breach is ever
+> established. Nothing calls a suspension. The shipped sequencer adapter's
+> `enrol` answers from its write, not from a read-back.
+
 Completes:
 
 - [0014](0014-one-sequencer-contract-every-channel.md): the contract gains

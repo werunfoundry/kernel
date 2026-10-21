@@ -3,6 +3,10 @@
 > Completed by [0056](0056-erasure-stops-the-person-before-it-forgets-them.md):
 > the anonymised row follows a suspension, or a stop a person attested.
 
+> Not built, on `main` at `350656e`: the suspension *Decided* says comes
+> first. Erasure calls no adapter, and anonymises a row the provider may
+> still be sending to (0056, *What was found*).
+
 Completes [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),
 which left this open, and [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md),
 whose `text` it narrows. Reverses the answer `acquisition` gave

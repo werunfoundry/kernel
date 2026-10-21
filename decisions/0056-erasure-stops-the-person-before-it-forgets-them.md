@@ -1,5 +1,9 @@
 # 0056 — Erasure stops the person before it forgets them
 
+> Not built, on `main` at `350656e`: none of it. `erase()` takes no adapter,
+> and erasure says, among what it does not reach, that a running sequence
+> keeps sending.
+
 Completes [0040](0040-an-http-api-and-erasure-declared-per-domain.md),
 whose domains declare what erasure does to their tables and nothing it does
 elsewhere; [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md),

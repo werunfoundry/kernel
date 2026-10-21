@@ -6,6 +6,10 @@
 > Completed by [0047](0047-a-persons-acts-are-commands-at-a-terminal.md): a
 > person records a decision with `kernel-decide`.
 
+> Completed by [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
+> the opt-out gains a second writer, which applies it as the inbound pull
+> does and never writes an event.
+
 Completes [0017](0017-inbound-is-pulled.md), which fixed the contract and
 left the loop and its cursor to a decision of their own.
 

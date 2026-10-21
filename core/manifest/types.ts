@@ -92,6 +92,15 @@ export interface DomainManifest {
   beforeErasure?: string;
 
   /**
+   * A step erasure runs inside its transaction, once the subject's keys are
+   * gathered and before any rule (decision 0062): what this domain writes
+   * that must commit or roll back with the deletion. Named and loaded as
+   * `beforeErasure` is; its export `duringErasure` is a `DuringErasure`
+   * (`core/runtime/erase.ts`). It is handed no secret and no adapter.
+   */
+  duringErasure?: string;
+
+  /**
    * For each experiment type, the metrics it is judged on. What gives an
    * experiment type a surface: an instance can tell, before running one,
    * whether its bound sources can measure it.

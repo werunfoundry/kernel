@@ -21,11 +21,14 @@
  */
 
 import type { SQL } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+
+import { run as runTable } from "../db/schema.js";
 
 import { identityVocabulary, normalizeIdentity } from "../identity/index.js";
 import type { IdentityKey, IdentityVocabulary } from "../identity/index.js";
 import type { DomainManifest, ErasureRule } from "../manifest/types.js";
+import type { Fingerprinter } from "./fingerprint.js";
 import type { Registry } from "./resolve.js";
 import { resolvePackage } from "./resolve.js";
 import type { Database, Trigger } from "./run.js";
@@ -92,11 +95,42 @@ export interface BeforeErasureResult {
 
 export type BeforeErasure = (input: BeforeErasureInput) => Promise<BeforeErasureResult>;
 
+/* -------------------------------------------------------------------------- */
+/* The steps inside the erasure's transaction (decision 0062)                 */
+/* -------------------------------------------------------------------------- */
+
+/** What a domain's step inside the transaction is given: no secret, and no adapter. */
+export interface DuringErasureInput {
+  /** The erasure's transaction. In a plan, the database, read only. */
+  tx: Database;
+  subjectId: string;
+  /** The keys the transaction gathered, before any rule ran (0049). */
+  keys: IdentityKey[];
+  /** The erasure's run, and when it started. A plan has none. */
+  run?: { id: string; startedAt: Date };
+  /**
+   * Whether the request includes not being contacted (0052, 0062). A plan
+   * may be shown before the question is asked, and does not know.
+   */
+  objects?: boolean;
+  /** Fingerprints under the version that writes, and the versions missing (0063). */
+  fingerprints: Fingerprinter;
+  plan: boolean;
+}
+
+export interface DuringErasureResult {
+  acts: BeforeErasureAct[];
+}
+
+export type DuringErasure = (input: DuringErasureInput) => Promise<DuringErasureResult>;
+
 /** What erase() needs to run the steps: the bound adapters, and where to resolve a domain's package. */
 export interface ErasureReach {
   registry: Registry;
   /** The instance root, from which `@werunfoundry/<name>/…` resolves (0007). */
   root: string;
+  /** What boot hands an erasure to fingerprint with (0062). A step inside the transaction needs it. */
+  fingerprints?: Fingerprinter;
   /** Injected only where a test must; the default resolves and imports, as for an adapter. */
   importModule?: (href: string) => Promise<unknown>;
 }
@@ -120,17 +154,27 @@ export class ErasureRefused extends Error {
   }
 }
 
-/** Each domain's step, upper domains first — the order the rules follow (0056). */
-async function loadSteps(domains: readonly DomainManifest[], reach: ErasureReach | undefined): Promise<{ domain: string; run: BeforeErasure }[]> {
-  const out: { domain: string; run: BeforeErasure }[] = [];
+/** Each domain's step of one kind, upper domains first — the order the rules follow (0056, 0062). */
+async function loadSteps<K extends "beforeErasure" | "duringErasure">(
+  domains: readonly DomainManifest[],
+  reach: ErasureReach | undefined,
+  kind: K,
+): Promise<{ domain: string; run: K extends "beforeErasure" ? BeforeErasure : DuringErasure }[]> {
+  type Run = K extends "beforeErasure" ? BeforeErasure : DuringErasure;
+  const decision = kind === "beforeErasure" ? "0056" : "0062";
+  const out: { domain: string; run: Run }[] = [];
   for (const d of order(domains)) {
-    if (d.beforeErasure === undefined) continue;
+    const named = d[kind];
+    if (named === undefined) continue;
     // Failing closed: a step nobody can run is a step not done.
-    if (!reach) throw new ErasureRefused(d.name, [{ contract: "erasure", binding: d.beforeErasure, answered: "this erasure was given no bound adapters to run it with", retry: false, remedy: "erase through `kernel-erase`, which boots the instance" }]);
+    if (!reach) throw new ErasureRefused(d.name, [{ contract: "erasure", binding: named, answered: "this erasure was given no bound adapters to run it with", retry: false, remedy: "erase through `kernel-erase`, which boots the instance" }]);
+    if (kind === "duringErasure" && !reach.fingerprints) {
+      throw new ErasureRefused(d.name, [{ contract: "erasure", binding: named, answered: "this erasure was given no fingerprint versions to write under", retry: false, remedy: "erase through `kernel-erase`, which boots the instance and checks them (decision 0062)" }]);
+    }
     const load = reach.importModule ?? ((href: string) => import(href));
-    const module = (await load(resolvePackage(d.beforeErasure, reach.root))) as { beforeErasure?: unknown };
-    if (typeof module.beforeErasure !== "function") throw new Error(`${d.beforeErasure} exports no \`beforeErasure\` function (decision 0056)`);
-    out.push({ domain: d.name, run: module.beforeErasure as BeforeErasure });
+    const module = (await load(resolvePackage(named, reach.root))) as Record<string, unknown>;
+    if (typeof module[kind] !== "function") throw new Error(`${named} exports no \`${kind}\` function (decision ${decision})`);
+    out.push({ domain: d.name, run: module[kind] as Run });
   }
   return out;
 }
@@ -309,12 +353,35 @@ export async function planBeforeErasure(
   subjectId: string,
   reach: ErasureReach | undefined,
 ): Promise<{ domain: string; result: BeforeErasureResult }[]> {
-  const loaded = await loadSteps(domains, reach);
+  const loaded = await loadSteps(domains, reach, "beforeErasure");
   if (loaded.length === 0) return [];
   const vocabulary = identityVocabulary(domains);
   const keys = (await subjectKeys(db, steps(domains), subjectId, vocabulary)).map(asIdentityKey);
   const out: { domain: string; result: BeforeErasureResult }[] = [];
   for (const { domain, run } of loaded) out.push({ domain, result: await run({ db, registry: reach!.registry, subjectId, keys, plan: true }) });
+  return out;
+}
+
+/**
+ * What each domain's step inside the transaction would do (0062), read
+ * without a transaction. The question may not have been asked yet: a step
+ * says what it would do under either answer.
+ */
+export async function planDuringErasure(
+  db: Database,
+  domains: readonly DomainManifest[],
+  subjectId: string,
+  reach: ErasureReach | undefined,
+  objects?: boolean,
+): Promise<{ domain: string; result: DuringErasureResult }[]> {
+  const loaded = await loadSteps(domains, reach, "duringErasure");
+  if (loaded.length === 0) return [];
+  const vocabulary = identityVocabulary(domains);
+  const keys = (await subjectKeys(db, steps(domains), subjectId, vocabulary)).map(asIdentityKey);
+  const out: { domain: string; result: DuringErasureResult }[] = [];
+  for (const { domain, run } of loaded) {
+    out.push({ domain, result: await run({ tx: db, subjectId, keys, fingerprints: reach!.fingerprints!, plan: true, ...(objects === undefined ? {} : { objects }) }) });
+  }
   return out;
 }
 
@@ -349,22 +416,35 @@ function anonymisation(rule: Extract<ErasureRule, { do: "anonymise" }>): SQL {
  * outside the transaction: a call to a provider cannot be rolled back with
  * one, and must not hold one open. A step that could not do its part refuses
  * the erasure, which then changes nothing here; what the steps already did
- * stays done and recorded, and a retry finds it so. Then the rules, in one
- * transaction.
+ * stays done and recorded, and a retry finds it so. Then, in one
+ * transaction, the domains' steps inside it (0062) — what must commit or
+ * roll back with the deletion — and the rules.
+ *
+ * The caller says whether the request includes not being contacted (0052,
+ * 0062), true or false, and an erasure that says neither is refused: the
+ * answer decides whether an objection outlives the person, and nothing may
+ * give it by default.
  */
 export async function erase(
   db: Database,
   domains: readonly DomainManifest[],
-  input: { subjectId: string; by: string; processKey: string; trigger: Trigger },
+  input: { subjectId: string; by: string; processKey: string; trigger: Trigger; objects: boolean },
   reach?: ErasureReach,
-): Promise<{ runId: string; steps: ErasureStep[]; before: { domain: string; acts: BeforeErasureAct[] }[] }> {
+): Promise<{ runId: string; steps: ErasureStep[]; before: { domain: string; acts: BeforeErasureAct[] }[]; during: { domain: string; acts: BeforeErasureAct[] }[] }> {
   const by = input.by.trim();
   if (by === "") throw new Error("who erases is required: erasing is a person's act");
+  // Typed, and checked again for a caller the compiler never saw.
+  if (typeof (input as { objects?: unknown }).objects !== "boolean") {
+    throw new Error("an erasure says whether the request includes not being contacted, true or false (decision 0062); nothing was erased");
+  }
   const vocabulary = identityVocabulary(domains);
+  // Loaded before the run opens: a step that cannot be loaded erases nobody.
+  const inside = await loadSteps(domains, reach, "duringErasure");
   const open = await openRun(db, { processKey: input.processKey, trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false });
   try {
     const before: { domain: string; acts: BeforeErasureAct[] }[] = [];
-    const loaded = await loadSteps(domains, reach);
+    const during: { domain: string; acts: BeforeErasureAct[] }[] = [];
+    const loaded = await loadSteps(domains, reach, "beforeErasure");
     if (loaded.length > 0) {
       const keys = (await subjectKeys(db, steps(domains), input.subjectId, vocabulary)).map(asIdentityKey);
       for (const { domain, run } of loaded) {
@@ -377,6 +457,21 @@ export async function erase(
       const all = steps(domains);
       // Gathered first: the rows that hold the keys are the ones about to be emptied.
       const keys = await subjectKeys(tx, all, input.subjectId, vocabulary);
+      if (inside.length > 0) {
+        const [started] = await tx.select({ at: runTable.startedAt }).from(runTable).where(eq(runTable.id, open.id));
+        for (const { domain, run } of inside) {
+          const r = await run({
+            tx,
+            subjectId: input.subjectId,
+            keys: keys.map(asIdentityKey),
+            run: { id: open.id, startedAt: started!.at },
+            objects: input.objects,
+            fingerprints: reach!.fingerprints!,
+            plan: false,
+          });
+          during.push({ domain, acts: r.acts });
+        }
+      }
       const out: ErasureStep[] = [];
       for (const s of all) {
         const { schema, rule } = s;
@@ -409,7 +504,7 @@ export async function erase(
       return out;
     })) as ErasureStep[];
     await open.finish({ status: "succeeded" });
-    return { runId: open.id, steps: done, before };
+    return { runId: open.id, steps: done, before, during };
   } catch (error) {
     await open.finish({ status: "failed", error: (error as Error).message.slice(0, 500) }).catch(() => {});
     throw error;

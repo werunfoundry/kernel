@@ -372,20 +372,23 @@ for (const [name, file] of packages) {
   if (pkg.exports?.["./domain.yaml"] !== "./domain.yaml") {
     fail(6, file, 0, 'does not export "./domain.yaml": "./domain.yaml", so boot cannot read it (decision 0007)');
   }
-  // Decision 0056: the step before erasure is loaded by its package name. One
-  // the package does not export is learned at the first erasure, which it
-  // refuses — in an instance, with a person waiting to be erased.
-  const declared = (() => {
+  // Decisions 0056 and 0062: the steps before and inside erasure are loaded
+  // by their package name. One the package does not export is learned at the
+  // first erasure, which it refuses — in an instance, with a person waiting
+  // to be erased.
+  const yaml = (() => {
     try {
-      return readFileSync(`domains/${name}/domain.yaml`, "utf8").match(/^beforeErasure:\s*["']?([^"'\s#]+)/m)?.[1];
+      return readFileSync(`domains/${name}/domain.yaml`, "utf8");
     } catch {
-      return undefined;
+      return "";
     }
   })();
-  if (declared !== undefined) {
+  for (const [field, which, decision] of [["beforeErasure", "before", "0056"], ["duringErasure", "inside", "0062"]]) {
+    const declared = yaml.match(new RegExp(`^${field}:\\s*["']?([^"'\\s#]+)`, "m"))?.[1];
+    if (declared === undefined) continue;
     const sub = declared.startsWith(`${PKG}/${name}/`) ? `./${declared.slice(`${PKG}/${name}/`.length)}` : undefined;
     if (sub === undefined || pkg.exports?.[sub] === undefined || pkg.publishConfig?.exports?.[sub] === undefined) {
-      fail(6, file, 0, `declares the step before erasure "${declared}", which this package does not export, so no erasure could load it (decision 0056)`);
+      fail(6, file, 0, `declares the step ${which} erasure "${declared}", which this package does not export, so no erasure could load it (decision ${decision})`);
     }
   }
 }

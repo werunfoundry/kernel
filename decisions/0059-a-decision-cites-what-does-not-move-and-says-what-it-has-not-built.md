@@ -1,5 +1,9 @@
 # 0059 — A decision cites what does not move, and says what it has not built
 
+> Completed by [0061](0061-a-pointer-is-backed-by-the-decision-it-names.md):
+> a pointer is backed by the introduction of the decision it names, from
+> the first decision written to the form.
+
 Changes the conventions of this folder, written in
 [`README.md`](README.md), and the line of `CLAUDE.md` that restated them. It
 supersedes no decision: it decides how decisions are written, and how a

@@ -149,6 +149,22 @@ them.
 - `{{unsubscribe_url}}` renders as an empty string. No unsubscribe variable is
   documented: the help centre inserts the link from the editor.
 
+## Payload
+
+Read on 2026-10-21, against a live workspace, with a read-only key and
+nothing written: existing leads of two campaigns, five from each, none of
+them uploaded by this adapter.
+
+- `POST /api/v2/leads/list` by campaign returned `payload` on all ten leads:
+  an object, never empty, holding the lead's custom variables.
+- On one of them, the two calls the adapter makes — `leads/list` with
+  `contacts`, as `findLead` sends it, and `GET /api/v2/leads/{id}` — both
+  returned `payload`, identical: nine keys, six of them beyond the core lead
+  fields.
+
+So `status` and `withdraw` read the key where it is kept, by both calls they
+make (0060).
+
 ## Not observed
 
 - `suppress`, the workspace blocklist, against a live workspace: the write
@@ -171,15 +187,13 @@ them.
     the registry row left pending, and the next run confirms it from
     `status`. `status` now reports the key the lead carries, but the
     reconciliation does not compare it yet (0060);
-  - whether `leads/list` returns `payload` with the custom variables the
-    upload set. The read-back decides by the key kept there; without it, a
-    landed upload reads back as a conflict.
-- Whether `GET /api/v2/leads/{id}` returns `payload` with the custom
-  variables the upload set. `withdraw` reports the key from its read-back
-  there, as `status` does from `leads/list`. If either leaves `payload` out,
-  every lead reads as carrying no key, and the kernel can confirm none of
-  its own enrolments (0060). The test's fake returns it on both; nobody has
-  seen Instantly do so.
+  - whether a custom variable set by `leads/add` comes back in `payload`.
+    The read-back decides by the key kept there; without it, a landed upload
+    reads back as a conflict. What was read is below (*Payload*).
+- Whether `engine_idempotency_key` itself comes back in `payload`. None of
+  the leads read (*Payload*, below) was uploaded by this adapter: that a
+  custom variable set at upload is returned is what those leads show for
+  theirs, not a read of ours. Seeing it takes one upload, which is a write.
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

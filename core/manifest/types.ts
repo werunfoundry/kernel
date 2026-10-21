@@ -187,6 +187,33 @@ export interface InstanceManifest {
    * is not listed is refused.
    */
   networks?: string[];
+
+  /**
+   * The versions of the secret fingerprints are keyed under, and which one
+   * writes (decisions 0058, 0063). A version's secret is never here: it is
+   * in the variable `KERNEL_FINGERPRINT_<LABEL>`. Boot refuses a manifest
+   * without this section.
+   */
+  fingerprints?: FingerprintVersions;
+}
+
+export interface FingerprintVersions {
+  /** The label new entries are written under. It must be declared below. */
+  writes: string;
+  /**
+   * Every version ever used. A label is never renamed, reused, or removed
+   * while an entry names it (0058).
+   */
+  versions: FingerprintVersion[];
+}
+
+export interface FingerprintVersion {
+  /** Upper-case letters and digits. */
+  label: string;
+  /** HMAC-SHA-256 of a fixed sentence under the secret, as `kernel-fingerprint` printed it. */
+  check: string;
+  /** Why it was added: a compromise, or whatever reason a person records (0058, §2). */
+  reason: string;
 }
 
 /* -------------------------------------------------------------------------- */

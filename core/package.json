@@ -20,6 +20,7 @@
     "./runtime/event": "./runtime/event.ts",
     "./runtime/decision": "./runtime/decision.ts",
     "./runtime/erase": "./runtime/erase.ts",
+    "./runtime/fingerprint": "./runtime/fingerprint.ts",
     "./runtime/verify": "./runtime/verify.ts",
     "./identity": "./identity/index.ts",
     "./db/migrations/*": "./db/migrations/*",
@@ -89,6 +90,10 @@
         "types": "./dist/runtime/erase.d.ts",
         "default": "./dist/runtime/erase.js"
       },
+      "./runtime/fingerprint": {
+        "types": "./dist/runtime/fingerprint.d.ts",
+        "default": "./dist/runtime/fingerprint.js"
+      },
       "./runtime/verify": {
         "types": "./dist/runtime/verify.d.ts",
         "default": "./dist/runtime/verify.js"
@@ -111,7 +116,8 @@
       "kernel-check-instance": "./scripts/check-instance.mjs",
       "kernel-verify": "./dist/bin/verify.js",
       "kernel-migrate": "./dist/bin/migrate.js",
-      "kernel-decide": "./dist/bin/decide.js"
+      "kernel-decide": "./dist/bin/decide.js",
+      "kernel-fingerprint": "./dist/bin/fingerprint.js"
     }
   },
   "dependencies": {
@@ -130,7 +136,8 @@
     "kernel-check-instance": "./scripts/check-instance.mjs",
     "kernel-verify": "./bin/verify.ts",
     "kernel-migrate": "./bin/migrate.ts",
-    "kernel-decide": "./bin/decide.ts"
+    "kernel-decide": "./bin/decide.ts",
+    "kernel-fingerprint": "./bin/fingerprint.ts"
   },
   "files": [
     "dist",

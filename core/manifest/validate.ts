@@ -141,12 +141,34 @@ export const providerBindingSchema = z.object({
   finds: z.array(identifier).optional(),
 });
 
+/** A fingerprint version's label: written into entries, so never renamed (0058). */
+const versionLabel = z.string().regex(/^[A-Z0-9]+$/, "upper-case letters and digits");
+
+export const fingerprintVersionsSchema = z
+  .object({
+    writes: versionLabel,
+    versions: z
+      .array(
+        z
+          .object({
+            label: versionLabel,
+            check: z.string().regex(/^[0-9a-f]{64}$/, "64 lower-case hexadecimal characters, as `kernel-fingerprint` prints it"),
+            // A version with no reason on record is what 0058 rules out.
+            reason: z.string().trim().min(1, "say why this version was added (decision 0058)"),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict();
+
 export const instanceManifestSchema = z.object({
   instance: identifier,
   enabledDomains: z.array(identifier).min(1),
   providers: z.array(providerBindingSchema),
   truthsDir: relativePath,
   networks: z.array(identifier).optional(),
+  fingerprints: fingerprintVersionsSchema.optional(),
 });
 
 export const truthDocSchema = z.object({
@@ -324,6 +346,21 @@ export function validateInstance(
           issues.push(issue("error", "enabledDomains", `"${name}" judges "${type}" on "${key}", which no enabled domain declares`));
         }
       }
+    }
+  }
+
+  // Decision 0058: the instance names its versions, and which one writes.
+  // Without one, an erasure could not keep an objection it is asked to keep.
+  if (!m.fingerprints) {
+    issues.push(issue("error", "fingerprints", "no fingerprint version is declared, and one must write (decision 0058): run `kernel-fingerprint --label V1 --writes --reason \"…\"` and add what it prints"));
+  } else {
+    const labels = new Set<string>();
+    for (const [i, v] of m.fingerprints.versions.entries()) {
+      if (labels.has(v.label)) issues.push(issue("error", `fingerprints.versions.${i}.label`, `"${v.label}" is declared twice; a label is never reused (decision 0058)`));
+      labels.add(v.label);
+    }
+    if (!labels.has(m.fingerprints.writes)) {
+      issues.push(issue("error", "fingerprints.writes", `"${m.fingerprints.writes}" writes, and is not declared under versions (decision 0058)`));
     }
   }
 

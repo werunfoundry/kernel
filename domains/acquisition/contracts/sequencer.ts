@@ -23,8 +23,9 @@
  *   protected after enrolment is stopped — for the people this engine
  *   enrolled, and the one an opt-out and an erasure are to call (0051,
  *   0056).
- * - `suppress` stops the provider reaching a person or a whole account, on
- *   every channel, including colleagues this engine never enrolled. It goes
+ * - `suppress` lists a person or a whole account at the provider, to be
+ *   refused on every channel, including colleagues this engine never
+ *   enrolled; what the listing stops is the provider's. It goes
  *   beyond that promise, and is defence in depth, not the record (0012): it
  *   writes nothing in the registry, and a provider's blocklist may be
  *   emptied in one request, as the shipped adapter's can.
@@ -445,11 +446,11 @@ export interface Sequencer extends Contract {
    * `invalid`: a suppression that applied nothing has protected nothing, and
    * must not look like one that did.
    *
-   * On success, every key reported applied reads back as refused at the
-   * provider (0051), and no further step of an already running sequence
-   * reaches the target through this provider. Refusing future enrolments
-   * is the engine's job, which re-checks protection at enrolment; a
-   * provider that can also refuse them, does. Idempotent.
+   * On success, every key reported applied reads back as listed at the
+   * provider, as of the read `asOf` names (0051). What that listing then
+   * stops is the provider's: defence in depth, not a guarantee (0012).
+   * Refusing future enrolments is the engine's job, which re-checks
+   * protection at enrolment. Idempotent.
    */
   suppress(
     request: {

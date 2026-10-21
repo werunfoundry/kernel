@@ -25,6 +25,10 @@
 > by the opt-out, read back and recorded. The two pulls are still not
 > built.
 
+> Completed by [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md):
+> verb 2 gets its method, and an adapter that cannot pull its touches is
+> refused for an unsolicited enrolment, as one that cannot suspend is.
+
 Completes:
 
 - [0014](0014-one-sequencer-contract-every-channel.md): the contract gains

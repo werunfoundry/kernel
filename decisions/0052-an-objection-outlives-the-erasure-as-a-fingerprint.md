@@ -39,7 +39,9 @@ as `network:value`) leaves one entry in a register, `relations.suppression`:
   (0013). The key is a secret the instance holds, never the database;
 - **the secret's version**, so that a new secret does not orphan the entries
   made under the old one;
-- **the erasure run that wrote it** (doctrine 5).
+- **the erasure run that wrote it** (doctrine 5). The reference is
+  `restrict`: a run an entry names is not deleted, because its date is the
+  only date the entry has (below).
 
 No name, no company, no kind of key in clear, no date of the opt-out,
 nothing from the history rows. One person leaves as many entries as keys,
@@ -73,8 +75,8 @@ source, one whose owner objected?* It cannot:
 and objection are two rights. An erasure leaves entries only for a person
 whose opt-out was on record. Before it erases someone who had not opted out,
 `kernel-erase` asks whether the request includes not being contacted. If it
-does, the opt-out is recorded first, under the same run, and the entries
-follow. If it does not, nothing survives, as 0049 has it. 0049's *one of the
+does, the opt-out is recorded first, under the same run and at the run's
+start, and the entries follow. If it does not, nothing survives, as 0049 has it. 0049's *one of the
 two* becomes *both, when both were asked*.
 
 **The question has no default.** It is asked at the terminal, like the
@@ -87,8 +89,10 @@ refused, and stays refused. No flag answers the question for the person typing.
 who said no will one day be contacted again, which is what the register
 exists to prevent. The legal basis for keeping it belongs to the instance
 and its counsel, not to the kernel; so does whether a maximum duration
-applies. The kernel sets none, and keeps no date an entry could be counted
-from. For reference:
+applies. The kernel sets none. A maximum, if one is required, can be
+counted from the start of the run the entry names: it is never earlier than
+the opt-out, which was on record before the erasure, or was recorded by it at
+the run's start. For reference:
 [*Comment utiliser une liste repoussoir pour respecter l'opposition à la
 prospection ?*](https://www.cnil.fr/fr/comment-utiliser-une-liste-repoussoir-pour-respecter-lopposition-la-prospection-commerciale).
 
@@ -150,15 +154,16 @@ did not know.**
 - A path that reads the opt-out, or the register, on its own.
 - An entry that expires by default.
 - A secret version destroyed while an entry made under it lives.
+- A run deleted while an entry names it.
 - A check that answers "not suppressed" when it could not read.
 
 ## Would reverse it
 
 A way to recognise a person that cannot be tested against their address. No
 such way exists: recognising and testing are the same act. Short of that,
-a counsel who requires a different form or a maximum duration: the kernel
-cannot honour a maximum today, since an entry carries no date, and the
-register changes by a decision that says why.
+a counsel who requires a different form, or a maximum duration. A maximum
+can be honoured as the register stands, counted from the run's start; it
+needs only a decision that sets it and says why.
 
 ## Not decided here
 

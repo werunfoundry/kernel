@@ -104,6 +104,10 @@ instance created at ${target}, pinned to engine ${version}
   cd ${target}
   git init && pnpm install
   cp .env.example .env
+  pnpm exec kernel-fingerprint --label V1 --writes --reason "the instance's first version"
 
-Then fill manifest.yaml and delete the example binding and adapter.
+Put the secret it prints in .env and its block at the end of manifest.yaml:
+the instance boots only once it declares the version an erasure writes
+under (decision 0058). Then fill manifest.yaml and delete the example
+binding and adapter.
 `);

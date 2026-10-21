@@ -74,3 +74,14 @@ providers:
 
 # Where the truth documents live, relative to this file.
 truthsDir: truths
+
+# The register's versions (decisions 0052, 0058, 0063). An erasure keeps the
+# objection of a person who objected as one keyed fingerprint per key, under
+# a secret the instance holds. A secret is generated, never shipped, so this
+# template declares none, and boot refuses it until one is declared. Run
+#
+#   pnpm exec kernel-fingerprint --label V1 --writes --reason "the instance's first version"
+#
+# put its first line in .env, and the block it prints below. Keep every
+# secret for as long as an entry names its label: one destroyed cancels the
+# protections made under it.

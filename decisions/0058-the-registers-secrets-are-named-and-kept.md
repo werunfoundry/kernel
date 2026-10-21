@@ -10,13 +10,13 @@ why it is a decision and the register's schema is not.
 **The register says which versions it needs. Nothing says under which name
 the instance holds them, or which one writes.**
 - 0052 defines a missing version against the register itself: "a secret
-  version the register uses" (0052:130-131). The entries name their
+  version the register uses" (0052, *Decided*). The entries name their
   versions, so the set that must be present is already known.
 - What is not known is where the secret for a version is found: no rule
   ties a version to a variable. Nor which version a new entry is written
   under.
 - Boot cannot read the register: it touches no database
-  (`core/runtime/boot.ts:6`).
+  (`core/runtime/boot.ts:6` at `a78b7f8`).
 
 **What an instance holds today.**
 - *The engine's variables.* Their names are fixed in code (`DATABASE_URL`,
@@ -34,7 +34,7 @@ the instance holds them, or which one writes.**
 - *An entry can be carried over to a new secret without the key in clear.*
   Wrapping the stored fingerprint, `HMAC(k2, entry)`, needs only the entry
   and `k2`. The check, holding the key from a source, computes
-  `HMAC(k2, HMAC(k1, key))` and finds it. 0052:106-107 says nothing can
+  `HMAC(k2, HMAC(k1, key))` and finds it. 0052, *Decided*, says nothing can
   carry them over; that is wrong.
 - *What wrapping protects.* A copy of the database taken after the wrap
   cannot be tested with `k1` alone. A copy taken before it still can.
@@ -147,12 +147,12 @@ dissolved.
 
 | 0052 | Now |
 | ---- | --- |
-| "nothing can carry those entries over to a new secret" (106-107) | they can be wrapped under one, without the key; it protects later copies only |
-| "Only an erasure writes an entry … the table is append-only" (117-120) | the erasure writes an entry; the rewrap is the one other writer, and only on a compromise |
-| Rules out "a writer other than the erasure; an edit to an entry" (158) | rules out any edit but the rewrap's |
-| "the secret's version" (44) | the chain of versions the entry is keyed under, oldest first; one label for every entry never wrapped |
+| "nothing can carry those entries over to a new secret" (*Decided*) | they can be wrapped under one, without the key; it protects later copies only |
+| "Only an erasure writes an entry … the table is append-only" (*Decided*) | the erasure writes an entry; the rewrap is the one other writer, and only on a compromise |
+| Rules out "a writer other than the erasure; an edit to an entry" (*Rules out*) | rules out any edit but the rewrap's |
+| "the secret's version" (*Decided*) | the chain of versions the entry is keyed under, oldest first; one label for every entry never wrapped |
 
-The register still holds four fields (0052:156). The fourth means a chain
+The register still holds four fields (0052, *Rules out*). The fourth means a chain
 now.
 
 ## What this does not reach

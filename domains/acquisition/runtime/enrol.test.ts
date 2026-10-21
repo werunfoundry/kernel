@@ -178,8 +178,14 @@ const sequencer: Sequencer = {
     if (!held && !ctx.dryRun) world.enrolled.set(e.idempotencyKey, emailOf(e.person));
     return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { state: "active", asOf: NOW.toISOString() } };
   },
-  async withdraw() {
-    return ok({ found: false, asOf: NOW.toISOString() });
+  // Held to its declaration (0054): it parks the person by letting go of
+  // them, so that a test can see the suspension it declares.
+  async withdraw({ idempotencyKey }, ctx) {
+    const held = world.enrolled.get(idempotencyKey);
+    if (!held) return ok({ found: false, asOf: NOW.toISOString() });
+    if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf: NOW.toISOString() } };
+    world.enrolled.delete(idempotencyKey);
+    return ok({ found: true, readBack: { state: "parked", email: held }, asOf: NOW.toISOString() });
   },
   async suppress() {
     return ok({ applied: [], notApplicable: [] });
@@ -929,6 +935,25 @@ describe("once an erasure has run, without 0052's register", { skip: base ? fals
     } finally {
       await client.query("delete from core.run where process_key = 'relations.person.erase'");
     }
+  });
+});
+
+describe("the memory sequencer, held to its declaration (0054)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const ctx = (dryRun: boolean) => ({ runId: "00000000-0000-4000-8000-000000000000", actor: { type: "system" as const }, dryRun });
+
+  it("suspends the person it declares it parks: they are no longer held", async () => {
+    await run();
+    const key = world.keysSent[world.keysSent.length - 1]!;
+    const who = world.enrolled.get(key)!;
+    const person: Identity = { subject: "person", keys: [{ kind: "email", value: who }] };
+    const asked = { idempotencyKey: key, person, sequenceKey: "welcome", reason: "a test" };
+    assert.deepEqual(await sequencer.withdraw(asked, ctx(true)), { ok: true, simulated: true, value: { found: true, asOf: NOW.toISOString() } });
+    assert.ok(held().includes(who), "a dry run let go of the person");
+    const r = await sequencer.withdraw(asked, ctx(false));
+    assert.ok(r.ok && r.value.found && r.value.readBack, JSON.stringify(r));
+    assert.ok(!held().includes(who), "the double declares it parks the person, and still holds them");
+    const again = await sequencer.withdraw(asked, ctx(false));
+    assert.ok(again.ok && again.value.found === false, JSON.stringify(again));
   });
 });
 

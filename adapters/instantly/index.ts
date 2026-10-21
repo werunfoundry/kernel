@@ -12,7 +12,8 @@
  *     adapter: "@werunfoundry/adapters/instantly"
  *     env: [INSTANTLY_API_KEY]
  *     options:
- *       campaign.<sequenceKey>: <Instantly campaign id>   # one per sequence
+ *       campaign.<sequenceKey>: <Instantly campaign id>       # one per sequence
+ *       subsequence.<sequenceKey>: <its parking subsequence>  # how one person is stopped
  *
  * How the contract maps, and where it does not:
  *
@@ -29,10 +30,17 @@
  * - **The sender is the campaign's.** Instantly rotates across the accounts a
  *   campaign lists; a lead cannot be pinned to one. An explicit sender is
  *   refused rather than accepted and ignored.
- * - **withdraw deletes the lead from that campaign.** A lead's status is
- *   read-only in the API, so there is no pause or stop for one lead. Deleting
- *   is synchronous and stops the sequence; it also removes Instantly's record
- *   of that enrolment — its status and counters.
+ * - **withdraw parks the lead (decision 0051).** A lead's status cannot be
+ *   written: `PATCH /leads/{id}` answers 200 to a status and changes nothing
+ *   (README). Of the ways that stop one lead without saying anything about
+ *   the person, moving them into a subsequence is the least destructive: the
+ *   lead keeps its campaign and its last step. Each sequence is bound to a
+ *   parking subsequence the instance created in its campaign — one step,
+ *   waiting longer than the campaign lives. This adapter never creates or
+ *   edits one: authoring a sequence is not the contract's (see the contract).
+ *   It reads the lead back after the move and answers with what it shows.
+ *   Deleting the lead, which this adapter did before 0051, also stops it, and
+ *   loses the record.
  * - **suppress is the workspace blocklist**, which takes an email or a whole
  *   domain and, per Instantly's help centre, is checked "across ongoing
  *   campaigns" as well as at upload. Workspace-wide: it stops every campaign,
@@ -61,7 +69,9 @@ import type {
   EnrolmentState,
   EnrolmentStatus,
   Sequencer,
+  SequencerDeclaration,
   Suppression,
+  Withdrawal,
 } from "@werunfoundry/acquisition/contracts/sequencer";
 
 /* -------------------------------------------------------------------------- */
@@ -72,6 +82,8 @@ interface Lead {
   id: string;
   email?: string | null;
   campaign?: string | null;
+  /** The subsequence the lead was moved into, when it was. */
+  subsequence_id?: string | null;
   /** Read-only. 1 active, 2 paused, 3 completed, -1 bounced, -2 unsubscribed, -3 skipped. */
   status?: number;
   payload?: Record<string, unknown> | null;
@@ -185,6 +197,51 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
   const unmapped = (sequenceKey: string) =>
     fail("invalid", `no campaign is mapped to the sequence "${sequenceKey}": add the option campaign.${sequenceKey}`);
 
+  /** `subsequence.<sequenceKey>`: the parking subsequence one person is stopped by. */
+  const parkingFor = (sequenceKey: string): string | undefined => {
+    const id = options[`subsequence.${sequenceKey}`];
+    return typeof id === "string" && id !== "" ? id : undefined;
+  };
+  const sequences = Object.keys(options).filter((k) => k.startsWith("campaign.")).map((k) => k.slice("campaign.".length));
+  const unparked = sequences.filter((s) => !parkingFor(s));
+
+  /**
+   * What this adapter can do (decision 0051), from the README's live test of
+   * 2026-10-20 and nothing else. Read from the binding, without calling
+   * Instantly: a sequence with no parking subsequence is one nobody can stop.
+   */
+  const declares: SequencerDeclaration = {
+    enrol: { serves: "yes" },
+    pullTouches: {
+      serves: "no",
+      why: "not built: Instantly lists sent emails by person and time (README), but this adapter does not read them yet",
+    },
+    suspend:
+      sequences.length > 0 && unparked.length === 0
+        ? {
+            serves: "yes",
+            method: "moving the lead into its sequence's parking subsequence (subsequence.<sequenceKey>), whose one step waits longer than the campaign lives",
+            // Observed live: the lead's status still reads active, and the
+            // campaign reads "running subsequences" instead of completed.
+            costs: { person: ["provider_status_stays_active"], sequence: ["shared_state_changes"] },
+            gap: {
+              known: false,
+              why: "never measured: in one live test (2026-10-20), suspensions made 18 minutes or more before a due step all held; nothing closer was tried",
+            },
+          }
+        : {
+            serves: "no",
+            why:
+              sequences.length === 0
+                ? "no sequence is bound: add campaign.<sequenceKey> and subsequence.<sequenceKey>"
+                : `no parking subsequence is bound for ${unparked.map((s) => `"${s}"`).join(", ")}: add subsequence.<sequenceKey>`,
+          },
+    pullUnsubscribes: {
+      serves: "no",
+      why: "not built: Instantly shows an unsubscribe as a lead's state, with no date of its own (README), and this adapter does not read it yet",
+    },
+  };
+
   async function call<T>(
     method: "GET" | "POST" | "DELETE",
     path: string,
@@ -223,8 +280,12 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     return { ok: true, value: lead ?? null };
   }
 
+  // A parked lead still reads active (README): it is stopped, by this adapter.
   const statusOf = (lead: Lead, sequenceKey: string): EnrolmentStatus => ({
-    state: (lead.status !== undefined ? STATES[lead.status] : undefined) ?? "unknown",
+    state:
+      lead.subsequence_id && lead.subsequence_id === parkingFor(sequenceKey) && lead.status === 1
+        ? "stopped"
+        : ((lead.status !== undefined ? STATES[lead.status] : undefined) ?? "unknown"),
     sequenceKey,
     asOf: lead.timestamp_updated ?? new Date().toISOString(),
   });
@@ -256,6 +317,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
   return {
     provider: "instantly",
     channels: ["email"],
+    declares,
 
     /**
      * Listing one campaign: the cheapest authenticated read, and one that
@@ -330,20 +392,47 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       return { ok: true, value: { state: "active", sequenceKey: enrolment.sequenceKey, asOf: new Date().toISOString() } };
     },
 
-    async withdraw(request, ctx): Promise<CallResult<void>> {
+    async withdraw(request, ctx): Promise<CallResult<Withdrawal>> {
       const campaign = campaignFor(request.sequenceKey);
       if (!campaign) return unmapped(request.sequenceKey);
+      const parking = parkingFor(request.sequenceKey);
+      if (!parking) {
+        return fail("invalid", `no parking subsequence is bound for the sequence "${request.sequenceKey}": add the option subsequence.${request.sequenceKey}`);
+      }
       const email = emailOf(request.person);
       if (!email) return noEmail();
 
       const found = await findLead(email, campaign, ctx);
       if (!found.ok) return found;
-      if (!found.value) return { ok: true, value: undefined }; // not enrolled: already withdrawn
-      if (ctx.dryRun) return { ok: true, simulated: true, value: undefined };
+      if (!found.value) return { ok: true, value: { found: false, asOf: new Date().toISOString() } }; // not enrolled: nothing to stop
 
-      const deleted = await call<unknown>("DELETE", `/api/v2/leads/${encodeURIComponent(found.value.id)}`, ctx);
-      if (!deleted.ok && deleted.error.code === "not_found") return { ok: true, value: undefined };
-      return deleted.ok ? { ok: true, value: undefined } : deleted;
+      // The subsequence must belong to this campaign: parking a lead in
+      // another campaign's would leave this one sending. Read in a dry run
+      // too — it is the read the real call depends on.
+      const sub = await call<{ id: string; parent_campaign?: string }>("GET", `/api/v2/subsequences/${encodeURIComponent(parking)}`, ctx);
+      if (!sub.ok) return sub.error.code === "not_found" ? fail("invalid", `the parking subsequence ${parking} does not exist`) : sub;
+      if (sub.value.parent_campaign !== campaign) {
+        return fail("invalid", `the parking subsequence ${parking} belongs to another campaign than the sequence "${request.sequenceKey}"`);
+      }
+      if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf: new Date().toISOString() } };
+
+      const lead = found.value;
+      if (lead.subsequence_id !== parking) {
+        const moved = await call<unknown>("POST", "/api/v2/leads/subsequence/move", ctx, { id: lead.id, subsequence_id: parking });
+        if (!moved.ok) return moved;
+      }
+      // Read back (0051): the answer to the move proves nothing — ten writes
+      // answered 200 and did nothing (README). Only the lead, read again,
+      // in its campaign and in the parking subsequence, says it is stopped.
+      const back = await call<Lead & Record<string, unknown>>("GET", `/api/v2/leads/${encodeURIComponent(lead.id)}`, ctx);
+      if (!back.ok) return back;
+      if (back.value.subsequence_id !== parking || (back.value.campaign ?? campaign) !== campaign) {
+        return fail(
+          "unknown",
+          `Instantly accepted the move, but the lead does not read back as parked: subsequence ${String(back.value.subsequence_id ?? "none")}, campaign ${String(back.value.campaign ?? "none")}`,
+        );
+      }
+      return { ok: true, value: { found: true, readBack: back.value, asOf: new Date().toISOString() } };
     },
 
     async suppress(request, ctx): Promise<CallResult<Suppression>> {

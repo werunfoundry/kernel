@@ -179,7 +179,7 @@ const sequencer: Sequencer = {
     return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { state: "active", asOf: NOW.toISOString() } };
   },
   async withdraw() {
-    return ok(undefined);
+    return ok({ found: false, asOf: NOW.toISOString() });
   },
   async suppress() {
     return ok({ applied: [], notApplicable: [] });

@@ -77,7 +77,8 @@ after(async () => {
 
 beforeEach(async () => {
   if (!client) return;
-  await client.query("truncate relations.person, relations.company, core.run cascade");
+  // The register refuses a truncate that would destroy an entry (0052); between tests, the triggers are set aside, as only a database's owner can.
+  await client.query("set session_replication_role = replica; truncate relations.person, relations.company, core.run cascade; set session_replication_role = origin");
   ada = (await client.query("insert into relations.person (email) values ('ada@example.com') returning id")).rows[0].id;
   await client.query("insert into relations.person (email) values ('bob@example.org')");
   const run = (await client.query("insert into core.run (process_key, trigger, actor_type) values ('acquisition.source', 'cli', 'system') returning id")).rows[0].id;

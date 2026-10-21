@@ -529,8 +529,8 @@ export const message = relations.table(
  * - **One writer.** Only an erasure writes an entry, inside the transaction
  *   that deletes the keys, through this domain's step (`runtime/
  *   during-erasure.ts`). The rewrap of 0058, §3 is the one other change the
- *   schema admits: the trigger in migration `0011` refuses every other
- *   update, and every delete.
+ *   schema admits: the triggers in migration `0011` refuse every other
+ *   update, every delete, and a truncate that would destroy an entry.
  * - **One reader**, 0055's, not built: until it is, nothing reads this
  *   table but the erasure's plan, which counts the entries a missing version
  *   no longer protects (0063). The entries written meanwhile are computed

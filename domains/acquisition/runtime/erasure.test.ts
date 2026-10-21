@@ -68,7 +68,8 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  if (client) await client.query("truncate relations.person, relations.company, relations.list, core.experiment, core.run cascade");
+  // The register refuses a truncate that would destroy an entry (0052); between tests, the triggers are set aside, as only a database's owner can.
+  if (client) await client.query("set session_replication_role = replica; truncate relations.person, relations.company, relations.list, core.experiment, core.run cascade; set session_replication_role = origin");
   memory.held.clear();
   memory.answer = undefined;
   memory.failing.clear();

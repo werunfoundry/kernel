@@ -53,3 +53,22 @@ END;
 $$;--> statement-breakpoint
 CREATE TRIGGER "suppression_is_append_only" BEFORE UPDATE OR DELETE ON "relations"."suppression"
   FOR EACH ROW EXECUTE FUNCTION "relations"."suppression_is_append_only"();
+--> statement-breakpoint
+-- TRUNCATE fires no row trigger, so the one above does not stop it. This
+-- table is the one whose destruction cancels, in silence, every objection
+-- that outlived its person, and it is append-only by trigger, not by
+-- privilege. So a truncate that would destroy an entry is refused, whether it
+-- names this table or reaches it by cascade, as `truncate core.run cascade`
+-- does. An empty register destroys nothing, and goes.
+CREATE FUNCTION "relations"."suppression_is_not_truncated"() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM "relations"."suppression") THEN
+    RAISE EXCEPTION 'relations.suppression: the register is not truncated; it would cancel every objection it holds, in silence (decisions 0052, 0058)'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NULL;
+END;
+$$;--> statement-breakpoint
+CREATE TRIGGER "suppression_is_not_truncated" BEFORE TRUNCATE ON "relations"."suppression"
+  FOR EACH STATEMENT EXECUTE FUNCTION "relations"."suppression_is_not_truncated"();

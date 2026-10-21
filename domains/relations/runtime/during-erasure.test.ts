@@ -63,7 +63,8 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  if (client) await client.query("truncate relations.person, relations.company, core.run cascade");
+  // The register refuses a truncate that would destroy an entry (0052); between tests, the triggers are set aside, as only a database's owner can.
+  if (client) await client.query("set session_replication_role = replica; truncate relations.person, relations.company, core.run cascade; set session_replication_role = origin");
 });
 
 const rows = async (sql: string, params: unknown[] = []) => (await client.query(sql, params)).rows;
@@ -241,6 +242,16 @@ describe("relations.suppression in the schema (0052, 0058)", { skip: base ? fals
     const run = await entry();
     await rows("delete from core.run where id = $1", [run]);
     assert.deepEqual(await rows("select fingerprint, chain, run_id from relations.suppression"), [{ fingerprint: "a".repeat(64), chain: ["T1"], run_id: null }]);
+  });
+
+  it("refuses a truncate that would destroy an entry, named or by cascade, and lets an empty register go", async () => {
+    await entry();
+    for (const statement of ["truncate relations.suppression", "truncate core.run cascade"]) {
+      await assert.rejects(client.query(statement), /the register is not truncated; it would cancel every objection it holds, in silence/);
+    }
+    assert.deepEqual(await rows("select count(*)::int as n from relations.suppression"), [{ n: 1 }]);
+    await rows("set session_replication_role = replica; truncate relations.suppression; set session_replication_role = origin");
+    await rows("truncate relations.suppression");
   });
 
   it("refuses a malformed fingerprint or chain, and a second entry for one fingerprint", async () => {

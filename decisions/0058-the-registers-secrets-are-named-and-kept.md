@@ -1,5 +1,9 @@
 # 0058 — The register's secrets are named, checked, and rewrapped only on compromise
 
+> Completed by [0062](0062-the-register-is-written-by-its-domain-inside-the-erasure.md):
+> boot hands the versions to the erasure, and one function in the core
+> fingerprints under them, with an encoding that never changes.
+
 > Not built, on `main` at `350656e`: none of it — no `fingerprints` section,
 > no check at boot, no command that generates a version, no rewrap. Nothing
 > depends on it yet: 0052's register is not built.

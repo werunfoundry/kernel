@@ -13,6 +13,10 @@
 > rewrap on a compromise is the one other writer and the one edit the
 > register admits, and an entry's version is the chain it is keyed under.
 
+> Completed by [0062](0062-the-register-is-written-by-its-domain-inside-the-erasure.md):
+> the entries are written by relations' step inside the erasure's
+> transaction, and the answer to the question travels with the request.
+
 > Not built, on `main` at `350656e`: none of it — no register, no question
 > at `kernel-erase`, no one reader. A live enrolment is refused once an
 > erasure has run, provisionally (0055, *The threshold is held by code*).

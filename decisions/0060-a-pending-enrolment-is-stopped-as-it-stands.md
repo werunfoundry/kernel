@@ -30,6 +30,20 @@ On `main` at `350656e`, and on the open pull request #106 at `90e2814`.
 - **0057 suspends `enrolled` rows only.** A pending row at a newly protected
   account is left to the suppression, which 0057 itself calls defence in
   depth, not the record.
+- **A read-back today finds a person, not an enrolment.**
+  - *What the adapter writes.* The shipped sequencer adapter writes the
+    kernel's key into the lead it creates, and compares it when it enrols
+    again (`existing()` in `adapters/…/index.ts`).
+  - *What it reads.* Its `status()` and `withdraw()` find the lead by
+    address alone (`findLead()`).
+  - *What the kernel does with that.* Its reconciliation (`enrol()` in
+    `domains/acquisition/runtime/enrol.ts`) records a pending row
+    `enrolled` on any status that is not `unknown`, so on an address.
+  - *The consequence.* A lead someone else put in the same sequence with
+    the same address — a colleague, another tool, the provider's own import
+    — would confirm the row. The kernel would then record as its own an
+    enrolment it did not make: the same fault as #106's attestation, by
+    another path.
 
 ## Decided
 
@@ -38,12 +52,33 @@ On `main` at `350656e`, and on the open pull request #106 at `90e2814`.
 - **A suspension asked on a pending row asks the provider first**, as 0056
   has it for erasure. This now holds for every caller: erasure, the opt-out,
   and 0057's act.
-  - *If the read-back shows the provider holds the person*, the row is
-    recorded `enrolled`, then `suspended`. That is what happened: the
-    provider confirmed the enrolment by being read.
-  - *If the provider does not hold the person*, the row stays `pending`.
-    There is nothing to stop, and no running sequence either: for 0057, it
-    is not one of the account's enrolments.
+- **What a read-back matches is the row's key, never the address.** An
+  address names a person; the key the kernel gave names this enrolment.
+  - *If the answer carries the row's key, as the provider holds it*, the
+    row is recorded `enrolled`, then `suspended`. That is what happened: the
+    provider confirmed this enrolment by being read.
+  - *If the provider holds nothing for the person*, the row stays
+    `pending`. There is nothing to stop, and no running sequence either: for
+    0057, it is not one of the account's enrolments.
+  - *If the provider holds the person, and the answer does not carry the
+    row's key* — the lead has no key, another key, or the provider keeps
+    none — the row is not confirmed.
+- **What an unconfirmed row costs, and what it becomes.**
+  - *The cost.* The kernel cannot tell its own enrolment from one someone
+    else made with the same address in the same sequence.
+  - *The person is still stopped.* The act stops what the provider holds
+    for that address in that sequence, whoever put it there. An erased
+    person, one who opted out, and one at a protected account must not be
+    reached either way.
+  - *The row stays `pending`.* That stop is never written on the row as
+    its suspension, because nothing shows that the lead stopped was this
+    enrolment. The run's report says it was made by address, and the
+    provider's read-back is the only proof of it.
+  - *Erasure goes on.* The person was stopped, and the row is anonymised
+    as it stands (0053).
+- **A run that reconciles a pending row confirms it the same way** (0026):
+  by replaying its key, so that the provider answers this enrolment or a
+  conflict. It never confirms on a status found by address.
 - **An attestation stops a pending row as it stands: `pending` →
   `suspended`.** The trigger opens that move only for a row that carries an
   attestation and no read-back. An attestation never records `enrolled`.
@@ -64,12 +99,18 @@ On `main` at `350656e`:
 - **none of it.** The trigger refuses `pending` → `suspended` whatever the
   row carries;
 - **not on the open pull request #106 either.** It records a pending row
-  as `enrolled` on an attestation, which this decision rules out;
+  as `enrolled` on an attestation, which this decision rules out, and as
+  `enrolled` on a read-back found by address;
+- **the shipped adapter's `status()` and `withdraw()`** find the lead by
+  address and do not compare the key;
+- **`enrol()`'s reconciliation** confirms a pending row on such a status;
 - **0057's act is not built.**
 
 ## Rules out
 
 - A row recorded `enrolled` on a person's word.
+- A pending row confirmed by an address.
+- A stop made by address recorded as the row's own suspension.
 - `pending` → `suspended` without an attestation. On a read-back, the
   provider has confirmed the row, and it goes through `enrolled`.
 - `suspended` reached from `refused`. Nothing of a refused row was sent.
@@ -83,6 +124,10 @@ ask about, and this decision nothing to settle.
 
 ## Not decided here
 
+- **How an answer says what it matched.** Neither `Withdrawal` nor
+  `EnrolmentStatus` in `contracts/sequencer.ts` carries the key today, or
+  says whether the lead was found by it. That is the contract's to add, and
+  the adapter's to fill.
 - **Whether a person may attest where 0057's act is refused.** 0056 opens
   the attestation for an erasure. 0057 has no such exit, and this decision
   does not add one.

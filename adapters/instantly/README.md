@@ -163,8 +163,24 @@ lead it uploads.
   returned `payload`, identical: nine keys, six of them beyond the core lead
   fields.
 
+Then, the same day, one write. It went to a campaign created for this test
+and never activated: draft, no sending account, no step. It held one lead,
+an address of the operator's. `POST /api/v2/leads/add` sent the body `enrol`
+sends, with `engine_idempotency_key` and `engine_run_id` in
+`custom_variables`.
+
+- `leads/list` with `contacts`, as `findLead` sends it, returned the lead on
+  the first read, 145 ms after the upload answered. `payload` held both
+  variables with the values sent, beside `email` and `firstName`.
+- `GET /api/v2/leads/{id}` returned the same `payload`, identical.
+- The lead read `status` 1. The campaign stayed at `status` 0, and
+  `GET /api/v2/emails` listed nothing for it.
+
+Afterwards, the lead and the campaign were deleted. Both read 404, and
+`leads/list` by the address, across the workspace, returned nothing.
+
 So `status` and `withdraw` read the key where it is kept, by both calls they
-make (0060).
+make, and `enrol`'s read-back finds the key it uploaded (0060).
 
 ## Not observed
 
@@ -180,21 +196,13 @@ make (0060).
   - whether a domain's entry refuses the addresses under it, as the help
     centre says. The adapter counts an address under a listed domain as
     already blocked.
-- `enrol`'s read-back. The live test of 0051 read leads by id
-  (`GET /api/v2/leads/{id}`); this README records nothing of:
-  - whether a lead uploaded with `POST /api/v2/leads/add` is returned by
-    `POST /api/v2/leads/list` as soon as the upload answers. If it lags, the
-    adapter reports an error for an upload that landed: the run stops with
-    the registry row left pending, and the next run confirms it from
-    `status`. `status` now reports the key the lead carries, but the
-    reconciliation does not compare it yet (0060);
-  - whether a custom variable set by `leads/add` comes back in `payload`.
-    The read-back decides by the key kept there; without it, a landed upload
-    reads back as a conflict. What was read is below (*Payload*).
-- Whether `engine_idempotency_key` itself comes back in `payload`. None of
-  the leads read (*Payload*) carries an `engine_` variable: that a custom
-  variable set at upload is returned is what those leads show for theirs,
-  not a read of ours. Seeing it takes one upload, which is a write.
+- Whether a lead uploaded with `POST /api/v2/leads/add` is always returned
+  by `POST /api/v2/leads/list` as soon as the upload answers, as `enrol`'s
+  read-back needs. One upload to an empty campaign was (*Payload*); a busy
+  workspace was not tried. If it lags, the adapter reports an error for an
+  upload that landed: the run stops with the registry row left pending, and
+  the next run confirms it from `status`. `status` now reports the key the
+  lead carries, but the reconciliation does not compare it yet (0060).
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

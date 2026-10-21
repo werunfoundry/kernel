@@ -90,6 +90,11 @@ this system asks.
   that answers cheerfully with last week's rows is worse than one that is down,
   because it looks like protection.
 - The audit gate exits non-zero and blocks activation.
+- **Nothing reaches a person except through the one passage** (decision
+  0055): one place calls a verb that delivers something to a person, and only
+  with a clearance issued for that person, that channel and that run. *Not
+  built yet:* two places reach a person today, the enrolment and the sending
+  path's hand-over, and no check refuses a third.
 - **Every machine-read file is parsed by the checks.** A manifest only a human
   has read is not known to be valid. A file that the build parses and the
   checks do not is a gap that is discovered in CI at best.

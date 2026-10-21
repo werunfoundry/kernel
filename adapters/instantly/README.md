@@ -55,6 +55,23 @@ declares that it cannot suspend, and `kernel-enrol` refuses it.
 Before 0051, `withdraw` deleted the lead and reported success on the status
 code.
 
+`suppress` writes to the workspace blocklist, and reads back what it wrote
+(0051). For each address or domain of the target:
+
+1. It reads the blocklist (`GET /api/v2/block-lists-entries?search=…`): an
+   address already listed, or under a listed domain, is reported applied
+   with nothing written.
+2. Otherwise it writes the entry (`POST /api/v2/block-lists-entries`).
+3. It reads the blocklist again, and reports the key applied only if that
+   exact value is listed. A write answered 200 that does not read back is
+   an error, and names the keys read back before it.
+
+A dry run does step 1 and writes nothing. None of it was observed against a
+live workspace (below).
+
+Before this, `suppress` read before it wrote and never after, and reported
+the key applied on the write's status code.
+
 ## Pulling what was sent
 
 `GET /api/v2/emails?campaign_id=…&email_type=sent&min_timestamp_created=<ISO, ms>`
@@ -113,7 +130,16 @@ them.
 
 - `suppress`, the workspace blocklist, against a live workspace: the write
   key had `campaigns:all`, `leads:all`, `webhook_events:all` and
-  `subsequences:all`, and nothing for the blocklist.
+  `subsequences:all`, and nothing for the blocklist. So none of what the
+  read-back rests on was seen:
+  - whether an entry reads back as soon as its write answers. If it lags,
+    the adapter reports an error for a write that landed;
+  - whether `search` matches parts of values, and whether `limit=50` can
+    hide the exact entry under longer matches. If so, the read-back reports
+    an error, never a false success;
+  - whether a domain's entry refuses the addresses under it, as the help
+    centre says. The adapter counts an address under a listed domain as
+    already blocked.
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

@@ -12,6 +12,10 @@
 > no check at boot, no command that generates a version, no rewrap. Nothing
 > depends on it yet: 0052's register is not built.
 
+> Built by #117, in part: the `fingerprints` section, the checks at boot as
+> 0063 scopes them, `kernel-fingerprint`, which generates a version, and the
+> one rewrite the schema admits. The rewrap command is not built.
+
 Completes [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),
 which left "the shape of the secret's rotation" undecided. Supersedes 0052
 in part, on four points (below). Changes what an instance holds, which is

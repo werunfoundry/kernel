@@ -21,6 +21,15 @@
 > at `kernel-erase`, no one reader. A live enrolment is refused once an
 > erasure has run, provisionally (0055, *The threshold is held by code*).
 
+> Built by #117, in part: the register, `relations.suppression`, written by
+> the erasure alone inside its transaction, one fingerprint per key of a
+> person who objected (0062); the question at `kernel-erase`, which only yes
+> or no answers. What is missing is the one reader. It belongs to 0055, and
+> the entries written until it arrives are computed as it will compute them:
+> they are readable the day it does. Until then nothing reads them, and
+> 0055's provisional guard refuses every live enrolment once an erasure has
+> run.
+
 Completes [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md),
 which named the hole this decision closes and set the threshold it is due
 by: the first live enrolment into a real sequencer, or the first real

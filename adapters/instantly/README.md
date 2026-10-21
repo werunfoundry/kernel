@@ -152,8 +152,9 @@ them.
 ## Payload
 
 Read on 2026-10-21, against a live workspace, with a read-only key and
-nothing written: existing leads of two campaigns, five from each, none of
-them uploaded by this adapter.
+nothing written: existing leads of two campaigns, five from each. None of
+the ten carries an `engine_` variable, which this adapter sets on every
+lead it uploads.
 
 - `POST /api/v2/leads/list` by campaign returned `payload` on all ten leads:
   an object, never empty, holding the lead's custom variables.
@@ -191,9 +192,9 @@ make (0060).
     The read-back decides by the key kept there; without it, a landed upload
     reads back as a conflict. What was read is below (*Payload*).
 - Whether `engine_idempotency_key` itself comes back in `payload`. None of
-  the leads read (*Payload*, below) was uploaded by this adapter: that a
-  custom variable set at upload is returned is what those leads show for
-  theirs, not a read of ours. Seeing it takes one upload, which is a write.
+  the leads read (*Payload*) carries an `engine_` variable: that a custom
+  variable set at upload is returned is what those leads show for theirs,
+  not a read of ours. Seeing it takes one upload, which is a write.
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

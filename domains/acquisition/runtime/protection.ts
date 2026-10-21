@@ -44,6 +44,11 @@ import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/t
 
 export interface Protection {
   /**
+   * When the protected set was computed, as its source said (0041): what a
+   * run that acted on it can say the promise held as of (0057).
+   */
+  asOf: string;
+  /**
    * How many distinct accounts were read: one per customer when the source
    * names customers; otherwise rows that share a key — a domain, a company
    * id, an identifier — are one account, however many rows repeat it.
@@ -67,6 +72,12 @@ export interface Protection {
    * other key protects it.
    */
   verdict(c: TargetCompany): "protected" | "unreadable_key" | "clear";
+  /**
+   * The same verdict, without counting a hit: for a company already enrolled
+   * through (0057), which is not a candidate of the run, and must not swell
+   * what the run reports each entry excluded.
+   */
+  standing(c: TargetCompany): "protected" | "unreadable_key" | "clear";
   /** Whether a candidate company is excluded by protection: protected, or unreadable — fail closed (0044). */
   company(c: TargetCompany): boolean;
   /**
@@ -81,6 +92,12 @@ export interface Protection {
    * why a path that adds addresses asks again once it has.
    */
   person(p: Identity): boolean;
+  /**
+   * The protected domain a host falls under — itself or an ancestor (0044) —
+   * or nothing. What a suppression lists for an account (0057): the domain
+   * protection holds, which may be wider than the host it matched.
+   */
+  domainOf(host: string): string | undefined;
 }
 
 /**
@@ -210,7 +227,7 @@ export async function readProtection(
   const protectedHost = (host: string) => (isHost(host) ? ancestry(host).find((a) => domains.has(a)) : undefined);
   /** Per protected entry, the distinct candidates it excluded (0044). */
   const hits = new Map<string, Set<string>>();
-  const verdict = (c: TargetCompany): "protected" | "unreadable_key" | "clear" => {
+  const judge = (c: TargetCompany, count: boolean): "protected" | "unreadable_key" | "clear" => {
     const raw = c.domain?.trim();
     const host = raw ? domainOf(raw) : "";
     const readable = !raw || isHost(host);
@@ -222,21 +239,25 @@ export async function readProtection(
       if (k.kind !== "domain" && k.network !== undefined && companyIds.has(`${k.kind}\n${k.network}\n${k.value.trim()}`)) matched.push(`${k.kind}@${k.network} ${k.value.trim()}`);
     }
     if (matched.length > 0) {
+      if (!count) return "protected";
       const who = raw ?? c.externalId ?? c.name ?? JSON.stringify(c.identity ?? {});
       for (const entry of matched) hits.set(entry, (hits.get(entry) ?? new Set()).add(who));
       return "protected";
     }
     return readable ? "clear" : "unreadable_key";
   };
+  const verdict = (c: TargetCompany) => judge(c, true);
   return {
     ok: true,
     protection: {
+      asOf: fresh.value.asOf,
       accounts,
       rows,
       surface: { domains: domains.size, companyIds: companyIds.size },
       unkeyedRowsOfCoveredCustomers: [...customers.values()].filter((c) => c.keyed).reduce((n, c) => n + c.unkeyed, 0),
       uncovered,
       verdict,
+      standing: (c) => judge(c, false),
       company: (c) => verdict(c) !== "clear",
       hits: () =>
         [...hits].map(([entry, seen]) => ({ entry, candidates: seen.size })).sort((a, b) => b.candidates - a.candidates || a.entry.localeCompare(b.entry)),
@@ -246,6 +267,7 @@ export async function readProtection(
             (k.kind === "email" && protectedHost(domainOf(k.value.split("@")[1] ?? ""))) ||
             (k.kind === "domain" && protectedHost(domainOf(k.value))),
         ),
+      domainOf: (host) => protectedHost(domainOf(host)),
     },
   };
 }

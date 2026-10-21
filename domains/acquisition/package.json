@@ -91,7 +91,8 @@
       "kernel-inbound": "./dist/bin/inbound.js",
       "kernel-stage": "./dist/bin/stage.js",
       "kernel-list": "./dist/bin/list.js",
-      "kernel-attest-stop": "./dist/bin/attest-stop.js"
+      "kernel-attest-stop": "./dist/bin/attest-stop.js",
+      "kernel-stop-protected": "./dist/bin/stop-protected.js"
     }
   },
   "dependencies": {
@@ -119,6 +120,7 @@
     "kernel-inbound": "./bin/inbound.ts",
     "kernel-stage": "./bin/stage.ts",
     "kernel-list": "./bin/list.ts",
-    "kernel-attest-stop": "./bin/attest-stop.ts"
+    "kernel-attest-stop": "./bin/attest-stop.ts",
+    "kernel-stop-protected": "./bin/stop-protected.ts"
   }
 }

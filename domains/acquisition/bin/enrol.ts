@@ -22,6 +22,12 @@
  * two commands stay two on purpose — between them, a person reads the
  * sourcing report.
  *
+ * Before anyone is enrolled, every enrolment already running at an account
+ * protection now excludes is stopped (decision 0057); a run that cannot stop
+ * them enrols nobody. That is not 0004's promise kept: it holds only as
+ * often as this or `kernel-stop-protected` runs, and an instance that stops
+ * enrolling stops withdrawing — schedule `kernel-stop-protected`.
+ *
  * Provisionally, a live run is refused once an erasure has run on the
  * instance, until 0052's suppression register exists (below).
  *
@@ -40,6 +46,7 @@ import { connect } from "@werunfoundry/core/runtime/connect";
 
 import { readDeclaration, type Sequencer } from "../contracts/sequencer.js";
 import { CannotSuspend, CONTRACTS, enrol, ErasedWithoutRegister } from "../runtime/enrol.js";
+import { describeStop, PROMISE } from "../runtime/protected.js";
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(`--${name}`);
@@ -164,6 +171,13 @@ async function main(): Promise<number> {
         console.log(`    ! protected by nothing, acknowledged as uncovered: ${p.uncovered.length}`);
         for (const u of p.uncovered) console.log(`      - ${u.customerId}${u.name ? ` (${u.name})` : ""}: ${u.rows} row${u.rows === 1 ? "" : "s"}, no key`);
       }
+    }
+    // What the run's start did to enrolments already running at protected
+    // accounts (0057) — and what that is not.
+    if (report.protectedStop) {
+      console.log("  before enrolling, the enrolments already running at protected accounts (decision 0057):");
+      for (const line of describeStop(report.protectedStop, report.dryRun)) console.log(`  ${line}`);
+      console.log(`    ${PROMISE}`);
     }
     console.log(
       `  capacity: ${report.capacity.checked ? `budget ${report.capacity.budget}` : `not checked — ${report.capacity.why}`}`,

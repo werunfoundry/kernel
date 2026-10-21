@@ -9,12 +9,13 @@
  */
 
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 
 import { boot } from "./boot.js";
+import { checkValueOf, fingerprintOf, generateSecret } from "./fingerprint.js";
 
 const kernel = join(import.meta.dirname, "../..");
 const made: string[] = [];
@@ -46,14 +47,31 @@ function instance(files: Record<string, string>, domains: string[] = ["relations
 /** An adapter in plain JavaScript, so the test does not depend on a loader. */
 const ADAPTER = "export default () => ({ provider: 'fixture' });\n";
 
-const manifest = (lines: string[]) => [`instance: test`, `truthsDir: truths`, ...lines, ""].join("\n");
+/** The register's versions an instance must declare (0058): one that writes, its secret in the environment. */
+const SECRET = generateSecret();
+const version = (label: string, secret: string, reason = "a test") => `    - { label: ${label}, check: ${checkValueOf(secret)}, reason: "${reason}" }`;
+const versions = (writes: string, ...lines: string[]) => ["fingerprints:", `  writes: ${writes}`, "  versions:", ...lines];
+const ENV = { KERNEL_FINGERPRINT_T1: SECRET };
+
+const manifest = (lines: string[], register = versions("T1", version("T1", SECRET))) => [`instance: test`, `truthsDir: truths`, ...lines, ...register, ""].join("\n");
 
 const messages = (r: { issues: { at: string; message: string }[] }) =>
   r.issues.map((i) => `${i.at.replace(/^.*manifest\.yaml:/, "")} ${i.message}`);
 
 describe("booting an instance", () => {
-  it("boots the template as it ships, every contract bound to a sandbox", async () => {
-    const r = await boot({ root: join(kernel, "template"), env: {} });
+  it("refuses the template as it ships: a version is generated, never shipped (0058)", async () => {
+    const r = await boot({ root: join(kernel, "template"), env: ENV });
+    assert.equal(r.ok, false);
+    assert.match(messages(r).join("\n"), /fingerprints no fingerprint version is declared, and one must write \(decision 0058\): run `kernel-fingerprint --label V1 --writes/);
+  });
+
+  it("boots the template once it declares a version, every contract bound to a sandbox", async () => {
+    const root = mkdtempSync(join(tmpdir(), "template-"));
+    made.push(root);
+    const template = join(kernel, "template");
+    for (const entry of readdirSync(template)) if (entry !== "manifest.yaml" && entry !== ".sandbox-state.json") symlinkSync(join(template, entry), join(root, entry));
+    writeFileSync(join(root, "manifest.yaml"), [readFileSync(join(template, "manifest.yaml"), "utf8"), ...versions("T1", version("T1", SECRET)), ""].join("\n"));
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (!r.ok) return;
     assert.deepEqual(r.domains.map((d) => d.name), ["relations", "acquisition"]);
@@ -81,7 +99,7 @@ describe("booting an instance", () => {
       ]),
       "adapters/crm.mjs": ADAPTER,
     }, ["relations"]);
-    const r = await boot({ root, env: { TOKEN: "x" } });
+    const r = await boot({ root, env: { ...ENV, TOKEN: "x" } });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (!r.ok) return;
     assert.equal(r.manifest.instance, "test");
@@ -99,7 +117,7 @@ describe("booting an instance", () => {
       ]),
       "adapters/crm.mjs": ADAPTER,
     });
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, false);
     const said = messages(r).join("\n");
     assert.match(said, /enabledDomains\.0 "acquisition" depends on "relations", which is not enabled/);
@@ -112,7 +130,7 @@ describe("booting an instance", () => {
     const root = instance({
       "manifest.yaml": manifest(["enabledDomains: [relations, acquisition]", "providers: []"]),
     }, ["relations"]);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, false);
     assert.deepEqual(messages(r), [
       "enabledDomains.1 @werunfoundry/acquisition is not installed in this instance — add it to its package.json dependencies",
@@ -127,7 +145,7 @@ describe("booting an instance", () => {
       "node_modules/@werunfoundry/plain/index.js": "export {};\n",
       "node_modules/@werunfoundry/plain/domain.yaml": "name: plain\n",
     }, []);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, false);
     assert.match(messages(r).join("\n"), /exports nothing for "\.\/domain\.yaml"/);
   });
@@ -140,7 +158,7 @@ describe("booting an instance", () => {
       "node_modules/@werunfoundry/alias/domain.yaml":
         "name: other\nversion: 0.0.0\ndescription: x\nschema: other\ndependsOn: []\n",
     }, []);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, false);
     assert.match(messages(r).join("\n"), /declares itself "other"/);
   });
@@ -156,7 +174,7 @@ describe("booting an instance", () => {
         '{ "name": "@fixture/adapter", "type": "module", "exports": "./index.js" }\n',
       "node_modules/@fixture/adapter/index.js": ADAPTER,
     }, ["relations"]);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (!r.ok) return;
     assert.equal(r.registry.require("crm").provider, "fixture");
@@ -176,7 +194,7 @@ describe("booting an instance", () => {
         '{ "name": "@fixture/esm-only", "type": "module", "exports": { "import": "./index.js" } }\n',
       "node_modules/@fixture/esm-only/index.js": ADAPTER,
     }, ["relations"]);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, false);
     const said = messages(r).join("\n");
     assert.match(said, /providers\.0\.adapter cannot be loaded: @fixture\/esm-only is installed, but exports nothing for its main entry under the "require" or "default" condition/);
@@ -190,7 +208,7 @@ describe("booting an instance", () => {
       "manifest.yaml": manifest(["enabledDomains: [relations, acquisition]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),
       "adapters/m.mjs": source("acquisition.enrolled", "acquisition.replied"),
     });
-    const r = await boot({ root: good, env: {} });
+    const r = await boot({ root: good, env: ENV });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (r.ok) {
       const judged = r.domains.find((d) => d.name === "acquisition")?.experimentMetrics ?? {};
@@ -207,7 +225,7 @@ describe("booting an instance", () => {
       "manifest.yaml": manifest(["enabledDomains: [relations, acquisition]", "providers:", "  - { contract: metrics, adapter: ./adapters/m.mjs, env: [] }"]),
       "adapters/m.mjs": source("acquisition.enrolled", "acquisition.revenue"),
     });
-    assert.match(messages(await boot({ root: bad, env: {} })).join("\n"), /reads "acquisition.revenue", which no enabled domain declares/);
+    assert.match(messages(await boot({ root: bad, env: ENV })).join("\n"), /reads "acquisition.revenue", which no enabled domain declares/);
   });
 
   it("refuses a metric scoped to a channel no enabled domain declares", async () => {
@@ -219,7 +237,7 @@ describe("booting an instance", () => {
         "name: scoped\nversion: 0.0.0\ndescription: x\nschema: scoped\ndependsOn: [relations]\n" +
         "channels: [email]\nmetrics:\n  - key: scoped.bounced\n    unit: people\n    channels: [carrier_pigeon]\n",
     }, ["relations"]);
-    assert.match(messages(await boot({ root, env: {} })).join("\n"), /scopes "scoped.bounced" to the channel "carrier_pigeon"/);
+    assert.match(messages(await boot({ root, env: ENV })).join("\n"), /scopes "scoped.bounced" to the channel "carrier_pigeon"/);
   });
 
   describe("a contract bound per channel (0015)", () => {
@@ -239,7 +257,7 @@ describe("booting an instance", () => {
       });
 
     it("binds one adapter per channel, and finds each by its channel", async () => {
-      const r = await boot({ root: twoSequencers(serving("email"), serving("social_message", "social_invite")), env: {} });
+      const r = await boot({ root: twoSequencers(serving("email"), serving("social_message", "social_invite")), env: ENV });
       assert.equal(r.ok, true, JSON.stringify(r.issues));
       if (!r.ok) return;
       assert.ok(r.registry.forChannel("sequencer", "email"));
@@ -251,7 +269,7 @@ describe("booting an instance", () => {
     });
 
     it("refuses two adapters claiming the same channel, naming both", async () => {
-      const r = await boot({ root: twoSequencers(serving("email"), serving("email", "social_message")), env: {} });
+      const r = await boot({ root: twoSequencers(serving("email"), serving("email", "social_message")), env: ENV });
       assert.equal(r.ok, false);
       assert.match(messages(r).join("\n"), /providers\.1\.channels the channel "email" of contract "sequencer" is already taken by providers\.0; one adapter per channel/);
     });
@@ -259,27 +277,27 @@ describe("booting an instance", () => {
     it("lets a binding narrow an adapter to some of its channels, which resolves the overlap", async () => {
       const r = await boot({
         root: twoSequencers(serving("email"), serving("email", "social_message"), ["", ", channels: [social_message]"]),
-        env: {},
+        env: ENV,
       });
       assert.equal(r.ok, true, JSON.stringify(r.issues));
     });
 
     it("refuses a binding that assigns a channel the adapter does not serve", async () => {
-      const r = await boot({ root: twoSequencers(serving("email"), serving("social_message"), ["", ", channels: [social_invite]"]), env: {} });
+      const r = await boot({ root: twoSequencers(serving("email"), serving("social_message"), ["", ", channels: [social_invite]"]), env: ENV });
       assert.equal(r.ok, false);
       assert.match(messages(r).join("\n"), /"social_invite" is not a channel this adapter serves/);
     });
 
     it("refuses a contract bound twice where a binding takes no channel", async () => {
-      const r = await boot({ root: twoSequencers(serving("email"), ADAPTER), env: {} });
+      const r = await boot({ root: twoSequencers(serving("email"), ADAPTER), env: ENV });
       assert.equal(r.ok, false);
       assert.match(messages(r).join("\n"), /bound more than once, so each binding takes channels or finds keys in sequence, and this one does neither/);
     });
 
     it("refuses a channel no enabled domain declares, whoever names it", async () => {
-      const declaredByAdapter = await boot({ root: twoSequencers(serving("email"), serving("carrier_pigeon")), env: {} });
+      const declaredByAdapter = await boot({ root: twoSequencers(serving("email"), serving("carrier_pigeon")), env: ENV });
       assert.match(messages(declaredByAdapter).join("\n"), /no enabled domain declares the channel "carrier_pigeon"/);
-      const namedByManifest = await boot({ root: twoSequencers(serving("email"), serving("social_message"), ["", ", channels: [carrier_pigeon]"]), env: {} });
+      const namedByManifest = await boot({ root: twoSequencers(serving("email"), serving("social_message"), ["", ", channels: [carrier_pigeon]"]), env: ENV });
       assert.match(messages(namedByManifest).join("\n"), /no enabled domain declares the channel "carrier_pigeon"/);
     });
   });
@@ -301,7 +319,7 @@ describe("booting an instance", () => {
       }, ["relations"]);
 
     it("binds two sources, and answers them in the manifest's order with what each finds", async () => {
-      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email", "social_profile_handle")), env: {} });
+      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email", "social_profile_handle")), env: ENV });
       assert.equal(r.ok, true, JSON.stringify(r.issues));
       if (!r.ok) return;
       assert.deepEqual(
@@ -312,7 +330,7 @@ describe("booting an instance", () => {
     });
 
     it("follows the manifest: the same two sources, listed the other way, run the other way", async () => {
-      const r = await boot({ root: twoSources(finding("second", "email"), finding("first", "email")), env: {} });
+      const r = await boot({ root: twoSources(finding("second", "email"), finding("first", "email")), env: ENV });
       assert.equal(r.ok, true, JSON.stringify(r.issues));
       if (!r.ok) return;
       assert.deepEqual(r.registry.sequence("enrichment").map((s) => s.provider), ["second", "first"]);
@@ -321,7 +339,7 @@ describe("booting an instance", () => {
     it("lets a binding narrow a source to some of the kinds it finds", async () => {
       const r = await boot({
         root: twoSources(finding("first", "email", "social_profile_handle"), finding("second", "email"), [", finds: [social_profile_handle]"]),
-        env: {},
+        env: ENV,
       });
       assert.equal(r.ok, true, JSON.stringify(r.issues));
       if (!r.ok) return;
@@ -329,20 +347,20 @@ describe("booting an instance", () => {
     });
 
     it("refuses a binding that asks a source for a kind it does not find", async () => {
-      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), [", finds: [social_profile_id]"]), env: {} });
+      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), [", finds: [social_profile_id]"]), env: ENV });
       assert.equal(r.ok, false);
       assert.match(messages(r).join("\n"), /providers\.0\.finds\.0 "social_profile_id" is not a key this adapter finds \(it finds email\)/);
     });
 
     it("refuses a kind no enabled domain declares, whoever names it", async () => {
-      const declaredByAdapter = await boot({ root: twoSources(finding("first", "email"), finding("second", "fax")), env: {} });
+      const declaredByAdapter = await boot({ root: twoSources(finding("first", "email"), finding("second", "fax")), env: ENV });
       assert.match(messages(declaredByAdapter).join("\n"), /providers\.1\.finds no enabled domain declares the identity key "fax"/);
-      const namedByManifest = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), ["", ", finds: [fax]"]), env: {} });
+      const namedByManifest = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), ["", ", finds: [fax]"]), env: ENV });
       assert.match(messages(namedByManifest).join("\n"), /providers\.1\.finds\.0 no enabled domain declares the identity key "fax"/);
     });
 
     it("refuses a sequence where one binding finds nothing", async () => {
-      const r = await boot({ root: twoSources(finding("first", "email"), ADAPTER), env: {} });
+      const r = await boot({ root: twoSources(finding("first", "email"), ADAPTER), env: ENV });
       assert.equal(r.ok, false);
       assert.match(messages(r).join("\n"), /providers\.1 contract "enrichment" is bound in sequence, so each binding finds keys, and this one finds none/);
     });
@@ -350,14 +368,14 @@ describe("booting an instance", () => {
     it("refuses a contract bound per channel by one binding and in sequence by another", async () => {
       const r = await boot({
         root: twoSources(`export default () => ({ provider: "by-channel", channels: ["email"] });\n`, finding("by-kind", "email")),
-        env: {},
+        env: ENV,
       });
       assert.equal(r.ok, false);
       assert.match(messages(r).join("\n"), /providers\.1 contract "enrichment" is bound per channel by another binding, and this one finds keys in sequence; never both ways at once/);
     });
 
     it("refuses a binding that names both channels and kinds", async () => {
-      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), [", channels: [email], finds: [email]"]), env: {} });
+      const r = await boot({ root: twoSources(finding("first", "email"), finding("second", "email"), [", channels: [email], finds: [email]"]), env: ENV });
       assert.equal(r.ok, false);
       assert.match(messages(r).join("\n"), /providers\.0 a binding takes channels or finds keys in sequence, never both/);
     });
@@ -367,7 +385,7 @@ describe("booting an instance", () => {
     const root = instance({
       "manifest.yaml": manifest(["enabledDomains: [relations]", "providers: []", "networks: [net_a]"]),
     }, ["relations"]);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, true, JSON.stringify(r.issues));
     if (!r.ok) return;
     assert.deepEqual([...r.identity.kinds.keys()].sort(), ["domain", "email", "phone", "social_company_id", "social_profile_handle", "social_profile_id"]);
@@ -384,28 +402,82 @@ describe("booting an instance", () => {
         "name: twin\nversion: 0.0.0\ndescription: x\nschema: twin\ndependsOn: []\n" +
         "identityKeys:\n  - kind: email\n    subject: person\n    immutable: false\n",
     }, ["relations"]);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, false);
     assert.match(messages(r).join("\n"), /"email" is declared by both "relations" and "twin"; a key two domains need belongs one layer down/);
   });
 
   it("refuses a network that is not an identifier", async () => {
     const root = instance({ "manifest.yaml": manifest(["enabledDomains: [relations]", "providers: []", "networks: [Net-A]"]) }, ["relations"]);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, false);
     assert.match(messages(r).join("\n"), /networks\.0/);
   });
 
   it("reports a manifest that is not YAML, and does not throw", async () => {
     const root = instance({ "manifest.yaml": "instance: [unclosed\n" }, []);
-    const r = await boot({ root, env: {} });
+    const r = await boot({ root, env: ENV });
     assert.equal(r.ok, false);
     assert.match(messages(r).join("\n"), /is not valid YAML/);
   });
 
   it("reports a missing manifest, and does not throw", async () => {
-    const r = await boot({ root: instance({}, []), env: {} });
+    const r = await boot({ root: instance({}, []), env: ENV });
     assert.equal(r.ok, false);
     assert.match(messages(r).join("\n"), /cannot be read/);
+  });
+});
+
+describe("the register's versions (0058, 0063)", () => {
+  const OLD = generateSecret();
+  const at = (lines: string[], env: Record<string, string>) =>
+    boot({ root: instance({ "manifest.yaml": manifest(["enabledDomains: [relations]", "providers: []"], lines) }, ["relations"]), env });
+
+  it("hands erasure the version that writes, fingerprinting as the one function does, and no secret", async () => {
+    const r = await at(versions("T1", version("T1", SECRET)), ENV);
+    assert.equal(r.ok, true, JSON.stringify(r.issues));
+    if (!r.ok) return;
+    const key = { kind: "email", value: " Ada@Example.com " };
+    assert.deepEqual(r.fingerprints.fingerprint(key), { fingerprint: fingerprintOf(SECRET, key, r.identity), chain: ["T1"] });
+    assert.deepEqual(r.fingerprints.missing, []);
+    assert.doesNotMatch(JSON.stringify(r.fingerprints), new RegExp(SECRET));
+  });
+
+  it("refuses the version that writes when its variable is not set, for every process (0063)", async () => {
+    const r = await at(versions("T1", version("T1", SECRET)), {});
+    assert.equal(r.ok, false);
+    assert.match(messages(r).join("\n"), /fingerprints\.versions\.0 KERNEL_FINGERPRINT_T1 is not set, and version T1 writes: an erasure could not keep an objection \(decision 0063\)/);
+  });
+
+  it("boots without an older version's secret, warns, and says it is missing (0063)", async () => {
+    const r = await at(versions("T1", version("T0", OLD), version("T1", SECRET)), ENV);
+    assert.equal(r.ok, true, JSON.stringify(r.issues));
+    if (!r.ok) return;
+    assert.deepEqual(r.fingerprints.missing, ["T0"]);
+    assert.deepEqual(r.issues.map((i) => [i.severity, i.message]), [
+      ["warning", "KERNEL_FINGERPRINT_T0 is not set: the entries under version T0 protect nobody, and contact stops at the register until it is restored; erasure goes on (decision 0063)"],
+    ]);
+  });
+
+  it("refuses a secret that is not 64 lower-case hexadecimal characters, an older version's too (0058)", async () => {
+    const r = await at(versions("T1", version("T0", OLD), version("T1", SECRET)), { ...ENV, KERNEL_FINGERPRINT_T0: OLD.toUpperCase() });
+    assert.equal(r.ok, false);
+    assert.match(messages(r).join("\n"), /fingerprints\.versions\.0 KERNEL_FINGERPRINT_T0 is not 64 lower-case hexadecimal characters/);
+  });
+
+  it("refuses a secret that does not reproduce its check value, an older version's too: it would fail open in silence (0058)", async () => {
+    const r = await at(versions("T1", version("T0", OLD), version("T1", SECRET)), { ...ENV, KERNEL_FINGERPRINT_T0: generateSecret() });
+    assert.equal(r.ok, false);
+    assert.match(messages(r).join("\n"), /fingerprints\.versions\.0 KERNEL_FINGERPRINT_T0 does not reproduce version T0's check value/);
+  });
+
+  it("refuses a version that writes and is not declared, a label declared twice, and a version without its reason (0058)", async () => {
+    const undeclared = await at(versions("T2", version("T1", SECRET)), ENV);
+    assert.match(messages(undeclared).join("\n"), /fingerprints\.writes "T2" writes, and is not declared under versions/);
+    const twice = await at(versions("T1", version("T1", SECRET), version("T1", OLD)), ENV);
+    assert.match(messages(twice).join("\n"), /fingerprints\.versions\.1\.label "T1" is declared twice; a label is never reused/);
+    const reasonless = await at(versions("T1", version("T1", SECRET, " ")), ENV);
+    assert.match(messages(reasonless).join("\n"), /say why this version was added \(decision 0058\)/);
+    for (const r of [undeclared, twice, reasonless]) assert.equal(r.ok, false);
   });
 });

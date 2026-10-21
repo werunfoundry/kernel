@@ -1,5 +1,12 @@
 # 0063 — A lost secret stops contact, not erasure
 
+> Not built, on `main` at `0d88521`: none of it. Nothing of 0058 was built,
+> and boot checked no version.
+
+> Built by #117: all of it. Boot refuses the version that writes unset, and
+> a wrong value anywhere; another unset version is a warning, and every
+> erasure plan counts its entries.
+
 Supersedes in part [0058](0058-the-registers-secrets-are-named-and-kept.md):
 boot no longer refuses an old version whose variable is not set, only the
 version that writes. Completes

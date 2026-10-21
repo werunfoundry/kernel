@@ -22,6 +22,7 @@ import { after, before, describe, it } from "node:test";
 
 import { Client } from "pg";
 
+import { checkValueOf, generateSecret } from "./fingerprint.js";
 import { verify } from "./verify.js";
 
 const base = process.env.TEST_DATABASE_URL;
@@ -135,6 +136,11 @@ function instance(
       "providers:",
       `  - { contract: crm, adapter: ./adapter.mjs, env: [], options: { baseUrl: "http://127.0.0.1:${port}" } }`,
       ...more.map(([line]) => line),
+      // The register's version that writes (0058): an instance declares one.
+      "fingerprints:",
+      "  writes: T1",
+      "  versions:",
+      `    - { label: T1, check: ${checkValueOf(SECRET)}, reason: "a test" }`,
       "",
     ].join("\n"),
   );
@@ -143,7 +149,9 @@ function instance(
   return root;
 }
 
-async function run(root: string, env: Record<string, string> = { DATABASE_URL: url }) {
+const SECRET = generateSecret();
+
+async function run(root: string, env: Record<string, string> = { DATABASE_URL: url, KERNEL_FINGERPRINT_T1: SECRET }) {
   const lines: string[] = [];
   const code = await verify({ root, env, say: (l) => lines.push(l) });
   return { code, said: lines.join("\n") };
@@ -226,7 +234,7 @@ describe("verify", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () =
   });
 
   it("says where a run would go when there is no database", async () => {
-    const { code, said } = await run(instance(probing("/up")), {});
+    const { code, said } = await run(instance(probing("/up")), { KERNEL_FINGERPRINT_T1: SECRET });
     assert.equal(code, 1);
     assert.match(said, /DATABASE_URL is not set/);
   });

@@ -174,8 +174,9 @@ export class CannotSuspend extends Error {}
 /**
  * PROVISIONAL — removed when the guard decision 0055 brings lands, and not to
  * be extended to anything else. A live enrolment once an erasure has run,
- * while 0052's suppression register is not built: erasure took the person's
- * opt-out with them. Thrown before a run is opened, here and not only in
+ * while nothing reads 0052's suppression register: erasure keeps an
+ * objection there as fingerprints (0062), and 0055's one reader, which would
+ * find it again, is not built. Thrown before a run is opened, here and not only in
  * `kernel-enrol`, so that no other caller goes round it.
  */
 export class ErasedWithoutRegister extends Error {}
@@ -257,7 +258,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       .limit(1);
     if (erased.length > 0) {
       throw new ErasedWithoutRegister(
-        "an erasure has run on this instance, and the suppression register (decision 0052) is not built: a person erased after opting out would be enrolled as someone who never did",
+        "an erasure has run on this instance, and nothing reads the suppression register yet (decisions 0052, 0055): a person erased after opting out would be enrolled as someone who never did",
       );
     }
   }
@@ -502,8 +503,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         // Erasure suspends their enrolments and keeps the rows naming nobody
         // (0053, 0056), so none of them is found here: a later run that finds
         // the person records a new one, with no row in this sequence. What
-        // stops that is 0052's register, and until it exists, the provisional
-        // refusal above.
+        // stops that is 0052's register, once 0055's reader reads it; until
+        // then, the provisional refusal above.
         if (row?.state === "suspended") {
           await skip({ reason: "suspended", person, company, detail: "suspended from this sequence, by the registry: not enrolled in it again (decision 0051)" });
           continue;

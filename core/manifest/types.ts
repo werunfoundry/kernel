@@ -92,6 +92,15 @@ export interface DomainManifest {
   beforeErasure?: string;
 
   /**
+   * A step erasure runs inside its transaction, once the subject's keys are
+   * gathered and before any rule (decision 0062): what this domain writes
+   * that must commit or roll back with the deletion. Named and loaded as
+   * `beforeErasure` is; its export `duringErasure` is a `DuringErasure`
+   * (`core/runtime/erase.ts`). It is handed no secret and no adapter.
+   */
+  duringErasure?: string;
+
+  /**
    * For each experiment type, the metrics it is judged on. What gives an
    * experiment type a surface: an instance can tell, before running one,
    * whether its bound sources can measure it.
@@ -187,6 +196,33 @@ export interface InstanceManifest {
    * is not listed is refused.
    */
   networks?: string[];
+
+  /**
+   * The versions of the secret fingerprints are keyed under, and which one
+   * writes (decisions 0058, 0063). A version's secret is never here: it is
+   * in the variable `KERNEL_FINGERPRINT_<LABEL>`. Boot refuses a manifest
+   * without this section.
+   */
+  fingerprints?: FingerprintVersions;
+}
+
+export interface FingerprintVersions {
+  /** The label new entries are written under. It must be declared below. */
+  writes: string;
+  /**
+   * Every version ever used. A label is never renamed, reused, or removed
+   * while an entry names it (0058).
+   */
+  versions: FingerprintVersion[];
+}
+
+export interface FingerprintVersion {
+  /** Upper-case letters and digits. */
+  label: string;
+  /** HMAC-SHA-256 of a fixed sentence under the secret, as `kernel-fingerprint` printed it. */
+  check: string;
+  /** Why it was added: a compromise, or whatever reason a person records (0058, §2). */
+  reason: string;
 }
 
 /* -------------------------------------------------------------------------- */

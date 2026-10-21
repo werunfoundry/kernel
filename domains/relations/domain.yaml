@@ -62,3 +62,7 @@ erasure:
     do: delete
     ifStillNamed: [email, full_name, title, external_id, record_id]
     keyColumns: { email: email, social_profile_id: external_id }
+# What erasure writes here, inside its transaction (decisions 0052, 0062):
+# the objection of a person who objected, as one fingerprint per key in
+# `suppression`, and nothing else. The core loads it by this name.
+duringErasure: "@werunfoundry/relations/runtime/during-erasure"

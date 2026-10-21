@@ -518,3 +518,64 @@ export const message = relations.table(
     check("message_approved_check", sql`${t.actorType} = 'human' or ${t.approvedBy} is not null`),
   ],
 );
+
+/**
+ * The register of objections that outlive an erasure (decisions 0052, 0058,
+ * 0062): one keyed fingerprint per key of a person who objected, and nothing
+ * else — no name, no company, no kind of key in clear, no date of the
+ * opt-out, nothing from the history rows. It is still personal data:
+ * pseudonymised, not anonymous, because the instance can test it.
+ *
+ * - **One writer.** Only an erasure writes an entry, inside the transaction
+ *   that deletes the keys, through this domain's step (`runtime/
+ *   during-erasure.ts`). The rewrap of 0058, §3 is the one other change the
+ *   schema admits: the triggers in migration `0011` refuse every other
+ *   update, every delete, and a truncate that would destroy an entry.
+ * - **One reader**, 0055's, not built: until it is, nothing reads this
+ *   table but the erasure's plan, which counts the entries a missing version
+ *   no longer protects (0063). The entries written meanwhile are computed
+ *   as that reader will compute them (`core/runtime/fingerprint.ts`).
+ */
+export const suppression = relations.table(
+  "suppression",
+  {
+    /**
+     * Not one of 0052's four fields, and it says nothing about anyone. The
+     * fingerprint cannot be the primary key: the rewrap of 0058, §3 changes
+     * it. Uniqueness stays the fingerprint's, held by the index below.
+     */
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    /** HMAC-SHA-256 of the normalised key under its chain's secrets, as 64 lower-case hexadecimal characters. */
+    fingerprint: text("fingerprint").notNull(),
+
+    /**
+     * The labels of the versions it is keyed under, oldest first: one for an
+     * entry never wrapped (0058, §4). A label is never removed while an
+     * entry names it.
+     */
+    chain: text("chain").array().notNull(),
+
+    /**
+     * The start of the erasure run that wrote it (0052): never earlier than
+     * the opt-out, which was on record before the erasure or recorded by it
+     * at the run's start. No default: the writer says it.
+     */
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull(),
+
+    /** Attribution (doctrine 5): the erasure run. The entry depends on it for nothing else. */
+    runId: uuid("run_id").references(() => run.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    /**
+     * One entry per fingerprint. Protects the erasure's write: a key shared
+     * with someone erased before — a generic address — is already there,
+     * and the second write keeps the first entry. Serves the reader's
+     * lookup by fingerprint (0055), when it exists.
+     */
+    uniqueIndex("suppression_fingerprint_uidx").on(t.fingerprint),
+
+    check("suppression_fingerprint_form", sql`${t.fingerprint} ~ '^[0-9a-f]{64}$'`),
+    check("suppression_chain_form", sql`cardinality(${t.chain}) >= 1 and array_to_string(${t.chain}, ',') ~ '^[A-Z0-9]+(,[A-Z0-9]+)*$'`),
+  ],
+);

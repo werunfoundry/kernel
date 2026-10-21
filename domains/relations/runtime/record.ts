@@ -272,12 +272,13 @@ export async function recordOptOut(db: Database, personId: string, at: Date): Pr
 }
 
 /**
- * What erasing a person does to their opt-out (decision 0049), said wherever
- * an erasure is shown: the opt-out is a column of the row erasure deletes, so
- * a person who asked for both can have one of the two today.
+ * What erasing a person does to their opt-out (decisions 0049, 0052), said
+ * wherever an erasure is shown. The objection survives as fingerprints in
+ * the register, and nothing reads them yet: the one reader is 0055's.
+ * Silence about that would read as protection.
  */
 export const OPT_OUT_AFTER_ERASURE =
-  "the opt-out does not survive: nothing will recognise this person again, and a later run that finds them records a new person who has not opted out. A person who asked not to be contacted as well is held only by what the instance keeps outside the kernel, such as its CRM";
+  "the opt-out survives only as fingerprints in the register (decision 0052), and nothing reads them yet: the one reader is decision 0055's, not built. Until it is, a later run that finds this person records a new person who has not opted out, and live enrolment is refused once an erasure has run. A person who did not object leaves nothing"
 
 /**
  * Whether the person reached us on this channel after `since`: an inbound

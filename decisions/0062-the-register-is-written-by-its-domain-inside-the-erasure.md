@@ -4,6 +4,10 @@
 > the erasure needs the version that writes and no other, so a lost old
 > secret does not stop it.
 
+> Built by #117: all of it. `duringErasure` runs inside the transaction,
+> relations' step writes the entries, and one function in the core
+> fingerprints them, with the encoding above.
+
 Completes [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),
 whose one writer is "an erasure … in the transaction that deletes the keys"
 and which says nothing of how a domain's table is written there; and

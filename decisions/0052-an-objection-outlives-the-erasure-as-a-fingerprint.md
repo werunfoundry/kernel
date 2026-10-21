@@ -3,6 +3,11 @@
 > Superseded in part by [0055](0055-one-passage-reaches-a-person.md): its count
 > of the reads — five, in four files, with three answers for a person not on
 > record; the read in `queue` belongs to the sending run, not to drafting.
+>
+> Superseded in part by [0058](0058-the-registers-secrets-are-named-and-kept.md):
+> an entry can be wrapped under a new secret without the key in clear; the
+> rewrap on a compromise is the one other writer and the one edit the
+> register admits, and an entry's version is the chain it is keyed under.
 
 Completes [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md),
 which named the hole this decision closes and set the threshold it is due

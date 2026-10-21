@@ -352,6 +352,30 @@ describe("withdraw (decision 0051)", () => {
     }
   });
 
+  it("says which enrolment it stopped: the key the lead it read back carries (0060)", async () => {
+    state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: 1, payload: { engine_idempotency_key: "k1" } });
+    const r = await adapter().withdraw(request(), ctx(false));
+    if (!r.ok) return assert.fail(JSON.stringify(r));
+    assert.equal(r.value.idempotencyKey, "k1");
+  });
+
+  it("in dry run, writes nothing and still says which enrolment it would stop", async () => {
+    state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: 1, payload: { engine_idempotency_key: "k1" } });
+    const r = await adapter().withdraw(request(), ctx(true));
+    if (!r.ok) return assert.fail(JSON.stringify(r));
+    assert.deepEqual(writes(), []);
+    assert.equal(r.value.idempotencyKey, "k1");
+  });
+
+  it("stops a lead enrolled outside this engine by address, and says it carries no key", async () => {
+    enrolled();
+    const r = await adapter().withdraw(request(), ctx(false));
+    if (!r.ok) return assert.fail(JSON.stringify(r));
+    assert.equal(r.value.found, true);
+    assert.equal(state.leads[0]?.subsequence_id, "s1", "the lead was not parked");
+    assert.equal(r.value.idempotencyKey, undefined, "a key nobody wrote was reported");
+  });
+
   it("is an error, not a success, when Instantly answers 200 and the lead does not read back as parked", async () => {
     enrolled();
     state.moveDoesNothing = true;
@@ -523,6 +547,21 @@ describe("status", () => {
     if (!r.ok) return assert.fail(JSON.stringify(r));
     assert.notEqual(r.value.asOf, "2020-01-01T00:00:00.000Z");
     assert.ok(Date.parse(r.value.asOf) >= before, `asOf ${r.value.asOf} is older than the read`);
+  });
+
+  it("says which enrolment it read: the key the lead carries, the one the engine enrolled it under (0060)", async () => {
+    await adapter().enrol(enrolment(), ctx(false));
+    const r = await adapter().status({ person: ada(), sequenceKey: "welcome" }, ctx(true));
+    if (!r.ok) return assert.fail(JSON.stringify(r));
+    assert.equal(r.value.idempotencyKey, "k1");
+  });
+
+  it("reports no key for a lead the engine did not enrol, though it finds it by address", async () => {
+    state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: 1 });
+    const r = await adapter().status({ person: ada(), sequenceKey: "welcome" }, ctx(true));
+    if (!r.ok) return assert.fail(JSON.stringify(r));
+    assert.equal(r.value.state, "active");
+    assert.equal(r.value.idempotencyKey, undefined, "a key nobody wrote was reported");
   });
 
   it("reads no enrolment as unknown, not as an error", async () => {

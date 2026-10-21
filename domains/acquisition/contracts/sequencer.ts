@@ -122,6 +122,15 @@ export interface EnrolmentStatus {
   /** For `awaiting_precondition`: which of the declared preconditions are not met yet. */
   pending?: string[];
   /**
+   * The idempotency key the provider's record carries for this enrolment,
+   * as the read found it — what tells the kernel the record is the
+   * enrolment it made, not another one under the same address (0060).
+   * Absent when nothing was found, or when the record carries no key: then
+   * the kernel cannot tell its enrolment from someone else's, and does not
+   * take it as its own. Never the key of the request, which carries none.
+   */
+  idempotencyKey?: string;
+  /**
    * When the read this answer rests on was made (0051: every answer carries
    * the time of its read). Never the provider's own modification time, which
    * every other change to the record moves too.
@@ -197,6 +206,13 @@ export interface Withdrawal {
    * nothing was found, and in a dry run, which writes nothing to read back.
    */
   readBack?: Record<string, unknown>;
+  /**
+   * The idempotency key of the enrolment the provider's record carries, as
+   * the read found it (0060). Absent when nothing was found, or when the
+   * record carries no key. The person is stopped by address either way; the
+   * key is what lets the kernel say the stopped record is its enrolment.
+   */
+  idempotencyKey?: string;
   /** When the read-back was made. */
   asOf: string;
 }

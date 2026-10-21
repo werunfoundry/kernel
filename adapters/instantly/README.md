@@ -72,6 +72,21 @@ live workspace (below).
 Before this, `suppress` read before it wrote and never after, and reported
 the key applied on the write's status code.
 
+`enrol` reads back what it uploaded (0051):
+
+1. It looks the person up in the campaign (`POST /api/v2/leads/list`): a
+   lead already there is the same enrolment if it carries the caller's key,
+   and a conflict otherwise.
+2. Otherwise it uploads the lead (`POST /api/v2/leads/add`).
+3. It looks the person up again, and answers only with the lead that read
+   shows, decided by the key as in step 1. An upload answered
+   `leads_uploaded: 1` whose lead does not read back is an error.
+
+Before this, `enrol` answered `active` on `leads_uploaded: 1` alone.
+
+Every answer carries the time of the read it rests on. `status` used to give
+a lead's `timestamp_updated`, which every change to the record moves (0051).
+
 ## Pulling what was sent
 
 `GET /api/v2/emails?campaign_id=…&email_type=sent&min_timestamp_created=<ISO, ms>`
@@ -140,6 +155,15 @@ them.
   - whether a domain's entry refuses the addresses under it, as the help
     centre says. The adapter counts an address under a listed domain as
     already blocked.
+- `enrol`'s read-back. The live test of 0051 read leads by id
+  (`GET /api/v2/leads/{id}`); this README records nothing of:
+  - whether a lead uploaded with `POST /api/v2/leads/add` is returned by
+    `POST /api/v2/leads/list` as soon as the upload answers. If it lags, the
+    adapter reports an error for an upload that landed, and the next run
+    finds the lead and confirms it by its key;
+  - whether `leads/list` returns `payload` with the custom variables the
+    upload set. The read-back decides by the key kept there; without it, a
+    landed upload reads back as a conflict.
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

@@ -49,7 +49,7 @@ export const draftState = acquisition.enum("draft_state", [
  */
 export const enrolmentState = acquisition.enum("enrolment_state", [
   "pending", // written, the provider not yet heard back from: reconciled on the next run
-  "enrolled", // the provider confirmed it
+  "enrolled", // the adapter answered that the person is in the sequence; 0051 requires it to have read that back before saying so
   "refused", // the provider refused it — invalid, or held under another key
   /**
    * The kernel stopped this person in this sequence (decision 0051). Reached

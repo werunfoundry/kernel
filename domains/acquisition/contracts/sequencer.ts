@@ -111,7 +111,11 @@ export interface EnrolmentStatus {
   stepIndex?: number;
   /** For `awaiting_precondition`: which of the declared preconditions are not met yet. */
   pending?: string[];
-  /** When the provider last changed this. */
+  /**
+   * When the read this answer rests on was made (0051: every answer carries
+   * the time of its read). Never the provider's own modification time, which
+   * every other change to the record moves too.
+   */
   asOf: string;
 }
 
@@ -193,6 +197,8 @@ export interface Suppression {
   applied: IdentityKey[];
   /** Keys of the identity this provider has no way to act on. */
   notApplicable: IdentityKey[];
+  /** When the last read this answer rests on was made — the read-back, or the read before it when nothing was written (0051). */
+  asOf: string;
 }
 
 /* -------------------------------------------------------------------------- */

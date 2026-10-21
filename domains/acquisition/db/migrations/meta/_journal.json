@@ -127,6 +127,13 @@
       "when": 1792526787095,
       "tag": "0017_enrolment_suspended",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792567618811,
+      "tag": "0018_enrolment_is_history",
+      "breakpoints": true
     }
   ]
 }

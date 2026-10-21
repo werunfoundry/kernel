@@ -248,7 +248,8 @@ export interface ValidationResult {
  *   networked kind is held as `<network>:<value>`.
  * - `anonymise` empties `columns`, removes the `strip` paths from each
  *   element of a JSON array, writes into `random` a value derived from
- *   nothing, and into `text` a fixed sentence.
+ *   nothing, and into `text` a fixed sentence — only where the column holds
+ *   a value (0053); into a jsonb column, a JSON document.
  */
 export type ErasureRule =
   | { table: string; column: string; do: "delete"; ifStillNamed?: string[]; keyColumns?: Record<string, string> }

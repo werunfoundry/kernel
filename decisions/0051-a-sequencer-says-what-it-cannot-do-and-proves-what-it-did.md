@@ -1,5 +1,9 @@
 # 0051 — A sequencer says what it cannot do, and proves what it did
 
+> Completed by [0054](0054-a-declared-capacity-has-a-method-behind-it.md): a
+> verb is declared served only where the contract has a method for it, and
+> the declaration is checked against the adapter.
+
 Completes:
 
 - [0014](0014-one-sequencer-contract-every-channel.md): the contract gains

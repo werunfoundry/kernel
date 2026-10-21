@@ -1,0 +1,1591 @@
+{
+  "id": "05af337a-0465-4727-809f-3f81b2a49ee7",
+  "prevId": "4923d1ce-ddab-4cf8-af7f-5c16e18750ae",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "acquisition.company_state": {
+      "name": "company_state",
+      "schema": "acquisition",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "lifecycle_stage",
+          "typeSchema": "acquisition",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "company_state_declared_uidx": {
+          "name": "company_state_declared_uidx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stage",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "company_state_company_at_idx": {
+          "name": "company_state_company_at_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"at\" desc",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "company_state_company_id_company_id_fk": {
+          "name": "company_state_company_id_company_id_fk",
+          "tableFrom": "company_state",
+          "tableTo": "company",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "company_state_run_id_run_id_fk": {
+          "name": "company_state_run_id_run_id_fk",
+          "tableFrom": "company_state",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "company_state_human_check": {
+          "name": "company_state_human_check",
+          "value": "\"acquisition\".\"company_state\".\"actor_type\" = 'human'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "acquisition.draft": {
+      "name": "draft",
+      "schema": "acquisition",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "experiment_id": {
+          "name": "experiment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "template_id": {
+          "name": "template_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "step": {
+          "name": "step",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "draft_state",
+          "typeSchema": "acquisition",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'drafting'"
+        },
+        "rendered_subject": {
+          "name": "rendered_subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rendered_body": {
+          "name": "rendered_body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sender": {
+          "name": "sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "drop_reason": {
+          "name": "drop_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "edited_before_approval": {
+          "name": "edited_before_approval",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'agent'"
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "draft_experiment_person_step_uidx": {
+          "name": "draft_experiment_person_step_uidx",
+          "columns": [
+            {
+              "expression": "experiment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "step",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "draft_state_created_at_idx": {
+          "name": "draft_state_created_at_idx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "draft_experiment_id_experiment_id_fk": {
+          "name": "draft_experiment_id_experiment_id_fk",
+          "tableFrom": "draft",
+          "tableTo": "experiment",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "experiment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "draft_person_id_person_id_fk": {
+          "name": "draft_person_id_person_id_fk",
+          "tableFrom": "draft",
+          "tableTo": "person",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "draft_template_id_template_id_fk": {
+          "name": "draft_template_id_template_id_fk",
+          "tableFrom": "draft",
+          "tableTo": "template",
+          "schemaTo": "acquisition",
+          "columnsFrom": [
+            "template_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "draft_run_id_run_id_fk": {
+          "name": "draft_run_id_run_id_fk",
+          "tableFrom": "draft",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "draft_decided": {
+          "name": "draft_decided",
+          "value": "\"acquisition\".\"draft\".\"state\" in ('drafting', 'awaiting_review') or (\"acquisition\".\"draft\".\"decided_by\" is not null and \"acquisition\".\"draft\".\"decided_at\" is not null)"
+        },
+        "draft_dropped_has_reason": {
+          "name": "draft_dropped_has_reason",
+          "value": "\"acquisition\".\"draft\".\"state\" <> 'dropped' or \"acquisition\".\"draft\".\"drop_reason\" is not null"
+        },
+        "draft_failed_has_reason": {
+          "name": "draft_failed_has_reason",
+          "value": "\"acquisition\".\"draft\".\"state\" <> 'failed' or \"acquisition\".\"draft\".\"failure_reason\" is not null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "acquisition.enrolment": {
+      "name": "enrolment",
+      "schema": "acquisition",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sequence_key": {
+          "name": "sequence_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "enrolment_state",
+          "typeSchema": "acquisition",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refusal": {
+          "name": "refusal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "enrolled_at": {
+          "name": "enrolled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suspension_asked_at": {
+          "name": "suspension_asked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suspension_run_id": {
+          "name": "suspension_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suspension_read_back": {
+          "name": "suspension_read_back",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suspension_method": {
+          "name": "suspension_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suspension_costs": {
+          "name": "suspension_costs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "enrolment_person_sequence_uidx": {
+          "name": "enrolment_person_sequence_uidx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "enrolment_company_idx": {
+          "name": "enrolment_company_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "enrolment_pending_idx": {
+          "name": "enrolment_pending_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"acquisition\".\"enrolment\".\"state\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "enrolment_person_id_person_id_fk": {
+          "name": "enrolment_person_id_person_id_fk",
+          "tableFrom": "enrolment",
+          "tableTo": "person",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "enrolment_company_id_company_id_fk": {
+          "name": "enrolment_company_id_company_id_fk",
+          "tableFrom": "enrolment",
+          "tableTo": "company",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "enrolment_suspension_run_id_run_id_fk": {
+          "name": "enrolment_suspension_run_id_run_id_fk",
+          "tableFrom": "enrolment",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "suspension_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "enrolment_run_id_run_id_fk": {
+          "name": "enrolment_run_id_run_id_fk",
+          "tableFrom": "enrolment",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "enrolment_suspension_recorded": {
+          "name": "enrolment_suspension_recorded",
+          "value": "(\"acquisition\".\"enrolment\".\"state\"::text = 'suspended' and \"acquisition\".\"enrolment\".\"suspension_asked_at\" is not null and \"acquisition\".\"enrolment\".\"suspension_read_back\" is not null and \"acquisition\".\"enrolment\".\"suspension_method\" is not null and \"acquisition\".\"enrolment\".\"suspension_costs\" is not null)\n       or (\"acquisition\".\"enrolment\".\"state\"::text <> 'suspended' and \"acquisition\".\"enrolment\".\"suspension_asked_at\" is null and \"acquisition\".\"enrolment\".\"suspension_run_id\" is null and \"acquisition\".\"enrolment\".\"suspension_read_back\" is null and \"acquisition\".\"enrolment\".\"suspension_method\" is null and \"acquisition\".\"enrolment\".\"suspension_costs\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "acquisition.enrolment_skip": {
+      "name": "enrolment_skip",
+      "schema": "acquisition",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence_key": {
+          "name": "sequence_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "skip_reason",
+          "typeSchema": "acquisition",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person": {
+          "name": "person",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "company": {
+          "name": "company",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "enrolment_skip_run_subject_uidx": {
+          "name": "enrolment_skip_run_subject_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "enrolment_skip_run_reason_idx": {
+          "name": "enrolment_skip_run_reason_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reason",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "enrolment_skip_run_id_run_id_fk": {
+          "name": "enrolment_skip_run_id_run_id_fk",
+          "tableFrom": "enrolment_skip",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "acquisition.inbound_cursor": {
+      "name": "inbound_cursor",
+      "schema": "acquisition",
+      "columns": {
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "inbound_cursor_run_id_run_id_fk": {
+          "name": "inbound_cursor_run_id_run_id_fk",
+          "tableFrom": "inbound_cursor",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "acquisition.person_state": {
+      "name": "person_state",
+      "schema": "acquisition",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "lifecycle_stage",
+          "typeSchema": "acquisition",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "person_state_declared_uidx": {
+          "name": "person_state_declared_uidx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stage",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "person_state_person_at_idx": {
+          "name": "person_state_person_at_idx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"at\" desc",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "person_state_person_id_person_id_fk": {
+          "name": "person_state_person_id_person_id_fk",
+          "tableFrom": "person_state",
+          "tableTo": "person",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "person_state_run_id_run_id_fk": {
+          "name": "person_state_run_id_run_id_fk",
+          "tableFrom": "person_state",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "person_state_human_check": {
+          "name": "person_state_human_check",
+          "value": "\"acquisition\".\"person_state\".\"actor_type\" = 'human'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "acquisition.protection_acknowledgement": {
+      "name": "protection_acknowledgement",
+      "schema": "acquisition",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "actor_type",
+          "typeSchema": "core",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "acknowledged_at": {
+          "name": "acknowledged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "withdrawn_at": {
+          "name": "withdrawn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawn_by": {
+          "name": "withdrawn_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawn_run_id": {
+          "name": "withdrawn_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "protection_acknowledgement_standing_uidx": {
+          "name": "protection_acknowledgement_standing_uidx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"acquisition\".\"protection_acknowledgement\".\"withdrawn_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "protection_acknowledgement_run_id_run_id_fk": {
+          "name": "protection_acknowledgement_run_id_run_id_fk",
+          "tableFrom": "protection_acknowledgement",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "protection_acknowledgement_withdrawn_run_id_run_id_fk": {
+          "name": "protection_acknowledgement_withdrawn_run_id_run_id_fk",
+          "tableFrom": "protection_acknowledgement",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "withdrawn_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "protection_acknowledgement_human_check": {
+          "name": "protection_acknowledgement_human_check",
+          "value": "\"acquisition\".\"protection_acknowledgement\".\"actor_type\" = 'human'"
+        },
+        "protection_acknowledgement_withdrawal_check": {
+          "name": "protection_acknowledgement_withdrawal_check",
+          "value": "(\"acquisition\".\"protection_acknowledgement\".\"withdrawn_at\" is null) = (\"acquisition\".\"protection_acknowledgement\".\"withdrawn_by\" is null) and (\"acquisition\".\"protection_acknowledgement\".\"withdrawn_at\" is null) = (\"acquisition\".\"protection_acknowledgement\".\"withdrawn_run_id\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "acquisition.sourcing_result": {
+      "name": "sourcing_result",
+      "schema": "acquisition",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pass": {
+          "name": "pass",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "sourcing_outcome",
+          "typeSchema": "acquisition",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person": {
+          "name": "person",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "company": {
+          "name": "company",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "said": {
+          "name": "said",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cost": {
+          "name": "cost",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "sourcing_result_run_subject_uidx": {
+          "name": "sourcing_result_run_subject_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sourcing_result_run_outcome_idx": {
+          "name": "sourcing_result_run_outcome_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "outcome",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sourcing_result_run_id_run_id_fk": {
+          "name": "sourcing_result_run_id_run_id_fk",
+          "tableFrom": "sourcing_result",
+          "tableTo": "run",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sourcing_result_person_id_person_id_fk": {
+          "name": "sourcing_result_person_id_person_id_fk",
+          "tableFrom": "sourcing_result",
+          "tableTo": "person",
+          "schemaTo": "relations",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "sourcing_result_pass_check": {
+          "name": "sourcing_result_pass_check",
+          "value": "\"acquisition\".\"sourcing_result\".\"pass\" in ('company', 'person')"
+        },
+        "sourcing_result_company_pass_check": {
+          "name": "sourcing_result_company_pass_check",
+          "value": "\"acquisition\".\"sourcing_result\".\"pass\" = 'person' or \"acquisition\".\"sourcing_result\".\"person\" is null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "acquisition.template": {
+      "name": "template",
+      "schema": "acquisition",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "experiment_id": {
+          "name": "experiment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "variant": {
+          "name": "variant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "step": {
+          "name": "step",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "angle": {
+          "name": "angle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "persona": {
+          "name": "persona",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "truths_cited": {
+          "name": "truths_cited",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delay_days": {
+          "name": "delay_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "template_experiment_variant_step_uidx": {
+          "name": "template_experiment_variant_step_uidx",
+          "columns": [
+            {
+              "expression": "experiment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "step",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "template_experiment_id_experiment_id_fk": {
+          "name": "template_experiment_id_experiment_id_fk",
+          "tableFrom": "template",
+          "tableTo": "experiment",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "experiment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "acquisition.draft_state": {
+      "name": "draft_state",
+      "schema": "acquisition",
+      "values": [
+        "drafting",
+        "awaiting_review",
+        "approved",
+        "dropped",
+        "queued",
+        "sent",
+        "failed"
+      ]
+    },
+    "acquisition.enrolment_state": {
+      "name": "enrolment_state",
+      "schema": "acquisition",
+      "values": [
+        "pending",
+        "enrolled",
+        "refused",
+        "suspended"
+      ]
+    },
+    "acquisition.lifecycle_stage": {
+      "name": "lifecycle_stage",
+      "schema": "acquisition",
+      "values": [
+        "targeted",
+        "engaged",
+        "opportunity"
+      ]
+    },
+    "acquisition.skip_reason": {
+      "name": "skip_reason",
+      "schema": "acquisition",
+      "values": [
+        "protected",
+        "capacity",
+        "duplicate",
+        "unreachable",
+        "opted_out",
+        "unreadable_key",
+        "suspended"
+      ]
+    },
+    "acquisition.sourcing_outcome": {
+      "name": "sourcing_outcome",
+      "schema": "acquisition",
+      "values": [
+        "kept",
+        "protected",
+        "unreadable_key",
+        "off_target",
+        "known_to_crm",
+        "opted_out",
+        "duplicate",
+        "incomplete",
+        "unreachable",
+        "not_reached",
+        "simulated"
+      ]
+    }
+  },
+  "schemas": {
+    "acquisition": "acquisition"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {
+    "acquisition.company_state_current": {
+      "columns": {
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "lifecycle_stage",
+          "typeSchema": "acquisition",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select distinct on (company_id) company_id, stage, at, reason, actor_id from acquisition.company_state order by company_id, at desc, created_at desc",
+      "name": "company_state_current",
+      "schema": "acquisition",
+      "isExisting": false,
+      "materialized": false
+    },
+    "acquisition.person_state_current": {
+      "columns": {
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "lifecycle_stage",
+          "typeSchema": "acquisition",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select distinct on (person_id) person_id, stage, at, reason, actor_id from acquisition.person_state order by person_id, at desc, created_at desc",
+      "name": "person_state_current",
+      "schema": "acquisition",
+      "isExisting": false,
+      "materialized": false
+    }
+  },
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

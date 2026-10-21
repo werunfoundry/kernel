@@ -6,9 +6,11 @@
  * A person or a company is recorded from an identity (decision 0013) by the
  * keys this schema has columns for, and nothing is merged:
  *
- * - **A person** is found by its immutable key first — a profile id on a
- *   network, kept in `external_id` as `<network>:<id>` — then by address,
- *   compared without case.
+ * - **A person** is found by every key of the identity (decision 0013: an
+ *   identity is a set of keys) — each profile id on a network, kept in
+ *   `external_id` as `<network>:<id>`, and each address, compared without
+ *   case. Not the first of each: a person who opted out under the second
+ *   address the source attests is that person.
  * - **A company** is found by its id on a network the same way, then by
  *   domain, compared without case.
  *
@@ -73,14 +75,34 @@ function settle(
   return { id: row.id };
 }
 
-/** Reads only: the recorded person for an identity, if there is one. */
+/**
+ * Reads only: the recorded person for an identity, if there is one — found
+ * by any of its keys, every one of them looked up. Two recorded people
+ * reached by the keys of one identity are two subjects (0013), and the
+ * answer is `conflict`; so is a recorded person whose profile id on a
+ * network differs from the identity's on that network.
+ */
 export async function findPerson(db: Database, identity: Identity): Promise<Found> {
   const keys = personKeys(identity);
   if ("refused" in keys) return { conflict: keys.refused };
-  const cols = { id: person.id, externalId: person.externalId };
-  const [byImmutable] = keys.externalId ? await db.select(cols).from(person).where(eq(person.externalId, keys.externalId)) : [];
-  const [byMutable] = keys.email ? await db.select(cols).from(person).where(sql`lower(${person.email}) = ${keys.email}`) : [];
-  return settle(byImmutable, byMutable, keys.externalId, "person");
+  const emails = [...new Set(identity.keys.filter((k) => k.kind === "email" && k.value.trim() !== "").map((k) => k.value.trim().toLowerCase()))];
+  const ids = [
+    ...new Set(identity.keys.filter((k) => k.kind === "social_profile_id" && k.network && k.value.trim() !== "").map((k) => `${k.network}:${k.value.trim()}`)),
+  ];
+  const reached = [
+    ...(ids.length ? [sql`${person.externalId} in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`] : []),
+    ...(emails.length ? [sql`lower(${person.email}) in (${sql.join(emails.map((e) => sql`${e}`), sql`, `)})`] : []),
+  ];
+  const rows = await db.select({ id: person.id, externalId: person.externalId }).from(person).where(sql.join(reached, sql` or `));
+  if (rows.length === 0) return { none: true };
+  if (rows.length > 1) return { conflict: "the person's keys name two recorded people" };
+  const row = rows[0]!;
+  // An immutable key of the same network that differs: another subject, whatever else is shared (0013).
+  const network = row.externalId?.split(":")[0];
+  if (row.externalId && ids.some((i) => i.split(":")[0] === network) && !ids.includes(row.externalId)) {
+    return { conflict: "a recorded person shares a key with this one and has another immutable id" };
+  }
+  return { id: row.id };
 }
 
 export async function findCompany(db: Database, identity: Identity): Promise<Found> {

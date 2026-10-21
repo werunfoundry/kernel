@@ -1,5 +1,8 @@
 # 0053 — An enrolment is history once its person is erased
 
+> Completed by [0056](0056-erasure-stops-the-person-before-it-forgets-them.md):
+> the anonymised row follows a suspension, or a stop a person attested.
+
 Completes [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),
 which left this open, and [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md),
 whose `text` it narrows. Reverses the answer `acquisition` gave

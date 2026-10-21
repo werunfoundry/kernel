@@ -95,6 +95,10 @@ this system asks.
   with a clearance issued for that person, that channel and that run. *Not
   built yet:* two places reach a person today, the enrolment and the sending
   path's hand-over, and no check refuses a third.
+- **A decision's cross-references are checked** (decision 0059). A decision
+  is cited by its section and its sentence, never by line; one that
+  completes, supersedes or reverses another finds the pointer back under
+  that one's title.
 - **Every machine-read file is parsed by the checks.** A manifest only a human
   has read is not known to be valid. A file that the build parses and the
   checks do not is a gap that is discovered in CI at best.

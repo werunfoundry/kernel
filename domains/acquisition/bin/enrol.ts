@@ -39,7 +39,7 @@ import { boot } from "@werunfoundry/core/runtime/boot";
 import { connect } from "@werunfoundry/core/runtime/connect";
 
 import { readDeclaration, type Sequencer } from "../contracts/sequencer.js";
-import { CannotSuspend, CONTRACTS, enrol } from "../runtime/enrol.js";
+import { CannotSuspend, CONTRACTS, enrol, ErasedWithoutRegister } from "../runtime/enrol.js";
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(`--${name}`);
@@ -99,7 +99,9 @@ async function main(): Promise<number> {
     // That window opens with the first erasure, and the register would only
     // ever hold people the kernel erased, so a live run is refused once one
     // has run here. It holds only as long as those runs do: an erasure run
-    // deleted by hand reopens it. Read by `run_process_started_at_idx`.
+    // deleted by hand reopens it. Read by `run_process_started_at_idx`. The
+    // runtime refuses the same (`ErasedWithoutRegister`), for every caller;
+    // this says it before anything else is read, as 0051's refusal does.
     if (flag("live")) {
       const erased = await connection.db
         .select({ id: run.id })
@@ -132,7 +134,7 @@ async function main(): Promise<number> {
       },
       );
     } catch (error) {
-      if (error instanceof CannotSuspend) {
+      if (error instanceof CannotSuspend || error instanceof ErasedWithoutRegister) {
         console.log(`enrol: refused — ${error.message}. Nobody was enrolled and no provider was called.`);
         return 1;
       }

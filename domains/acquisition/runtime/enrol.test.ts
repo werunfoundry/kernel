@@ -32,7 +32,7 @@ import type { CapacityLimit, Sequencer, SequencerDeclaration } from "../contract
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
 import type { EnrolRequest } from "./enrol.js";
 import { acknowledgeUncovered, withdrawAcknowledgement } from "./acknowledge.js";
-import { CannotSuspend, enrol } from "./enrol.js";
+import { CannotSuspend, enrol, ErasedWithoutRegister } from "./enrol.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_enrol_${process.pid}`;
@@ -893,6 +893,42 @@ describe("a sequencer that cannot suspend (0051)", { skip: base ? false : "TEST_
     const r = await run();
     assert.equal(r.status, "succeeded", r.stoppedBy);
     assert.deepEqual(held(), ["ada@open.example.com", "bo@open.example.com"]);
+  });
+});
+
+// PROVISIONAL, as the guard it tests: removed with it when 0055's lands.
+describe("once an erasure has run, without 0052's register", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const runs = async () => (await client.query("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).rows[0].n as number;
+  /** A live erasure run on record, as `kernel-erase` leaves one; removed after, so no other test sees it. */
+  async function withAnErasure(body: () => Promise<void>) {
+    const [{ id }] = (await client.query("insert into core.run (process_key, trigger, actor_type, actor_id, dry_run) values ('relations.person.erase', 'cli', 'human', 'an operator', false) returning id")).rows;
+    try {
+      await body();
+    } finally {
+      await client.query("delete from core.run where id = $1", [id]);
+    }
+  }
+
+  it("refuses a live enrolment from any caller, before a run is opened or a provider called", async () => {
+    await withAnErasure(async () => {
+      const before = await runs();
+      await assert.rejects(run(), (e: Error) => e instanceof ErasedWithoutRegister && /an erasure has run on this instance/.test(e.message));
+      assert.equal(await runs(), before, "a run was opened for an enrolment that could not happen");
+      assert.deepEqual([world.enrolCalls, world.lookedUp.length, held().length], [0, 0, 0]);
+    });
+  });
+
+  it("still lets a dry run read, and a dry erasure opens no window", async () => {
+    await withAnErasure(async () => {
+      const r = await run({ dryRun: true });
+      assert.equal(r.status, "succeeded", r.stoppedBy);
+    });
+    await client.query("insert into core.run (process_key, trigger, actor_type, actor_id, dry_run) values ('relations.person.erase', 'cli', 'human', 'an operator', true)");
+    try {
+      assert.equal((await run()).status, "succeeded");
+    } finally {
+      await client.query("delete from core.run where process_key = 'relations.person.erase'");
+    }
   });
 });
 

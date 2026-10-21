@@ -163,6 +163,15 @@ class Stop extends Error {}
 export class CannotSuspend extends Error {}
 
 /**
+ * PROVISIONAL — removed when the guard decision 0055 brings lands, and not to
+ * be extended to anything else. A live enrolment once an erasure has run,
+ * while 0052's suppression register is not built: erasure took the person's
+ * opt-out with them. Thrown before a run is opened, here and not only in
+ * `kernel-enrol`, so that no other caller goes round it.
+ */
+export class ErasedWithoutRegister extends Error {}
+
+/**
  * A domain as protection compares it: the host it names (decision 0028). The
  * target list's two routes come from different sources, and one spelling a
  * company as `http://Example.com` must not let it past the other's `example.com`.
@@ -228,6 +237,21 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
   // shows what the live run would do, and the live run would do nothing.
   const declared = readDeclaration(sequencer);
   if (!declared.suspends) throw new CannotSuspend(declared.refusal);
+  // PROVISIONAL (above). The register would only ever hold people the kernel
+  // erased, so the window opens with the first live erasure run; one deleted
+  // by hand reopens it. Read by `run_process_started_at_idx`.
+  if (!request.dryRun) {
+    const erased = await deps.db
+      .select({ id: runTable.id })
+      .from(runTable)
+      .where(and(eq(runTable.processKey, "relations.person.erase"), eq(runTable.dryRun, false)))
+      .limit(1);
+    if (erased.length > 0) {
+      throw new ErasedWithoutRegister(
+        "an erasure has run on this instance, and the suppression register (decision 0052) is not built: a person erased after opting out would be enrolled as someone who never did",
+      );
+    }
+  }
   if (!(request.protectedMaxAgeMinutes > 0)) throw new Error("protectedMaxAgeMinutes must be a positive number of minutes");
 
   // A sourcing run is read before this run is opened: a run that names one

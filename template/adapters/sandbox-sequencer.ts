@@ -13,7 +13,19 @@ import { loadState, saveState, stateFile } from "./sandbox-store.ts";
 const emailOf = (p: Identity) => p.keys.find((k) => k.kind === "email")?.value.trim().toLowerCase();
 const invalid = (message: string) => ({ ok: false as const, error: { code: "invalid" as const, message, retryable: false } });
 
-const factory: AdapterFactory<Sequencer> = ({ options }) => {
+/**
+ * Where the sandbox reads and writes its state. A test hands the factory
+ * another store, to make a write that does not hold: nothing else can show
+ * that a read-back refuses what it does not find.
+ */
+export interface SandboxStore {
+  load: typeof loadState;
+  save: typeof saveState;
+}
+
+export const sequencerOn = (store: SandboxStore = { load: loadState, save: saveState }): AdapterFactory<Sequencer> => ({ options }) => {
+  const loadState = store.load;
+  const saveState = store.save;
   const path = stateFile(options.stateFile);
   const dailyLimit = typeof options.dailyLimit === "number" ? options.dailyLimit : 50;
 
@@ -91,17 +103,24 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
       const applied = target.keys.filter((k) => k.kind === "email" || k.kind === "domain");
       const notApplicable = target.keys.filter((k) => k.kind !== "email" && k.kind !== "domain");
       if (applied.length === 0) return invalid("none of this identity's keys is an email or a domain");
+      const listed = (k: (typeof applied)[number]) => k.value.trim().toLowerCase();
       const state = loadState(path);
       if (!state.ok) return state;
-      if (!ctx.dryRun) {
-        for (const k of applied) {
-          const v = k.value.trim().toLowerCase();
-          if (!state.value.suppressed.includes(v)) state.value.suppressed.push(v);
-        }
-        const saved = saveState(path, state.value);
-        if (!saved.ok) return saved;
+      // A dry run writes nothing: its answer rests on the read before (0051).
+      if (ctx.dryRun) return { ok: true, simulated: true, value: { applied, notApplicable, asOf: new Date().toISOString() } };
+      for (const k of applied) if (!state.value.suppressed.includes(listed(k))) state.value.suppressed.push(listed(k));
+      const saved = saveState(path, state.value);
+      if (!saved.ok) return saved;
+      // Read back, as 0051 asks: every key reported applied must be listed in
+      // the state file, loaded again, and `asOf` is when that read was made.
+      const after = loadState(path);
+      const asOf = new Date().toISOString();
+      if (!after.ok) return after;
+      const missing = applied.filter((k) => !after.value.suppressed.includes(listed(k)));
+      if (missing.length > 0) {
+        return { ok: false, error: { code: "unknown", message: `the state file, read back, lists ${applied.length - missing.length} of the ${applied.length} keys written`, retryable: false } };
       }
-      return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { applied, notApplicable, asOf: new Date().toISOString() } };
+      return { ok: true, value: { applied, notApplicable, asOf } };
     },
 
     async status({ person, sequenceKey }) {
@@ -132,4 +151,4 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
   };
 };
 
-export default factory;
+export default sequencerOn();

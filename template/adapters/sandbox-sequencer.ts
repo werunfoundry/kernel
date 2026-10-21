@@ -6,6 +6,7 @@
 
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
+import { hostOf } from "@werunfoundry/core/identity";
 import type { EnrolmentStatus, Sequencer, Withdrawal } from "@werunfoundry/acquisition/contracts/sequencer";
 
 import { loadState, saveState, stateFile } from "./sandbox-store.ts";
@@ -103,7 +104,10 @@ export const sequencerOn = (store: SandboxStore = { load: loadState, save: saveS
       const applied = target.keys.filter((k) => k.kind === "email" || k.kind === "domain");
       const notApplicable = target.keys.filter((k) => k.kind !== "email" && k.kind !== "domain");
       if (applied.length === 0) return invalid("none of this identity's keys is an email or a domain");
-      const listed = (k: (typeof applied)[number]) => k.value.trim().toLowerCase();
+      // As the sandbox compares them at enrolment: an address in lower case,
+      // a domain as its host (0028), so that `https://WWW.Example.org/about`
+      // stops `ada@example.org` rather than being listed as written.
+      const listed = (k: (typeof applied)[number]) => (k.kind === "domain" ? hostOf(k.value) : k.value.trim().toLowerCase());
       const state = loadState(path);
       if (!state.ok) return state;
       // A dry run writes nothing: its answer rests on the read before (0051).

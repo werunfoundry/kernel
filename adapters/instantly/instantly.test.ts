@@ -40,6 +40,8 @@ const state = {
   /** When set, a move answers 200 and moves nothing — what a status write did live (README). */
   moveDoesNothing: false,
   blocklist: [] as string[],
+  /** When set, a blocklist write answers 200 and stores nothing — a success that did nothing. */
+  blockDoesNothing: false,
   accounts: { "sender@example.com": { daily_limit: 40, status: 1 } } as Record<string, { daily_limit: number; status: number }>,
   sentToday: 15,
   /** When set, every response is this status. */
@@ -129,7 +131,7 @@ before(async () => {
       return reply(200, { items: state.blocklist.filter((v) => v.includes(q)).map((bl_value) => ({ bl_value })) });
     }
     if (req.method === "POST" && p === "/api/v2/block-lists-entries") {
-      state.blocklist.push(String(body?.bl_value));
+      if (!state.blockDoesNothing) state.blocklist.push(String(body?.bl_value));
       return reply(200, { id: "bl1", bl_value: body?.bl_value });
     }
     if (req.method === "GET" && p.startsWith("/api/v2/accounts/analytics/daily")) {
@@ -161,6 +163,7 @@ beforeEach(() => {
   state.forceStatus = 0;
   state.missNextList = false;
   state.moveDoesNothing = false;
+  state.blockDoesNothing = false;
   state.sentToday = 15;
   state.accounts["sender@example.com"] = { daily_limit: 40, status: 1 };
   seen = [];
@@ -421,6 +424,22 @@ describe("suppress", () => {
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual(state.blocklist, ["example.org"]);
     if (r.ok) assert.deepEqual(r.value.applied, [{ kind: "domain", value: "@Example.ORG" }]);
+    // Read back (0051): the entry is read again after it is written.
+    const written = seen.findIndex((s) => s.method === "POST" && s.path === "/api/v2/block-lists-entries");
+    assert.ok(
+      seen.slice(written + 1).some((s) => s.method === "GET" && s.path === "/api/v2/block-lists-entries?search=example.org&limit=50"),
+      "the entry was not read back after it was written",
+    );
+  });
+
+  it("is an error, not a success, when Instantly answers 200 and the blocklist does not read the entry back", async () => {
+    state.blockDoesNothing = true;
+    const r = await adapter().suppress(request(ada()), ctx(false));
+    assert.equal(r.ok, false, JSON.stringify(r));
+    if (!r.ok) {
+      assert.equal(r.error.code, "unknown");
+      assert.match(r.error.message, /does not read it back/);
+    }
   });
 
   it("applies what it can and names what it cannot — every channel's key reaches the same person", async () => {

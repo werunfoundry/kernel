@@ -65,7 +65,23 @@ never opens, and the run ends failed. The refusal says:
 When retrying cannot fix it, the refusal says so, and names what would. Three
 cases are of that kind: no adapter is bound to the row's channel; the
 binding is to a provider other than the one the row was made through; or the
-binding declares that it cannot suspend.
+binding declares that it cannot suspend. A provider that never answers
+again — an account closed — is a fourth.
+
+**The way out of a refusal is a person's act, never a renunciation.**
+Someone stops the person at the provider by hand, then attests it at a
+terminal, under their name. The erasure then goes on because the stop
+happened, not because anyone gave up on it.
+- *Its form is 0047's.* A person's act is recorded as a person's act, and
+  never deduced.
+- *An attestation can be false*, as any attestation can. The registry says
+  who gave it.
+- *Erasing anyway, saying what was not stopped, is not a way out.* It turns
+  a delayed erasure into a contact without end and without remedy. The
+  kernel forgets the person, the sequence keeps running, and nobody knows
+  where to stop it any more.
+
+A decision that creates a block says how one leaves it. This is how.
 
 **`acquisition` declares one step: suspend every enrolment a provider may
 still hold.**
@@ -95,12 +111,11 @@ as a dry run, which reads and writes nothing.
 ## What it does not reach
 
 - **A provider that never answers again**, such as an account closed. The
-  erasure then stays refused, and the person stays on record. Failing
-  closed makes that the outcome. What an operator may do then is not
-  decided here.
+  erasure stays refused until a person attests the stop (above). Until
+  then, the person stays on record.
 - **Erasing the person at the provider.** The step stops them; it does not
   delete them there. What the provider keeps is what the adapter's
-  suspension declares it keeps.
+  suspension declares it keeps (see *Not decided here*).
 - **A suspension that held at the provider, whose record did not commit.**
   The retry asks again. An adapter that parks reads the lead back as
   already parked, and parks it only once.
@@ -111,13 +126,19 @@ as a dry run, which reads and writes nothing.
 - An enrolment anonymised while a provider may still be sending to it.
 - A call to a provider inside the erasure's transaction.
 - The core importing a domain's code.
-- An erasure that goes on when a step did not complete.
+- An erasure that goes on when a step did not complete, unless a person
+  attested the stop.
+- An erasure that goes on because someone gave up on stopping the person.
+- A stop by hand deduced rather than attested.
 - A refusal that does not name the adapter that failed.
 - **Suppressing the person at the provider instead.** It would write the
   erased person's address into the provider's blocklist, and keep there
   what erasure removes here. 0052's register is the kernel's answer to
   remembering an objection, and it holds a keyed fingerprint, not an
-  address.
+  address. [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md)
+  makes the same write for the people of a newly protected account: there,
+  the address stops a contact with someone still on record; here, it would
+  keep a datum about someone the kernel has forgotten.
 
 ## Would reverse it
 
@@ -127,9 +148,13 @@ the person is reached at the provider before the kernel forgets where.
 
 ## Not decided here
 
-- **The shapes**: the manifest's field, the step's signature, and what the
-  plan prints.
-- **An erasure that can never complete**, because the provider will not
-  answer. Whether a person may then erase anyway, saying what was not
-  stopped, and how that is recorded.
-- **Deleting the person at the provider rather than suspending them.**
+- **The shapes**: the manifest's field, the step's signature, what the plan
+  prints, and the attestation's command and record.
+- **Deleting the person at the provider rather than suspending them.** This
+  is not a question of the kernel's design. It is a question of processing:
+  what the agreement with the provider obliges it to do with a datum, and
+  what its API allows. The live test behind 0051 showed that deleting a
+  person there leaves the messages already sent, pointing to an id that no
+  longer exists: a deletion at the provider is partial anyway. The question
+  is taken up with the processing agreements, not with a decision of the
+  kernel.

@@ -329,8 +329,14 @@ const isText = (v: unknown): v is string => typeof v === "string" && v.trim() !=
  * Given the adapter, it reads the adapter too (decision 0054): a verb
  * declared served whose method is not a function on it is refused. No check
  * proves that a method works; that is the read-back's, act by act (0051).
- * Without the adapter, only the declaration is read. `readDeclaration`, the
- * gate before an enrolment or a suspension, always passes it.
+ *
+ * **Without the adapter, it checks the declaration's form and nothing
+ * more.** An empty answer then says the declaration is well formed, not
+ * that the adapter can do what it declares: a declaration that serves
+ * suspension on an adapter with no `withdraw` passes. That partial call
+ * exists for a caller that holds only the declaration. `readDeclaration`,
+ * the gate before an enrolment or a suspension, always passes the adapter,
+ * and that is what bounds the gap.
  */
 export function checkDeclaration(declaration: unknown, adapter?: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];

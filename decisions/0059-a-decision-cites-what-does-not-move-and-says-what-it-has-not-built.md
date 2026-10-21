@@ -32,8 +32,12 @@ patterns, not thirteen defects.
   this does not reach*, *Not decided here*. These three did not use them.
   And a merged decision has no way to be marked as ahead of its code: the
   three pointer forms say what replaced it, never that it is not built.
-- **Fourteen pointers were missing, and three had the wrong form.** That
-  breaks a rule that exists. This decision adds none for it.
+- **Fourteen pointers were missing, across ten decisions written in
+  forty-two hours, and three had the wrong form.** The rule existed, and
+  discipline alone held it. That is what 0055 refused for the passage — a
+  rule held by care — and gave a type and a check instead. Run over every
+  decision, the check below found four more, older: 0012 had no pointer
+  to 0019, 0004 and 0013 none to 0024, and 0013 none to 0026.
 
 ## Decided
 
@@ -109,22 +113,50 @@ them to cross-references and none to what the decision says:
 Anything else — a wrong claim, a miscount, a word of reasoning — stays, and
 a later decision says what was wrong, as before.
 
-### 5. Where it is written
+### 5. Two of them are checked, in `scripts/check.mjs`
+
+Under doctrine 6, which gains the line, and against every decision:
+
+- **A decision cited by line is refused** — `NNNN:<line>`, anywhere under
+  `decisions/`, in a body, a pointer or a table. Code cited by line,
+  `erase.ts:60`, is not matched.
+- **A decision that says it completes, supersedes or reverses another, and
+  finds no pointer back to it under that one's title, is refused.** What a
+  decision says is read from its introduction: the text between its title,
+  with the notes under it, and its first section. In a sentence, a number
+  belongs to the last of *Completes*, *Supersedes*, *Reverses* before it.
+  *Rests on* is how an introduction names a decision it builds on without
+  changing it, as 0025 does, and asks for no pointer.
+
+Each is counter-checked: removed, its tests fail, and the other rule's
+pass. The form of a pointer is not read: a decision that says it completes
+another may reverse part of it, as 0049 did 0040, and only a reader can
+tell.
+
+### 6. Where it is written
 
 `decisions/README.md` carries these conventions. `CLAUDE.md` §7 points to
 it, rather than describing the pointer itself: it said "the one-line
 pointer" while the README describes a blockquote, and pointers have been
-two to four lines long since 0040.
+two to four lines long since 0040. `DOCTRINE.md` §6 carries the checked
+part, as every rule `check.mjs` holds.
 
 The pull request that merges this decision applies it to 0049–0058, and to
 the decisions they point to.
 
 ## What this does not reach
 
-- **Nothing checks it by machine.** A line citation, a missing pointer, a
-  present tense ahead of the code are found by reading, as these were.
-- **The decisions before 0049 were not reviewed.** Their pointers and their
-  claims about code stay as they are.
+- **The present ahead of the code is not checked.** No machine reads
+  "erasure suspends before it anonymises" and knows it false. A *Not built*
+  note is found missing by reading, as these three were.
+- **Nor is a pointer's form, nor code cited by line without its commit.**
+  The first needs a reader; the second has no form a pattern can tell from
+  a line at a commit named a paragraph earlier.
+- **An introduction that completes a decision in other words** — "builds
+  on", "narrows" — is not read as completing it. The three verbs, and
+  *rests on*, are the form.
+- **The decisions before 0049 were read by the check only.** Their pointers
+  back are complete; their claims about code were not reviewed.
 - **Whether a sentence is a rule or a finding** is still the writer's
   call, and the review's. The section `## Not built yet` makes the writer
   say which one it is; it does not decide for them.
@@ -138,6 +170,8 @@ the decisions they point to.
 - A sentence in the present about the code that the code does not hold at
   merge.
 - A *Not built* note removed or rewritten, rather than closed.
+- A decision cited by line, or one that completes, supersedes or reverses
+  another with no pointer back, past `check.mjs`.
 - An edit to a merged decision other than the four in section 4.
 
 ## Would reverse it
@@ -148,9 +182,11 @@ the decisions they point to.
 - **For the notes: a check that reads the code and says what a decision has
   built.** None exists, and none could read "erasure suspends before it
   anonymises".
+- **For the check: cross-references held in a field a machine reads**, not
+  in an introduction's prose. The check would then read the field, and the
+  verbs would stop being a form.
 
 ## Not decided here
 
-- A machine check: one that refuses `NNNN:<line>` under `decisions/`, or a
-  decision that says it completes another that carries no pointer to it.
-- Whether the decisions before 0049 get the same review.
+- Whether the claims about code of the decisions before 0049 get the same
+  review.

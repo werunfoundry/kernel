@@ -447,6 +447,17 @@ try {
     expect((await count("relations.person where lower(email) = 'ada@open.example.com'")) === 0, "Ada is still on record");
     expect((await naming()) === 0, "a sourcing row still names Ada");
     expect((await count("acquisition.sourcing_result")) === results, "erasing deleted a run's history instead of anonymising it");
+
+    // The provisional guard in `kernel-enrol`: once anyone is erased, and
+    // until 0052's register exists, a live run is refused; a dry run is not.
+    step("enrol, after an erasure: refused live, a dry run still read");
+    const runs = await count("core.run");
+    const afterLive = await bin("kernel-enrol", [...enrolArgs, "--live"]);
+    show(afterLive);
+    expect(afterLive.status === 1 && /an erasure has run on this instance/.test(afterLive.stdout), `kernel-enrol --live after an erasure: ${afterLive.stdout.trim()}`);
+    expect((await count("core.run")) === runs, "the refused live run opened a run");
+    const afterDry = await bin("kernel-enrol", enrolArgs);
+    expect(afterDry.status === 0 && /dry run/.test(afterDry.stdout), `kernel-enrol dry after an erasure: ${afterDry.stdout.trim()}`);
   }
   await client.end();
 } catch (error) {

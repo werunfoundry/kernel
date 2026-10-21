@@ -32,7 +32,7 @@ import type { CapacityLimit, Sequencer, SequencerDeclaration } from "../contract
 import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
 import type { EnrolRequest } from "./enrol.js";
 import { acknowledgeUncovered, withdrawAcknowledgement } from "./acknowledge.js";
-import { CannotSuspend, enrol } from "./enrol.js";
+import { CannotSuspend, enrol, ErasedWithoutRegister } from "./enrol.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_enrol_${process.pid}`;
@@ -78,7 +78,8 @@ const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOStri
 const world = {
   candidates: [] as TargetCompany[],
   protected: [] as ProtectedAccount[],
-  people: new Map<string, { email: string; name: string }[]>(),
+  /** `also`: further addresses the people source attests, after the first. */
+  people: new Map<string, { email: string; name: string; also?: string[] }[]>(),
   protectedAsOf: minutesAgo(5),
   /** When set, the named read fails. */
   failing: new Set<string>(),
@@ -132,7 +133,10 @@ const people: PeopleSource = {
     const people = world.people.get(domain) ?? [];
     return ok({
       asOf: minutesAgo(60),
-      items: people.map((p) => ({ identity: { subject: "person", keys: [{ kind: "email", value: p.email }] }, display: { fullName: p.name } })),
+      items: people.map((p) => ({
+        identity: { subject: "person", keys: [p.email, ...(p.also ?? [])].map((value) => ({ kind: "email", value })) },
+        display: { fullName: p.name },
+      })),
     });
   },
 };
@@ -555,7 +559,7 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     try {
       const r = await run({ dryRun: true });
       assert.deepEqual(r.enrolled, []);
-      assert.match(r.skipped.find((s) => s.person)?.detail ?? "", /registry cannot tell who this is: the person.s id and its other key name two recorded people/);
+      assert.match(r.skipped.find((s) => s.person)?.detail ?? "", /registry cannot tell who this is: the person.s keys name two recorded people/);
       assert.equal(world.enrolCalls, 0);
     } finally {
       people.peopleAt = withId;
@@ -649,6 +653,29 @@ describe("what the people source is asked", { skip: base ? false : "TEST_DATABAS
 /* -------------------------------------------------------------------------- */
 
 describe("the opt-out", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  // P1 and P1c (0013: an identity is a set of keys). Bo opted out under one
+  // address; the people source attests two. Only the order differs between
+  // the two probes: P1c, with the opted-out address first, is what shows
+  // that P1 can fail for the order alone.
+  const bo = (keys: string[]) => world.people.set("open.example.com", [{ email: keys[0]!, name: "Bo", also: keys.slice(1) }]);
+  const optedOut = () => client.query("insert into relations.person (email, opted_out_at) values ('bo@open.example.com', now())");
+
+  it("P1 — skips a person who opted out under an address that is not the identity's first", async () => {
+    await optedOut();
+    bo(["bo.work@open.example.com", "bo@open.example.com"]);
+    const r = await run();
+    assert.deepEqual(held(), [], "a person who opted out was enrolled");
+    assert.deepEqual(r.skipped.filter((s) => s.person?.keys.some((k) => k.value.startsWith("bo"))).map((s) => s.reason), ["opted_out"]);
+  });
+
+  it("P1c — skips them with the opted-out address first, the order P1 only changes", async () => {
+    await optedOut();
+    bo(["bo@open.example.com", "bo.work@open.example.com"]);
+    const r = await run();
+    assert.deepEqual(held(), []);
+    assert.deepEqual(r.skipped.filter((s) => s.person?.keys.some((k) => k.value.startsWith("bo"))).map((s) => s.reason), ["opted_out"]);
+  });
+
   // Ada is at an open company, unprotected, never enrolled: only her opt-out
   // can stop her.
   it("skips a person who opted out, and the sequencer never holds them", async () => {
@@ -866,6 +893,42 @@ describe("a sequencer that cannot suspend (0051)", { skip: base ? false : "TEST_
     const r = await run();
     assert.equal(r.status, "succeeded", r.stoppedBy);
     assert.deepEqual(held(), ["ada@open.example.com", "bo@open.example.com"]);
+  });
+});
+
+// PROVISIONAL, as the guard it tests: removed with it when 0055's lands.
+describe("once an erasure has run, without 0052's register", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const runs = async () => (await client.query("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).rows[0].n as number;
+  /** A live erasure run on record, as `kernel-erase` leaves one; removed after, so no other test sees it. */
+  async function withAnErasure(body: () => Promise<void>) {
+    const [{ id }] = (await client.query("insert into core.run (process_key, trigger, actor_type, actor_id, dry_run) values ('relations.person.erase', 'cli', 'human', 'an operator', false) returning id")).rows;
+    try {
+      await body();
+    } finally {
+      await client.query("delete from core.run where id = $1", [id]);
+    }
+  }
+
+  it("refuses a live enrolment from any caller, before a run is opened or a provider called", async () => {
+    await withAnErasure(async () => {
+      const before = await runs();
+      await assert.rejects(run(), (e: Error) => e instanceof ErasedWithoutRegister && /an erasure has run on this instance/.test(e.message));
+      assert.equal(await runs(), before, "a run was opened for an enrolment that could not happen");
+      assert.deepEqual([world.enrolCalls, world.lookedUp.length, held().length], [0, 0, 0]);
+    });
+  });
+
+  it("still lets a dry run read, and a dry erasure opens no window", async () => {
+    await withAnErasure(async () => {
+      const r = await run({ dryRun: true });
+      assert.equal(r.status, "succeeded", r.stoppedBy);
+    });
+    await client.query("insert into core.run (process_key, trigger, actor_type, actor_id, dry_run) values ('relations.person.erase', 'cli', 'human', 'an operator', true)");
+    try {
+      assert.equal((await run()).status, "succeeded");
+    } finally {
+      await client.query("delete from core.run where process_key = 'relations.person.erase'");
+    }
   });
 });
 

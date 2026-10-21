@@ -351,10 +351,11 @@ export const enrolment = acquisition.table(
   {
     id: uuid("id").defaultRandom().primaryKey(),
 
-    /** Restrict: a person with an enrolment on record is not quietly deleted. */
-    personId: uuid("person_id")
-      .notNull()
-      .references(() => person.id, { onDelete: "restrict" }),
+    /**
+     * Restrict: a person with an enrolment on record is not quietly deleted.
+     * Empty once the person is erased (0053): the row is then history.
+     */
+    personId: uuid("person_id").references(() => person.id, { onDelete: "restrict" }),
 
     /**
      * The company the person was enrolled through. What makes "who at this

@@ -94,7 +94,7 @@ const memory = {
   calls: 0,
 };
 const canSuspend = (): SequencerDeclaration => ({
-  enrol: { serves: "yes" },
+  enrol: { serves: "no", why: "this double does not enrol" },
   pullTouches: { serves: "no", why: "not in this test" },
   suspend: { serves: "yes", method: "letting go of the person", costs: { person: [], sequence: [] }, gap: { known: true, minutes: 0, basis: "by construction", measuredOn: "2026-10-21" } },
   pullUnsubscribes: { serves: "no", why: "not in this test" },

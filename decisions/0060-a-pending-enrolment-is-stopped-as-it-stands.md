@@ -6,6 +6,9 @@
 > stopped by address and left `pending`; `enrol()`'s reconciliation replays
 > the key. 0057's act is still not built.
 
+> Built by #113: 0057's act, which asks the provider first on a pending row
+> and confirms it only by its key, as this decision has it.
+
 Supersedes in part [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
 `suspended` is reached from `enrolled`, or from `pending` under a person's
 attestation. Supersedes in part [0026](0026-the-enrolment-registry.md),

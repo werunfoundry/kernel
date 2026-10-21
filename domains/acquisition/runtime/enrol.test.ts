@@ -1070,3 +1070,53 @@ describe("the suspended state (0051)", { skip: base ? false : "TEST_DATABASE_URL
     assert.equal(world.statusCalls, 1, "the provider was asked about the suspended person");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe("the run's start stops what already runs at a newly protected account (0057)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const states = async () => (await client.query("select state, suspension_run_id from acquisition.enrolment order by id")).rows as { state: string; suspension_run_id: string | null }[];
+
+  it("suspends the enrolments at an account that became protected, under this run, before enrolling anyone", async () => {
+    const first = await run();
+    assert.deepEqual(held(), ["ada@open.example.com", "bo@open.example.com"]);
+    world.protected.push({ domain: "open.example.com", reason: "customer" });
+    const second = await run();
+    assert.equal(second.status, "succeeded", second.stoppedBy);
+    assert.deepEqual(held(), [], "the provider still sends to people at a protected account");
+    assert.deepEqual((await states()).map((s) => [s.state, s.suspension_run_id]), [["suspended", second.runId], ["suspended", second.runId]]);
+    assert.equal(second.protectedStop?.stops.length, 2);
+    assert.equal(second.enrolled.length, 0);
+    const recorded = (await client.query("select run_id from acquisition.protection_held where run_id = any($1)", [[first.runId, second.runId]])).rows.map((r) => r.run_id);
+    assert.deepEqual(recorded.sort(), [first.runId, second.runId].sort(), "each run that held the promise records it, the one that stopped nobody too");
+  });
+
+  it("enrols nobody while an enrolment at a protected account cannot be stopped", async () => {
+    // At the protected account, on a channel no sequencer here takes: the act
+    // is refused, and nothing else about this run would stop it.
+    const [{ id: companyId }] = (await client.query("insert into relations.company (name, domain) values ('customer', 'customer.example.org') returning id")).rows;
+    const [{ id: personId }] = (await client.query("insert into relations.person (email, company_id) values ('cy@cy-consulting.example.net', $1) returning id", [companyId])).rows;
+    await client.query(
+      "insert into acquisition.enrolment (person_id, company_id, sequence_key, channel, idempotency_key, state, provider, actor_type) values ($1, $2, 'welcome', 'social_message', 'key-cy', 'enrolled', 'memory-sequencer', 'system')",
+      [personId, companyId],
+    );
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.match(r.stoppedBy ?? "", /could not all be stopped, so nobody new is enrolled.*no sequencer is bound to the channel "social_message"/);
+    assert.equal(world.enrolCalls, 0, "an enrolment was attempted");
+    assert.deepEqual(held(), []);
+    assert.equal((await row(r.runId)).status, "failed");
+    assert.equal((await client.query("select 1 from acquisition.protection_held where run_id = $1", [r.runId])).rows.length, 0);
+  });
+
+  it("does not count what it judges among the candidates the run excluded (0044)", async () => {
+    await run();
+    // open.example.com becomes protected and is no longer a candidate: the
+    // run excluded no candidate by it, whatever its start stopped.
+    world.protected.push({ domain: "open.example.com", reason: "customer" });
+    world.candidates = [{ domain: "elsewhere.example.com", attributes: {} }];
+    const r = await run();
+    assert.equal(r.status, "succeeded", r.stoppedBy);
+    assert.equal(r.protectedStop?.stops.length, 2);
+    assert.deepEqual(r.protectionHits, []);
+  });
+});

@@ -158,6 +158,13 @@ describe("the sequencer", () => {
     assert.ok(!refused.ok && refused.error.code === "invalid", JSON.stringify(refused));
   });
 
+  it("lists a domain spelled as a URL by its host, so that it stops the addresses at it (0028)", async () => {
+    const r = await sequencer.suppress({ idempotencyKey: "s3", reason: "x", target: company("https://WWW.Example.org/about") }, ctx(false));
+    assert.ok(r.ok && r.value.applied.length === 1, JSON.stringify(r));
+    const refused = await sequencer.enrol({ ...enrolment, idempotencyKey: "k4", person: { subject: "person", keys: [{ kind: "email", value: "dee@example.org" }] } }, ctx(false));
+    assert.ok(!refused.ok && refused.error.code === "invalid", JSON.stringify(refused));
+  });
+
   it("does not report a suppression applied when the state file, read back, does not list it (0051)", async () => {
     // A store whose writes do not hold: the save answers, and lists nothing.
     const lost = join(dir, "lost.json");

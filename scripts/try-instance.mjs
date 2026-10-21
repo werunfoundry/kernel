@@ -440,10 +440,24 @@ try {
     show(erasePlan);
     expect(erasePlan.status === 0 && /sourcing_result: \d+ rows \(\d+ by keys\) — anonymise/.test(erasePlan.stdout), "kernel-erase --plan did not show the rows reached by keys");
     expect(/Not reached by this command \(decision 0049\)/.test(erasePlan.stdout) && /opt-out does not survive/.test(erasePlan.stdout), "kernel-erase --plan did not say what it does not reach");
+    // Decision 0056: the plan says what erasure would stop at the sequencer first, as dry runs.
+    const heldNow = () => Object.entries(JSON.parse(readFileSync(state, "utf8")).enrolments ?? {}).filter(([, people]) => "ada@open.example.com" in people).map(([sequence]) => sequence);
+    const adaHeld = heldNow();
+    const adaRows = (await client.query("select count(*)::int as n from acquisition.enrolment where person_id = $1 and state = 'enrolled'", [adaId])).rows[0].n;
+    expect(adaHeld.length > 0 && adaRows === adaHeld.length, `the sandbox holds Ada in [${adaHeld}] and the registry ${adaRows} rows: nothing to show erasure stops her`);
+    expect(new RegExp(`before erasure, acquisition: ${adaRows} enrolments it would suspend, through the sequencer \\(sandbox-sequencer\\)`).test(erasePlan.stdout), "the plan did not say what erasure would stop at the sequencer");
+    expect(heldNow().length === adaHeld.length, "the plan stopped someone: it is a dry run");
     const eraseBare = await bin("kernel-erase", ["--person", adaId, "--by", "an operator"]);
     expect(eraseBare.status === 1 && /at a terminal\. Nothing was changed/.test(eraseBare.stdout), `kernel-erase without a terminal: ${eraseBare.stdout.trim()}`);
     const erased = await typed("kernel-erase", ["--person", adaId, "--by", "an operator"], `${adaId}\n`);
     expect(erased.status === 0 && /erased; the person's row was deleted/.test(erased.stdout), `kernel-erase at a terminal: ${erased.stdout.trim().split("\n").slice(-8).join(" / ")}`);
+    // What lets the sequencer leave NOT_REACHED (0056), checked where it lives:
+    // the sandbox no longer holds her, and every row of hers is suspended,
+    // its read-back anonymised, naming nobody.
+    expect(heldNow().length === 0, `the sandbox still holds Ada in [${heldNow()}] after her erasure`);
+    const stopped = (await client.query(`select count(*)::int as n from acquisition.enrolment where state = 'suspended' and person_id is null and suspension_read_back = '{"erased": "decision 0053"}'::jsonb`)).rows[0].n;
+    expect(stopped === adaRows, `${stopped} anonymised suspended rows, for ${adaRows} enrolments of Ada's`);
+    expect(!/the sequencer: a person enrolled in a running sequence stays in it/.test(erased.stdout), "kernel-erase still says it does not reach the sequencer");
     expect((await count("relations.person where lower(email) = 'ada@open.example.com'")) === 0, "Ada is still on record");
     expect((await naming()) === 0, "a sourcing row still names Ada");
     expect((await count("acquisition.sourcing_result")) === results, "erasing deleted a run's history instead of anonymising it");

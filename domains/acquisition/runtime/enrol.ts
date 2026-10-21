@@ -477,11 +477,12 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         // in it again. Whatever the provider now says of them is not asked:
         // the registry, not the provider, records the decision to stop.
         //
-        // What this does not reach: a suspension erased with the person.
-        // Erasure deletes their enrolment rows, suspended ones included, so a
-        // person suspended and then erased has no row here, and is enrolled
-        // again if a later run finds them. Nothing refuses that delete — a
-        // guard would make erasure fail; suspend-then-erase is 0051's to build.
+        // What this does not reach: a person found again after their erasure.
+        // Erasure suspends their enrolments and keeps the rows naming nobody
+        // (0053, 0056), so none of them is found here: a later run that finds
+        // the person records a new one, with no row in this sequence. What
+        // stops that is 0052's register, and until it exists, the provisional
+        // refusal above.
         if (row?.state === "suspended") {
           await skip({ reason: "suspended", person, company, detail: "suspended from this sequence, by the registry: not enrolled in it again (decision 0051)" });
           continue;
@@ -495,18 +496,24 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           await skip({ reason: "unreachable", person, company, detail: `status unreadable: ${current.error.code}` });
           continue;
         }
-        if (row?.state === "pending" && current.value.state !== "unknown") {
-          // A run died after writing the registry: the enrolment landed, and
-          // is confirmed rather than made twice. It consumed its capacity then.
-          if (!request.dryRun) await settleRow(row.id, { state: "enrolled", enrolledAt: now() });
+        // A run died after writing the registry, and the provider holds the
+        // person. Only the row's key says the enrolment it holds is this one
+        // (0060): an address names a person, and someone else may have put
+        // them in the same sequence. Under the key, it is confirmed rather
+        // than made twice, having consumed its capacity then. Under no key or
+        // another, the key is replayed below: the provider answers this
+        // enrolment, or a conflict — never confirmed on a status alone.
+        const replaying = row?.state === "pending" && current.value.state !== "unknown";
+        if (replaying && current.value.idempotencyKey === row!.idempotencyKey) {
+          if (!request.dryRun) await settleRow(row!.id, { state: "enrolled", enrolledAt: now() });
           report.reconciled.push({ person, company, state: current.value.state });
           continue;
         }
-        if (current.value.state !== "unknown") {
+        if (!replaying && current.value.state !== "unknown") {
           await skip({ reason: "duplicate", person, company, detail: `already in the sequence (${current.value.state})` });
           continue;
         }
-        if (budget <= 0) {
+        if (!replaying && budget <= 0) {
           await skip({ reason: "capacity", person, company, detail: "no capacity left on the given senders" });
           continue;
         }
@@ -578,6 +585,11 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           throw new Stop(`enrolment interrupted: ${e.code}: ${e.message}`);
         }
         if (row && !request.dryRun) await settleRow(row.id, { state: "enrolled", enrolledAt: now() });
+        // Confirmed by the provider recognising the key: reconciled, not a new enrolment.
+        if (replaying) {
+          report.reconciled.push({ person, company, state: done.value.state });
+          continue;
+        }
         budget -= 1;
         report.enrolled.push({
           person,

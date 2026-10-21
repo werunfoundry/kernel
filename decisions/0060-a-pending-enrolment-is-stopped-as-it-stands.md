@@ -1,5 +1,11 @@
 # 0060 — A pending enrolment is stopped as it stands
 
+> Built by #106, in part: the trigger opens `pending` → `suspended` under an
+> attestation only; an attestation never records `enrolled`; a pending row
+> is confirmed only by its key, and one held under no key of the kernel's is
+> stopped by address and left `pending`; `enrol()`'s reconciliation replays
+> the key. 0057's act is still not built.
+
 Supersedes in part [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
 `suspended` is reached from `enrolled`, or from `pending` under a person's
 attestation. Supersedes in part [0026](0026-the-enrolment-registry.md),

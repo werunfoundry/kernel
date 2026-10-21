@@ -26,6 +26,8 @@ import { sql } from "drizzle-orm";
 import { identityVocabulary, normalizeIdentity } from "../identity/index.js";
 import type { IdentityKey, IdentityVocabulary } from "../identity/index.js";
 import type { DomainManifest, ErasureRule } from "../manifest/types.js";
+import type { Registry } from "./resolve.js";
+import { resolvePackage } from "./resolve.js";
 import type { Database, Trigger } from "./run.js";
 import { openRun } from "./run.js";
 
@@ -46,6 +48,96 @@ export interface ErasureStep {
   outcome?: "deleted" | "emptied" | "kept" | "none";
 }
 
+/* -------------------------------------------------------------------------- */
+/* The steps before erasure (decision 0056)                                   */
+/* -------------------------------------------------------------------------- */
+
+/** What a domain's step is given. The core reads none of it but the answer. */
+export interface BeforeErasureInput {
+  db: Database;
+  /** The adapters the instance binds: the step reaches its provider through them. */
+  registry: Registry;
+  subjectId: string;
+  /** The subject's keys, gathered as the rules will reach them (0049). */
+  keys: IdentityKey[];
+  /** The erasure's run. A plan has none: every call it makes is a dry run. */
+  runId?: string;
+  plan: boolean;
+}
+
+/** One thing the step did, or would do in a plan. */
+export interface BeforeErasureAct {
+  what: string;
+  rows: number;
+  /** The contract and the binding it went through, e.g. `sequencer (sandbox-sequencer)`. */
+  through?: string;
+}
+
+/** Why a step could not do its part: the adapter, what it answered, and the remedy. */
+export interface BeforeErasureRefusal {
+  contract: string;
+  /** The binding the adapter was reached through, or would have been. */
+  binding: string;
+  answered: string;
+  /** Whether running the erasure again may fix it. When not, `remedy` says what would. */
+  retry: boolean;
+  remedy?: string;
+}
+
+export interface BeforeErasureResult {
+  acts: BeforeErasureAct[];
+  /** Empty when the step did all of its part. */
+  refused: BeforeErasureRefusal[];
+}
+
+export type BeforeErasure = (input: BeforeErasureInput) => Promise<BeforeErasureResult>;
+
+/** What erase() needs to run the steps: the bound adapters, and where to resolve a domain's package. */
+export interface ErasureReach {
+  registry: Registry;
+  /** The instance root, from which `@werunfoundry/<name>/…` resolves (0007). */
+  root: string;
+  /** Injected only where a test must; the default resolves and imports, as for an adapter. */
+  importModule?: (href: string) => Promise<unknown>;
+}
+
+/** A step refused: nothing was erased (0056). The message says who failed and what to do. */
+export class ErasureRefused extends Error {
+  constructor(
+    readonly domain: string,
+    readonly refused: readonly BeforeErasureRefusal[],
+  ) {
+    super(
+      [
+        `erasure refused: ${domain}'s step before erasure could not do its part, so nothing was erased`,
+        ...refused.map((r) =>
+          r.retry
+            ? `  - the ${r.contract} adapter bound as "${r.binding}" answered: ${r.answered}. Running the erasure again is the remedy.`
+            : `  - the ${r.contract} adapter bound as "${r.binding}": ${r.answered}. Running the erasure again will not fix this: ${r.remedy ?? "nothing the kernel can do will"}.`,
+        ),
+      ].join("\n"),
+    );
+  }
+}
+
+/** Each domain's step, upper domains first — the order the rules follow (0056). */
+async function loadSteps(domains: readonly DomainManifest[], reach: ErasureReach | undefined): Promise<{ domain: string; run: BeforeErasure }[]> {
+  const out: { domain: string; run: BeforeErasure }[] = [];
+  for (const d of order(domains)) {
+    if (d.beforeErasure === undefined) continue;
+    // Failing closed: a step nobody can run is a step not done.
+    if (!reach) throw new ErasureRefused(d.name, [{ contract: "erasure", binding: d.beforeErasure, answered: "this erasure was given no bound adapters to run it with", retry: false, remedy: "erase through `kernel-erase`, which boots the instance" }]);
+    const load = reach.importModule ?? ((href: string) => import(href));
+    const module = (await load(resolvePackage(d.beforeErasure, reach.root))) as { beforeErasure?: unknown };
+    if (typeof module.beforeErasure !== "function") throw new Error(`${d.beforeErasure} exports no \`beforeErasure\` function (decision 0056)`);
+    out.push({ domain: d.name, run: module.beforeErasure as BeforeErasure });
+  }
+  return out;
+}
+
+/** A gathered key, as an identity carries it. */
+const asIdentityKey = (k: Key): IdentityKey => (k.network ? { kind: k.kind, network: k.network, value: k.value } : { kind: k.kind, value: k.value });
+
 /**
  * What an erasure does not reach (decision 0049), said wherever one is shown:
  * on the plan, before the confirmation, after the erasure. Silence about it
@@ -57,11 +149,11 @@ export const NOT_REACHED: readonly string[] = [
   "working copies: dumps, exports, copies of the database, target lists",
   "core.event payloads, which name a person by keys and are append-only",
   "core.run.error, free text that may quote a provider's answer",
-  // Erasure calls no provider, and empties the enrolment registry's rows of
-  // the person (decision 0053) — the kernel's only record of where they are
-  // enrolled, which then names nobody. Said here until erasure suspends each
-  // enrolment before it anonymises the row.
-  "the sequencer: a person enrolled in a running sequence stays in it at the provider, and its next steps still reach them; erasure calls no provider, and the kernel's record of where they were enrolled is kept naming nobody, so it can no longer say where to stop them",
+  // Erasure suspends every enrolment a provider may still hold before it
+  // forgets the person (0056), or is refused. What a suspension leaves:
+  "the sequencer's steps already on their way: a step the provider had picked to send before the suspension took effect still leaves (0051); the touches pull is where it would show",
+  "what the provider keeps of the person once suspended: what its adapter declares its suspension costs, as `kernel-enrol` prints them; deleting the person there is not done (0056)",
+  "enrolments the kernel did not make: someone added to a sequence by hand at the provider, or by another tool, is in no registry row, and erasure does not stop them",
 ];
 
 /** Upper domains first: a domain is erased before every domain it depends on. */
@@ -207,6 +299,25 @@ export async function planErasure(db: Database, domains: readonly DomainManifest
   return plan;
 }
 
+/**
+ * What each domain's step before erasure would do (0056), as dry runs.
+ * Reads only, here and at the providers.
+ */
+export async function planBeforeErasure(
+  db: Database,
+  domains: readonly DomainManifest[],
+  subjectId: string,
+  reach: ErasureReach | undefined,
+): Promise<{ domain: string; result: BeforeErasureResult }[]> {
+  const loaded = await loadSteps(domains, reach);
+  if (loaded.length === 0) return [];
+  const vocabulary = identityVocabulary(domains);
+  const keys = (await subjectKeys(db, steps(domains), subjectId, vocabulary)).map(asIdentityKey);
+  const out: { domain: string; result: BeforeErasureResult }[] = [];
+  for (const { domain, run } of loaded) out.push({ domain, result: await run({ db, registry: reach!.registry, subjectId, keys, plan: true }) });
+  return out;
+}
+
 /** What an anonymisation writes: emptied, stripped, made random, or a fixed sentence. */
 function anonymisation(rule: Extract<ErasureRule, { do: "anonymise" }>): SQL {
   const set: SQL[] = [];
@@ -233,17 +344,35 @@ function anonymisation(rule: Extract<ErasureRule, { do: "anonymise" }>): SQL {
 /**
  * Carries the plan out, as a person's run. All of it, or none of it. The caller
  * says how the run was reached (decision 0048).
+ *
+ * First the domains' steps before erasure (0056), upper domains first and
+ * outside the transaction: a call to a provider cannot be rolled back with
+ * one, and must not hold one open. A step that could not do its part refuses
+ * the erasure, which then changes nothing here; what the steps already did
+ * stays done and recorded, and a retry finds it so. Then the rules, in one
+ * transaction.
  */
 export async function erase(
   db: Database,
   domains: readonly DomainManifest[],
   input: { subjectId: string; by: string; processKey: string; trigger: Trigger },
-): Promise<{ runId: string; steps: ErasureStep[] }> {
+  reach?: ErasureReach,
+): Promise<{ runId: string; steps: ErasureStep[]; before: { domain: string; acts: BeforeErasureAct[] }[] }> {
   const by = input.by.trim();
   if (by === "") throw new Error("who erases is required: erasing is a person's act");
   const vocabulary = identityVocabulary(domains);
   const open = await openRun(db, { processKey: input.processKey, trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false });
   try {
+    const before: { domain: string; acts: BeforeErasureAct[] }[] = [];
+    const loaded = await loadSteps(domains, reach);
+    if (loaded.length > 0) {
+      const keys = (await subjectKeys(db, steps(domains), input.subjectId, vocabulary)).map(asIdentityKey);
+      for (const { domain, run } of loaded) {
+        const r = await run({ db, registry: reach!.registry, subjectId: input.subjectId, keys, runId: open.id, plan: false });
+        if (r.refused.length > 0) throw new ErasureRefused(domain, r.refused);
+        before.push({ domain, acts: r.acts });
+      }
+    }
     const done = (await db.transaction(async (tx) => {
       const all = steps(domains);
       // Gathered first: the rows that hold the keys are the ones about to be emptied.
@@ -280,7 +409,7 @@ export async function erase(
       return out;
     })) as ErasureStep[];
     await open.finish({ status: "succeeded" });
-    return { runId: open.id, steps: done };
+    return { runId: open.id, steps: done, before };
   } catch (error) {
     await open.finish({ status: "failed", error: (error as Error).message.slice(0, 500) }).catch(() => {});
     throw error;

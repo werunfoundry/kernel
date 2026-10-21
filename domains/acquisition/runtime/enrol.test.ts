@@ -87,6 +87,12 @@ const world = {
   pageSize: 100,
   /** What the sequencer holds: key → email. A dry run never writes here. */
   enrolled: new Map<string, string>(),
+  /**
+   * Leads someone else put in the sequence — a colleague, another tool:
+   * email → the key their record carries, if any. The provider keeps one lead
+   * per person per sequence, so enrolling one of them is a conflict (0011).
+   */
+  foreign: new Map<string, string | undefined>(),
   enrolCalls: 0,
   statusCalls: 0,
   /** Every company the people source was asked about, as it was asked. */
@@ -174,9 +180,10 @@ const sequencer: Sequencer = {
       if (!ctx.dryRun) world.enrolled.set(e.idempotencyKey, emailOf(e.person));
       return down("the sequencer");
     }
+    if (world.foreign.has(emailOf(e.person))) return { ok: false, error: { code: "conflict", message: "this person is already in that sequence, enrolled outside this engine", retryable: false } };
     const held = world.enrolled.get(e.idempotencyKey);
     if (!held && !ctx.dryRun) world.enrolled.set(e.idempotencyKey, emailOf(e.person));
-    return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { state: "active", asOf: NOW.toISOString() } };
+    return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { state: "active", idempotencyKey: e.idempotencyKey, asOf: NOW.toISOString() } };
   },
   // Held to its declaration (0054): it parks the person by letting go of
   // them, so that a test can see the suspension it declares.
@@ -185,15 +192,22 @@ const sequencer: Sequencer = {
     if (!held) return ok({ found: false, asOf: NOW.toISOString() });
     if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf: NOW.toISOString() } };
     world.enrolled.delete(idempotencyKey);
-    return ok({ found: true, readBack: { state: "parked", email: held }, asOf: NOW.toISOString() });
+    return ok({ found: true, readBack: { state: "parked", email: held }, idempotencyKey, asOf: NOW.toISOString() });
   },
   async suppress() {
     return ok({ applied: [], notApplicable: [], asOf: NOW.toISOString() });
   },
+  // Found by address, as a provider finds a lead, and says the key its
+  // record carries (0060) — none for a lead someone else put there bare.
   async status({ person }) {
     world.statusCalls++;
-    const held = [...world.enrolled.values()].includes(emailOf(person));
-    return ok({ state: held ? "active" : "unknown", asOf: NOW.toISOString() });
+    const email = emailOf(person);
+    if (world.foreign.has(email)) {
+      const key = world.foreign.get(email);
+      return ok({ state: "active", ...(key ? { idempotencyKey: key } : {}), asOf: NOW.toISOString() });
+    }
+    const key = [...world.enrolled.entries()].find(([, e]) => e === email)?.[0];
+    return ok({ state: key ? "active" : "unknown", ...(key ? { idempotencyKey: key } : {}), asOf: NOW.toISOString() });
   },
   async capacity({ sender, channel }) {
     return world.failing.has("capacity")
@@ -262,6 +276,7 @@ beforeEach(async () => {
   world.failing = new Set();
   world.pageSize = 100;
   world.enrolled = new Map();
+  world.foreign = new Map();
   world.enrolCalls = 0;
   world.remaining = 100;
   world.limits = () => [{ unit: "messages", window: "day", remaining: world.remaining }];
@@ -486,6 +501,21 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     assert.deepEqual(next.reconciled.map((e) => emailOf(e.person)), ["ada@open.example.com"]);
     assert.equal(next.enrolled.length, 0);
     assert.deepEqual((await registered()).map((x) => [x.email, x.state, x.run_id === next.runId]), [["ada@open.example.com", "enrolled", true]]);
+  });
+
+  it("does not confirm a pending row on a lead found by its address under no key of its own: it replays the key (0060)", async () => {
+    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.crash = "before";
+    await run();
+    const [pending] = await registered();
+    assert.equal(pending?.state, "pending");
+    // Meanwhile someone else put Ada in the same sequence, bare.
+    world.foreign.set("ada@open.example.com", undefined);
+    const next = await run();
+    assert.deepEqual(next.reconciled, [], "a lead the kernel did not make was taken as its own");
+    assert.deepEqual(world.keysSent.slice(-1), [pending!.idempotency_key], "the key on record was not replayed");
+    assert.deepEqual((await registered()).map((x) => x.state), ["refused"], "the provider's conflict was not recorded");
+    assert.ok(next.skipped.some((s) => s.reason === "duplicate" && /enrolled outside this engine/.test(s.detail)));
   });
 
   it("makes the enrolment on the next run when the provider never got it, with the key on record", async () => {
@@ -996,12 +1026,16 @@ describe("the suspended state (0051)", { skip: base ? false : "TEST_DATABASE_URL
     await assert.rejects(client.query("update acquisition.enrolment set suspension_method = 'x' where id = $1", [id]), /enrolment_suspension_recorded/);
   });
 
-  it("is reached from enrolled only: neither created suspended nor reached from pending or refused", async () => {
+  it("is reached from enrolled, or from pending under an attestation only: never created suspended, never from refused (0060)", async () => {
     const runId = await aRun();
-    for (const from of ["pending", "refused"]) {
-      const id = await enrolledRow(`${from}@open.example.com`, from);
-      await assert.rejects(suspend(id, runId), new RegExp(`${from} to suspended is not a move an enrolment makes`));
-    }
+    // A read-back on a pending row: the provider confirmed it, so it goes through enrolled.
+    const pending = await enrolledRow("pending@open.example.com", "pending");
+    await assert.rejects(suspend(pending, runId), /a pending enrolment is suspended as it stands only under a person's attestation/);
+    const refused = await enrolledRow("refused@open.example.com", "refused");
+    await assert.rejects(suspend(refused, runId), /refused to suspended is not a move an enrolment makes/);
+    // A person's word, on the same pending row: as it stands.
+    await client.query(`update acquisition.enrolment set state = 'suspended', suspension_asked_at = now(), suspension_run_id = $2, suspension_attestation = '{"case": "unbound", "kind": "stopped_by_hand", "how": "by hand"}' where id = $1`, [pending, runId]);
+    assert.equal((await client.query("select state from acquisition.enrolment where id = $1", [pending])).rows[0].state, "suspended");
     const person = (await client.query("insert into relations.person (email) values ('new@open.example.com') returning id")).rows[0].id;
     await assert.rejects(
       client.query(

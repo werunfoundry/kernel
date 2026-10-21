@@ -21,7 +21,7 @@ import { createInterface } from "node:readline/promises";
 
 import { boot } from "@werunfoundry/core/runtime/boot";
 import { connect } from "@werunfoundry/core/runtime/connect";
-import { erase, NOT_REACHED, planErasure } from "@werunfoundry/core/runtime/erase";
+import { erase, ErasureRefused, NOT_REACHED, planBeforeErasure, planErasure } from "@werunfoundry/core/runtime/erase";
 
 import { OPT_OUT_AFTER_ERASURE } from "../runtime/record.js";
 
@@ -61,7 +61,17 @@ async function main(): Promise<number> {
     return 1;
   }
   const connection = await connect(url, root, "erase");
+  const reach = { registry: booted.registry, root };
   try {
+    // First what each domain does elsewhere before the kernel forgets anyone
+    // (0056), as dry runs: a refusal here is the refusal the erasure would meet.
+    for (const { domain, result } of await planBeforeErasure(connection.db, booted.domains, personId, reach)) {
+      for (const a of result.acts) console.log(`  before erasure, ${domain}: ${a.rows} ${a.what}${a.through ? `, through the ${a.through}` : ""}`);
+      for (const r of result.refused) {
+        console.log(`  before erasure, ${domain}: would be refused — the ${r.contract} adapter bound as "${r.binding}": ${r.answered}`);
+        console.log(`      ${r.retry ? "running the erasure again is the remedy" : `retrying will not fix this: ${r.remedy ?? "nothing the kernel can do will"}`}`);
+      }
+    }
     const plan = await planErasure(connection.db, booted.domains, personId);
     for (const s of plan) {
       const keys = s.byKeys ? ` (${s.byKeys} by keys)` : "";
@@ -75,7 +85,15 @@ async function main(): Promise<number> {
       console.log("erase: the id did not match. Nothing was changed.");
       return 1;
     }
-    const r = await erase(connection.db, booted.domains, { subjectId: personId, by, processKey: "relations.person.erase", trigger: "cli" });
+    let r;
+    try {
+      r = await erase(connection.db, booted.domains, { subjectId: personId, by, processKey: "relations.person.erase", trigger: "cli" }, reach);
+    } catch (error) {
+      if (!(error instanceof ErasureRefused)) throw error;
+      console.log(error.message);
+      return 1;
+    }
+    for (const b of r.before) for (const a of b.acts) console.log(`  before erasure, ${b.domain}: ${a.rows} ${a.what}${a.through ? `, through the ${a.through}` : ""}`);
     console.log(`run: ${r.runId} — erased; the person's row was ${r.steps.at(-1)?.outcome ?? "not declared"}.`);
     leaves();
     return 0;

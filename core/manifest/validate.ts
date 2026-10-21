@@ -125,6 +125,11 @@ export const domainManifestSchema = z.object({
       ]),
     )
     .optional(),
+  // Decision 0056: a package export, never a file path.
+  beforeErasure: z
+    .string()
+    .regex(/^@werunfoundry\/[a-z][a-z0-9_]*\/[a-z0-9][a-z0-9/-]*$/, "an export of this domain's package, `@werunfoundry/<name>/<path>`")
+    .optional(),
 });
 
 export const providerBindingSchema = z.object({
@@ -236,6 +241,11 @@ export function validateDomain(input: unknown): ValidationResult & { manifest?: 
         if (!kinds.has(kind)) issues.push(issue("error", `${at}.keyColumns.${kind}`, `"${kind}" is not an identity key this domain declares`));
       }
     }
+  }
+
+  // Its own package only: a step another domain ships is that domain's to declare.
+  if (m.beforeErasure !== undefined && !m.beforeErasure.startsWith(`@werunfoundry/${m.name}/`)) {
+    issues.push(issue("error", "beforeErasure", `a domain names a step of its own package, "@werunfoundry/${m.name}/…"`, 2));
   }
 
   const out = result(issues);

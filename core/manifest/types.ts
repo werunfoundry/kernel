@@ -82,6 +82,16 @@ export interface DomainManifest {
   erasure?: ErasureRule[];
 
   /**
+   * A step erasure runs before any rule, outside its transaction (decision
+   * 0056): what this domain must do elsewhere — at a provider — before the
+   * kernel forgets the subject. Named as an export of this domain's own
+   * package, `@werunfoundry/<name>/<path>`, and loaded the way an adapter is,
+   * by resolution: the core never imports a domain. Its export
+   * `beforeErasure` is a `BeforeErasure` (`core/runtime/erase.ts`).
+   */
+  beforeErasure?: string;
+
+  /**
    * For each experiment type, the metrics it is judged on. What gives an
    * experiment type a surface: an instance can tell, before running one,
    * whether its bound sources can measure it.

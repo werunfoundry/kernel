@@ -372,6 +372,22 @@ for (const [name, file] of packages) {
   if (pkg.exports?.["./domain.yaml"] !== "./domain.yaml") {
     fail(6, file, 0, 'does not export "./domain.yaml": "./domain.yaml", so boot cannot read it (decision 0007)');
   }
+  // Decision 0056: the step before erasure is loaded by its package name. One
+  // the package does not export is learned at the first erasure, which it
+  // refuses — in an instance, with a person waiting to be erased.
+  const declared = (() => {
+    try {
+      return readFileSync(`domains/${name}/domain.yaml`, "utf8").match(/^beforeErasure:\s*["']?([^"'\s#]+)/m)?.[1];
+    } catch {
+      return undefined;
+    }
+  })();
+  if (declared !== undefined) {
+    const sub = declared.startsWith(`${PKG}/${name}/`) ? `./${declared.slice(`${PKG}/${name}/`.length)}` : undefined;
+    if (sub === undefined || pkg.exports?.[sub] === undefined || pkg.publishConfig?.exports?.[sub] === undefined) {
+      fail(6, file, 0, `declares the step before erasure "${declared}", which this package does not export, so no erasure could load it (decision 0056)`);
+    }
+  }
 }
 
 for (const [name, layer] of layers) {

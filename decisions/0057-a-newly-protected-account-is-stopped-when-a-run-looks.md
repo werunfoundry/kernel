@@ -7,6 +7,14 @@
 > at enrolment, nor its command. Nothing withdraws a newly protected account
 > from a running sequence.
 
+> Built by #113: the act, at the start of every enrolment run and as
+> `kernel-stop-protected`, which the instance schedules. Enrolled rows are
+> suspended and recorded, pending rows asked first and confirmed by their key
+> (0060), and each account suppressed through the sequencer bound to its
+> rows. A live act that met no refusal writes `acquisition.protection_held`.
+> Not reached: a company protected only by the target list's own identifier,
+> which the registry does not record.
+
 Completes [0004](0004-protection-is-its-own-route.md), whose promise that
 a newly protected account is withdrawn from running sequences nothing
 keeps; and [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md),

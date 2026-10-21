@@ -22,6 +22,7 @@ import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 
 import type { Sequencer } from "@werunfoundry/acquisition/contracts/sequencer";
+import { checkDeclaration, readDeclaration } from "@werunfoundry/acquisition/contracts/sequencer";
 import factory from "./index.js";
 
 interface Seen {
@@ -33,7 +34,11 @@ interface Seen {
 
 /** The fake's state: what Instantly would hold. */
 const state = {
-  leads: [] as { id: string; email: string; campaign: string; status: number; payload?: Record<string, unknown> }[],
+  leads: [] as { id: string; email: string; campaign: string; status: number; payload?: Record<string, unknown>; subsequence_id?: string }[],
+  /** Subsequences by id, with the campaign each belongs to. */
+  subsequences: { s1: { parent_campaign: "c1" }, s9: { parent_campaign: "c9" } } as Record<string, { parent_campaign: string }>,
+  /** When set, a move answers 200 and moves nothing — what a status write did live (README). */
+  moveDoesNothing: false,
   blocklist: [] as string[],
   accounts: { "sender@example.com": { daily_limit: 40, status: 1 } } as Record<string, { daily_limit: number; status: number }>,
   sentToday: 15,
@@ -104,11 +109,20 @@ before(async () => {
       state.leads.push({ id, email: lead.email, campaign: String(body?.campaign_id), status: 1, ...(lead.custom_variables ? { payload: lead.custom_variables } : {}) });
       return reply(200, { leads_uploaded: 1, in_blocklist: 0, duplicated_leads: 0, created_leads: [{ index: 0, id }] });
     }
-    if (req.method === "DELETE" && p.startsWith("/api/v2/leads/")) {
-      const id = p.split("/").pop();
-      const at = state.leads.findIndex((l) => l.id === id);
-      if (at === -1) return reply(404, { message: "not found" });
-      return reply(200, state.leads.splice(at, 1)[0]);
+    if (req.method === "POST" && p === "/api/v2/leads/subsequence/move") {
+      const lead = state.leads.find((l) => l.id === body?.id);
+      if (!lead) return reply(404, { message: "not found" });
+      if (!state.moveDoesNothing) lead.subsequence_id = String(body?.subsequence_id);
+      return reply(200, { ...lead });
+    }
+    if (req.method === "GET" && p.startsWith("/api/v2/leads/")) {
+      const lead = state.leads.find((l) => l.id === p.split("/").pop());
+      return lead ? reply(200, { ...lead, status_summary: { lastStep: { stepID: "0_0_0" } } }) : reply(404, { message: "not found" });
+    }
+    if (req.method === "GET" && p.startsWith("/api/v2/subsequences/")) {
+      const id = p.split("/").pop() ?? "";
+      const sub = state.subsequences[id];
+      return sub ? reply(200, { id, ...sub }) : reply(404, { message: "not found" });
     }
     if (req.method === "GET" && p === "/api/v2/block-lists-entries") {
       const q = (url.searchParams.get("search") ?? "").toLowerCase();
@@ -146,17 +160,18 @@ beforeEach(() => {
   state.blocklist = [];
   state.forceStatus = 0;
   state.missNextList = false;
+  state.moveDoesNothing = false;
   state.sentToday = 15;
   state.accounts["sender@example.com"] = { daily_limit: 40, status: 1 };
   seen = [];
 });
 
 /** `null` for no key at all — `undefined` would take the default. */
-const adapter = (token: string | null = "test-key"): Sequencer =>
-  factory({ options: { baseUrl, "campaign.welcome": "c1" }, env: token === null ? {} : { INSTANTLY_API_KEY: token } });
+const adapter = (token: string | null = "test-key", options: Record<string, string> = { "subsequence.welcome": "s1" }): Sequencer =>
+  factory({ options: { baseUrl, "campaign.welcome": "c1", ...options }, env: token === null ? {} : { INSTANTLY_API_KEY: token } });
 
 const ctx = (dryRun: boolean): CallContext => ({ runId: "run-1", actor: { type: "system" }, dryRun });
-const writes = () => seen.filter((s) => s.method === "DELETE" || (s.method === "POST" && s.path !== "/api/v2/leads/list"));
+const writes = () => seen.filter((s) => s.method === "DELETE" || s.method === "PATCH" || (s.method === "POST" && s.path !== "/api/v2/leads/list"));
 
 /** A person reachable by email, as the engine hands one over (decision 0013). */
 const ada = (email = "ada@example.com"): Identity => ({ subject: "person", keys: [{ kind: "email", value: email }] });
@@ -290,7 +305,7 @@ describe("enrol", () => {
   });
 });
 
-describe("withdraw", () => {
+describe("withdraw (decision 0051)", () => {
   const request = (over: Record<string, unknown> = {}) => ({
     idempotencyKey: "w1",
     person: ada(),
@@ -298,28 +313,102 @@ describe("withdraw", () => {
     reason: "experiment ended",
     ...over,
   });
+  const enrolled = () => state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: 1 });
 
-  it("deletes the lead from that campaign", async () => {
-    state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: 1 });
+  it("parks the lead in its sequence's subsequence, never deletes it, and answers with what it read back", async () => {
+    enrolled();
     const r = await adapter().withdraw(request(), ctx(false));
-    assert.equal(r.ok, true);
-    assert.equal(state.leads.length, 0);
-    assert.ok(seen.some((s) => s.method === "DELETE" && s.path === "/api/v2/leads/lead-1"));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(state.leads.map((l) => [l.id, l.campaign, l.subsequence_id]), [["lead-1", "c1", "s1"]], "the lead is gone, or not parked");
+    assert.deepEqual(
+      writes().map((s) => `${s.method} ${s.path}`),
+      ["POST /api/v2/leads/subsequence/move"],
+      "a withdrawal wrote something else than the move",
+    );
+    assert.ok(seen.some((s) => s.method === "GET" && s.path === "/api/v2/leads/lead-1"), "the lead was not read back");
+    if (r.ok) {
+      assert.equal(r.value.found, true);
+      assert.deepEqual([r.value.readBack?.subsequence_id, r.value.readBack?.campaign, r.value.readBack?.email], ["s1", "c1", "ada@example.com"]);
+    }
   });
 
-  it("succeeds for someone not enrolled", async () => {
+  it("is an error, not a success, when Instantly answers 200 and the lead does not read back as parked", async () => {
+    enrolled();
+    state.moveDoesNothing = true;
+    const r = await adapter().withdraw(request(), ctx(false));
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.error.code, "unknown");
+      assert.match(r.error.message, /does not read back as parked/);
+    }
+  });
+
+  it("parks an already parked lead once: the replay moves nothing and still reads back", async () => {
+    enrolled();
+    await adapter().withdraw(request(), ctx(false));
+    seen = [];
+    const again = await adapter().withdraw(request(), ctx(false));
+    assert.equal(again.ok, true);
+    assert.deepEqual(writes(), []);
+    assert.ok(seen.some((s) => s.method === "GET" && s.path === "/api/v2/leads/lead-1"));
+  });
+
+  it("succeeds for someone not enrolled, saying so, and writes nothing", async () => {
     const r = await adapter().withdraw(request(), ctx(false));
     assert.equal(r.ok, true);
+    if (r.ok) assert.equal(r.value.found, false);
     assert.deepEqual(writes(), []);
   });
 
-  it("in dry run, deletes nothing", async () => {
-    state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: 1 });
+  it("in dry run, checks the parking subsequence and writes nothing", async () => {
+    enrolled();
     const r = await adapter().withdraw(request(), ctx(true));
     assert.equal(r.ok, true);
     if (r.ok) assert.equal(r.simulated, true);
+    assert.ok(seen.some((s) => s.method === "GET" && s.path === "/api/v2/subsequences/s1"));
     assert.deepEqual(writes(), []);
-    assert.equal(state.leads.length, 1);
+    assert.equal(state.leads[0]?.subsequence_id, undefined);
+  });
+
+  it("refuses a parking subsequence of another campaign: this one would keep sending", async () => {
+    enrolled();
+    const r = await adapter("test-key", { "subsequence.welcome": "s9" }).withdraw(request(), ctx(false));
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error.message, /belongs to another campaign/);
+    assert.deepEqual(writes(), []);
+  });
+
+  it("refuses a sequence bound to no parking subsequence, before calling anyone", async () => {
+    enrolled();
+    const r = await adapter("test-key", {}).withdraw(request(), ctx(false));
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error.message, /no parking subsequence is bound for the sequence "welcome"/);
+    assert.deepEqual(seen, []);
+  });
+});
+
+describe("what it declares (decision 0051)", () => {
+  it("is a valid declaration, read without calling Instantly: it parks, at the costs seen live, with its gap unknown", () => {
+    const a = adapter();
+    assert.deepEqual(checkDeclaration(a.declares), []);
+    const s = a.declares!.suspend;
+    assert.equal(s.serves, "yes");
+    if (s.serves === "yes") {
+      assert.deepEqual(s.costs, { person: ["provider_status_stays_active"], sequence: ["shared_state_changes"] });
+      assert.equal(s.gap.known, false, "a gap nobody measured is declared as a number");
+      assert.equal(s.notTheLeastDestructive, undefined);
+    }
+    assert.deepEqual([a.declares!.pullTouches.serves, a.declares!.pullUnsubscribes.serves], ["no", "no"]);
+    assert.equal(readDeclaration(a).suspends, true);
+    assert.deepEqual(seen, []);
+  });
+
+  it("declares it cannot suspend when a bound sequence has no parking subsequence: kernel-enrol then refuses it", () => {
+    const a = adapter("test-key", {});
+    assert.equal(a.declares!.suspend.serves, "no");
+    const read = readDeclaration(a);
+    assert.equal(read.suspends, false);
+    assert.match(read.refusal ?? "", /no parking subsequence is bound for "welcome"/);
   });
 });
 
@@ -379,6 +468,13 @@ describe("status", () => {
     if (r.ok) assert.equal(r.value.state, "unsubscribed");
   });
 
+  it("reads a parked lead as stopped, though Instantly reads it as active", async () => {
+    state.leads.push({ id: "lead-1", email: "ada@example.com", campaign: "c1", status: 1, subsequence_id: "s1" });
+    const r = await adapter().status({ person: ada(), sequenceKey: "welcome" }, ctx(true));
+    if (r.ok) assert.equal(r.value.state, "stopped");
+    else assert.fail(JSON.stringify(r));
+  });
+
   it("reads no enrolment as unknown, not as an error", async () => {
     const r = await adapter().status({ person: ada("nobody@example.com"), sequenceKey: "welcome" }, ctx(true));
     assert.equal(r.ok, true);
@@ -427,8 +523,8 @@ describe("capacity", () => {
  *
  * The API this adapter talks to can empty the whole workspace blocklist in one
  * call (`DELETE /api/v2/block-lists-entries`) — the blocklist that is defence
- * in depth for protected accounts (0012). Today nothing here can do that: the
- * only delete is one lead, the only blocklist write is one entry. This list is
+ * in depth for protected accounts (0012). Today nothing here can do that:
+ * nothing is deleted, the only blocklist write is one entry. This list is
  * what keeps it so. Adding an endpoint is a change to this list, made on
  * purpose and seen in review — never a side effect of a new method.
  */
@@ -437,7 +533,9 @@ const ALLOWED = [
   "GET /api/v2/campaigns/{}",
   "POST /api/v2/leads/list",
   "POST /api/v2/leads/add",
-  "DELETE /api/v2/leads/{}",
+  "POST /api/v2/leads/subsequence/move",
+  "GET /api/v2/leads/{}",
+  "GET /api/v2/subsequences/{}",
   "GET /api/v2/block-lists-entries",
   "POST /api/v2/block-lists-entries",
   "GET /api/v2/accounts/{}",
@@ -477,7 +575,7 @@ describe("the endpoint surface", () => {
  */
 after(() => {
   const shape = (path: string) =>
-    path.replace(/^\/api\/v2\/(campaigns|leads|accounts)\/(?!list$|add$|analytics\/daily$)[^/]+$/, "/api/v2/$1/{}");
+    path.replace(/^\/api\/v2\/(campaigns|leads|accounts|subsequences)\/(?!list$|add$|analytics\/daily$)[^/]+$/, "/api/v2/$1/{}");
   const seen = [...new Set(everyRequest.map((r) => `${r.method} ${shape(r.path)}`))].sort();
   assert.deepEqual(seen.filter((e) => !ALLOWED.includes(e)), [], "a request left the pinned endpoint surface");
   // Equal, not merely inside: a run that exercises only part of the surface

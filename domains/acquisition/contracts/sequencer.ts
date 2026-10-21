@@ -172,6 +172,21 @@ export function remainingOf(capacity: Capacity): { remaining: number; binding: C
   return { remaining: binding.remaining as number, binding };
 }
 
+/** What a withdrawal found, and what the provider showed afterwards. */
+export interface Withdrawal {
+  /** Whether the person was in the sequence at the provider at all. */
+  found: boolean;
+  /**
+   * The provider's record of the person after the act, as the read-back
+   * returned it — what the registry keeps as the suspension's read-back
+   * (0051). It may name the person; erasure replaces it (0053). Absent when
+   * nothing was found, and in a dry run, which writes nothing to read back.
+   */
+  readBack?: Record<string, unknown>;
+  /** When the read-back was made. */
+  asOf: string;
+}
+
 /** What a suppression reached. */
 export interface Suppression {
   /** The keys the provider now refuses, including those it already refused. */
@@ -379,9 +394,14 @@ export interface Sequencer extends Contract {
   ): Promise<CallResult<EnrolmentStatus>>;
 
   /**
-   * Take a person out of one sequence. The ordinary act: the experiment
-   * ended, the person replied through another channel.
-   * Idempotent: withdrawing someone who is not enrolled succeeds.
+   * Suspend one person in one sequence (0051's verb 3; 0011 named it
+   * withdraw): no further step of that sequence reaches them. The adapter
+   * does it the way its declaration names, reads the provider back, and
+   * answers only with what that read shows (0051): a write whose effect the
+   * read does not show is an error, never a success.
+   *
+   * Idempotent: withdrawing someone who is not enrolled succeeds, with
+   * `found: false`; withdrawing someone already withdrawn succeeds again.
    */
   withdraw(
     request: {
@@ -392,7 +412,7 @@ export interface Sequencer extends Contract {
       reason: string;
     },
     ctx: CallContext,
-  ): Promise<CallResult<void>>;
+  ): Promise<CallResult<Withdrawal>>;
 
   /**
    * Stop this provider reaching a person or a whole account, on every

@@ -6,7 +6,7 @@
 
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
-import type { EnrolmentStatus, Sequencer } from "@werunfoundry/acquisition/contracts/sequencer";
+import type { EnrolmentStatus, Sequencer, Withdrawal } from "@werunfoundry/acquisition/contracts/sequencer";
 
 import { loadState, saveState, stateFile } from "./sandbox-store.ts";
 
@@ -64,15 +64,24 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
       return { ok: true, value: { state: "active", sequenceKey: e.sequenceKey, channel: "email", asOf } };
     },
 
-    async withdraw({ person, sequenceKey }, ctx) {
+    async withdraw({ person, sequenceKey }, ctx): Promise<CallResult<Withdrawal>> {
       const email = emailOf(person);
       if (!email) return invalid("the sandbox reaches a person by email; this identity has none");
       const state = loadState(path);
       if (!state.ok) return state;
-      if (!state.value.enrolments[sequenceKey]?.[email]) return { ok: true, value: undefined };
-      if (ctx.dryRun) return { ok: true, simulated: true, value: undefined };
+      const asOf = new Date().toISOString();
+      if (!state.value.enrolments[sequenceKey]?.[email]) return { ok: true, value: { found: false, asOf } };
+      if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf } };
       delete state.value.enrolments[sequenceKey]![email];
-      return saveState(path, state.value);
+      const saved = saveState(path, state.value);
+      if (!saved.ok) return saved;
+      // Read back, as 0051 asks: the state file, loaded again, must no longer hold them.
+      const after = loadState(path);
+      if (!after.ok) return after;
+      if (after.value.enrolments[sequenceKey]?.[email]) {
+        return { ok: false, error: { code: "unknown", message: "the enrolment is still in the state file after its deletion", retryable: false } };
+      }
+      return { ok: true, value: { found: true, readBack: { sequenceKey, enrolled: false }, asOf } };
     },
 
     async suppress({ target }, ctx) {

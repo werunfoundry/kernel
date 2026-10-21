@@ -21,8 +21,39 @@ received every step, about 26 minutes apart for a configured delay of 20.
 | Move | `POST /api/v2/leads/move {ids, campaign, to_campaign_id}` to a campaign never activated | 200, a background job, `success` | no | `campaign` becomes the destination; `status_summary` emptied, `timestamp_last_contact` null |
 | Delete | `DELETE /api/v2/leads/{id}` | 200; then `GET` 404 | no | the record is gone; its sent emails stay |
 
-The current `withdraw` deletes the lead, which stops it; it reports success
-on the status code. Under 0051 it reads back (404) before it reports.
+## What the adapter does with it
+
+`withdraw` parks the lead, the least destructive way above that says nothing
+about the person. Each sequence is bound to a parking subsequence the
+instance creates in its campaign: one step, with a `pre_delay` longer than
+the campaign lives. The adapter never creates or edits one.
+
+    options:
+      campaign.<sequenceKey>: <campaign id>
+      subsequence.<sequenceKey>: <its parking subsequence id>
+
+1. It finds the lead by email in the campaign.
+2. It reads the subsequence (`GET /api/v2/subsequences/{id}`): its
+   `parent_campaign` must be the campaign, or that campaign keeps sending.
+3. It moves the lead (`POST /api/v2/leads/subsequence/move`), unless the
+   lead is parked already.
+4. It reads the lead back (`GET /api/v2/leads/{id}`), and answers with it
+   only if it shows `subsequence_id` set to the bound subsequence, in the
+   same campaign. A move answered 200 that does not read back is an error.
+
+A dry run does steps 1 and 2, and writes nothing. `status` reads a parked
+lead as `stopped`, though Instantly reads it as active.
+
+What it declares (0051): enrolment served; suspension served by parking,
+costing the person `provider_status_stays_active` and the sequence
+`shared_state_changes`, with its gap **unknown**: in the test above,
+suspensions made 18 minutes or more before a due step held, and nothing
+closer was tried. Pulling the touches and the unsubscribes: not served,
+not built yet. A binding with a sequence that has no parking subsequence
+declares that it cannot suspend, and `kernel-enrol` refuses it.
+
+Before 0051, `withdraw` deleted the lead and reported success on the status
+code.
 
 ## Pulling what was sent
 

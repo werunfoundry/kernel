@@ -39,13 +39,14 @@ as `network:value`) leaves one entry in a register, `relations.suppression`:
   (0013). The key is a secret the instance holds, never the database;
 - **the secret's version**, so that a new secret does not orphan the entries
   made under the old one;
-- **the erasure run that wrote it** (doctrine 5). The reference is
-  `restrict`: a run an entry names is not deleted, because its date is the
-  only date the entry has (below).
+- **when it was written**: the start of the erasure run, on the entry
+  itself (below);
+- **the erasure run that wrote it** (doctrine 5): attribution, set to null
+  if the run is deleted. The entry depends on the run for nothing else.
 
 No name, no company, no kind of key in clear, no date of the opt-out,
 nothing from the history rows. One person leaves as many entries as keys,
-unlinked to each other except through the run.
+unlinked to each other except through the run and the time they share.
 
 **Why a fingerprint, and why a keyed one.** To refuse someone a later run
 finds again, the register must recognise them from the address it finds.
@@ -90,9 +91,9 @@ who said no will one day be contacted again, which is what the register
 exists to prevent. The legal basis for keeping it belongs to the instance
 and its counsel, not to the kernel; so does whether a maximum duration
 applies. The kernel sets none. A maximum, if one is required, can be
-counted from the start of the run the entry names: it is never earlier than
-the opt-out, which was on record before the erasure, or was recorded by it at
-the run's start. For reference:
+counted from the time on the entry, the start of the erasure run: it is never
+earlier than the opt-out, which was on record before the erasure, or was
+recorded by it at the run's start. For reference:
 [*Comment utiliser une liste repoussoir pour respecter l'opposition à la
 prospection ?*](https://www.cnil.fr/fr/comment-utiliser-une-liste-repoussoir-pour-respecter-lopposition-la-prospection-commerciale).
 
@@ -148,13 +149,12 @@ did not know.**
 - An entry for a person who was erased without objecting.
 - An erasure on any answer to the question but an explicit yes or no.
 - An unkeyed or reversible fingerprint; a secret kept in the database.
-- Any field in the register beyond the fingerprint, the secret's version and
-  the run.
+- Any field in the register beyond the fingerprint, the secret's version,
+  the time it was written and the run.
 - A writer other than the erasure; an edit to an entry.
 - A path that reads the opt-out, or the register, on its own.
 - An entry that expires by default.
 - A secret version destroyed while an entry made under it lives.
-- A run deleted while an entry names it.
 - A check that answers "not suppressed" when it could not read.
 
 ## Would reverse it
@@ -162,8 +162,8 @@ did not know.**
 A way to recognise a person that cannot be tested against their address. No
 such way exists: recognising and testing are the same act. Short of that,
 a counsel who requires a different form, or a maximum duration. A maximum
-can be honoured as the register stands, counted from the run's start; it
-needs only a decision that sets it and says why.
+can be honoured as the register stands, counted from the time on the entry;
+it needs only a decision that sets it and says why.
 
 ## Not decided here
 

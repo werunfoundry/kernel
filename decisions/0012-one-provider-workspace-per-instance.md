@@ -2,6 +2,10 @@
 
 > Completed by [0015](0015-one-adapter-per-contract-and-channel.md): the kernel binds one adapter per contract and channel.
 
+> Completed by [0019](0019-the-enrolment-path.md):
+> the enrolment path reads protection itself, fail-closed, before any
+> provider is called.
+
 ## Decided
 
 **A workspace at a provider serves one instance.** Two instances never share a

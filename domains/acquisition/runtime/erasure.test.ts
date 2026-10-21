@@ -416,7 +416,7 @@ describe("an enrolment, once its person is erased (0053)", { skip: base ? false 
     assert.deepEqual(left, [], JSON.stringify(after));
   });
 
-  it("does not let anything but the erasure touch a suspended row's read-back", async () => {
+  it("does not let a suspended row's read-back change but as the erasure writes it", async () => {
     await enrolled();
     await assert.rejects(
       client.query("update acquisition.enrolment set suspension_read_back = $1 where sequence_key = 'winback'", [MARK]),
@@ -427,6 +427,41 @@ describe("an enrolment, once its person is erased (0053)", { skip: base ? false 
       client.query("update acquisition.enrolment set person_id = null, suspension_read_back = '{\"erased\": \"something else\"}' where sequence_key = 'winback'"),
       /a suspended enrolment is terminal/,
       "the read-back was replaced by another document than the erasure's",
+    );
+  });
+
+  // The circumstance, not the writer: an enrolment loses its person only once
+  // that person is erased. Each fixture is a row no other check refuses — an
+  // enrolled row, which 0051's trigger does not freeze, and an insert that is
+  // valid but for its person — so that only this guard can.
+  it("does not let a row lose its person while that person still has a key", async () => {
+    await enrolled();
+    await assert.rejects(
+      client.query("update acquisition.enrolment set person_id = null where sequence_key = 'welcome'"),
+      /loses its person only once that person is erased/,
+      "an enrolment was orphaned with its person still on record",
+    );
+    assert.equal((await rows("select count(*)::int as n from acquisition.enrolment where person_id is null"))[0].n, 0);
+  });
+
+  it("does not let a suspended row take the erasure's document while its person still has a key", async () => {
+    await enrolled();
+    // What 0051's trigger alone let through: the erasure's own document, the person still on record.
+    await assert.rejects(
+      client.query("update acquisition.enrolment set person_id = null, suspension_read_back = $1 where sequence_key = 'winback'", [MARK]),
+      /loses its person only once that person is erased/,
+      "a suspended row's read-back was replaced with its person still on record",
+    );
+    assert.equal((await rows("select count(*)::int as n from acquisition.enrolment where person_id is null"))[0].n, 0);
+  });
+
+  it("does not let an enrolment be born naming nobody", async () => {
+    await assert.rejects(
+      client.query(
+        "insert into acquisition.enrolment (sequence_key, channel, idempotency_key, state, provider, actor_type) values ('welcome', 'email', 'k-1', 'enrolled', 'memory', 'system')",
+      ),
+      /born naming a recorded person/,
+      "an enrolment was inserted with no person",
     );
   });
 });

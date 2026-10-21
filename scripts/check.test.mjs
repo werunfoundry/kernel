@@ -518,6 +518,55 @@ describe("rule 6 — a rule can only hold where it can see", () => {
   });
 });
 
+describe("rule 6 — a decision's cross-references hold", () => {
+  // Each fixture holds one way to break one rule, and nothing the other
+  // rule would refuse: no line citation where a pointer is missing, and
+  // every pointer in place where a line is cited.
+  const first = "# 0001 — First\n\nIt says one thing.\n\n## Decided\n\nThat.\n";
+  const pointed = "# 0001 — First\n\n> Completed by [0002](0002-second.md): more.\n\nIt says one thing.\n\n## Decided\n\nThat.\n";
+  const second = (intro) => `# 0002 — Second\n\n${intro}\n\n## Decided\n\nMore.\n`;
+  const decisions = (one, two) => ({ "decisions/0001-first.md": one, "decisions/0002-second.md": two });
+
+  it("refuses a decision cited by line", () => {
+    refuses(repo(decisions(first, second("It reads 0001 (0001:5)."))), 6, "cites a decision by line, 0001:5");
+  });
+
+  it("refuses a line citation in a pointer too", () => {
+    const one = "# 0001 — First\n\n> Superseded in part by [0002](0002-second.md): its line 0001:7.\n\nIt.\n\n## Decided\n\nThat.\n";
+    refuses(repo(decisions(one, second("It reads 0001."))), 6, "decisions/0001-first\\.md:3");
+  });
+
+  it("allows a decision cited by section, and code cited by line", () => {
+    accepts(repo(decisions(first, second("It reads 0001, *Decided*, and `erase.ts:60` on `main` at `abc1234`."))));
+  });
+
+  it("refuses a decision that completes another carrying no pointer back", () => {
+    refuses(repo(decisions(first, second("Completes [0001](0001-first.md), which said one thing."))), 6, "completes, supersedes or reverses 0001");
+  });
+
+  it("refuses the same for one that supersedes or reverses it", () => {
+    refuses(repo(decisions(first, second("Supersedes in part [0001](0001-first.md)."))), 6, "reverses 0001");
+    refuses(repo(decisions(first, second("Reverses the answer 0001 gave."))), 6, "reverses 0001");
+  });
+
+  it("allows it once the other decision points back, under its title", () => {
+    accepts(repo(decisions(pointed, second("Completes [0001](0001-first.md), which said one thing."))));
+  });
+
+  it("does not take a mention in the other decision's body for a pointer", () => {
+    const body = "# 0001 — First\n\nIt says one thing.\n\n## Decided\n\n> Completed by [0002](0002-second.md): not under the title.\n";
+    refuses(repo(decisions(body, second("Completes [0001](0001-first.md)."))), 6, "carries no pointer to 0002");
+  });
+
+  it("does not ask a pointer of a decision the introduction only rests on", () => {
+    accepts(repo(decisions(first, second("Completes nothing here, and rests on [0001](0001-first.md)."))));
+  });
+
+  it("reads the verb sentence by sentence", () => {
+    accepts(repo(decisions(first, second("Completes nothing. It was found while reading 0001."))));
+  });
+});
+
 describe("--staged", () => {
   const stage = (dir, paths) => execFileSync("git", ["add", ...paths], { cwd: dir });
 
@@ -545,6 +594,21 @@ describe("--staged", () => {
     const dir = repo({ ".gitignore": "*.tgz\n", "snapshot.tgz": gzipSync("TOKEN=x\n") });
     stage(dir, ["-f", "snapshot.tgz"]);
     refuses(dir, 7, "snapshot\\.tgz", ["--staged"]);
+  });
+
+  it("still catches a decision cited by line in what is being committed", () => {
+    const dir = repo({ "decisions/0001-first.md": "# 0001 — First\n\nIt reads 0000:4.\n\n## Decided\n\nThat.\n" });
+    stage(dir, ["decisions/0001-first.md"]);
+    refuses(dir, 6, "cites a decision by line", ["--staged"]);
+  });
+
+  it("reads the pointer back in a decision the commit does not touch", () => {
+    const dir = repo({
+      "decisions/0001-first.md": "# 0001 — First\n\nIt.\n\n## Decided\n\nThat.\n",
+      "decisions/0002-second.md": "# 0002 — Second\n\nCompletes [0001](0001-first.md).\n\n## Decided\n\nMore.\n",
+    });
+    stage(dir, ["decisions/0002-second.md"]);
+    refuses(dir, 6, "carries no pointer to 0002", ["--staged"]);
   });
 
   it("still catches a structural violation from a partial commit", () => {

@@ -561,6 +561,75 @@ for (const file of allFiles) {
   }
 }
 
+/* -- Rule 6: a decision's cross-references hold (decision 0059) ---------- */
+
+/**
+ * Two rules that discipline alone let rot: fourteen pointers were missing
+ * across ten decisions written in two days, and seven citations by line
+ * moved the day a pointer was added above them.
+ *
+ * A citation of a decision by line — `0052:130` — is refused anywhere under
+ * decisions/. A pointer added above a line moves it, so every pointer the
+ * convention asks for breaks every line cited below it. A decision is cited
+ * by its section and its sentence; code by file and symbol, or by line at a
+ * named commit, which `erase.ts:60` does not match.
+ *
+ * And a decision whose introduction says it completes, supersedes or
+ * reverses another — the text between its title, with the notes under it,
+ * and its first section — finds a pointer back to it in that other
+ * decision, under its title. In a sentence, a number belongs to the last of
+ * those verbs before it; "rests on" is how an introduction names a decision
+ * it builds on without changing it. Whether the pointer's form is right is
+ * not read: a decision that completes another may reverse part of it, and
+ * only a reader can tell.
+ */
+const DECISION = /^decisions\/(\d{4})-[^/]*\.md$/;
+const LINE_CITATION = /(?<![\w./-])\d{4}:\d+/g;
+const POINTER = /^> (?:Superseded by|Superseded in part by|Completed by) \[(\d{4})\]/;
+const VERB = /\b(Completes|Supersedes|Reverses|rests on)\b|\b(\d{4})\b/g;
+
+/** The lines under the title that are notes and pointers, and the introduction after them. */
+function decisionParts(body) {
+  const lines = body.split("\n");
+  let i = 1;
+  while (i < lines.length && (lines[i].startsWith(">") || lines[i].trim() === "")) i++;
+  let end = i;
+  while (end < lines.length && !lines[end].startsWith("## ")) end++;
+  return { head: lines.slice(1, i), intro: lines.slice(i, end).join("\n"), introAt: i + 1 };
+}
+
+for (const file of files) {
+  if (!DECISION.test(file)) continue;
+  const body = readFileSync(file, "utf8");
+  for (const match of body.matchAll(LINE_CITATION)) {
+    fail(6, file, lineAt(body, match.index), `cites a decision by line, ${match[0]}: a pointer added above that line moves it; cite its section and its sentence (decision 0059)`);
+  }
+}
+
+const decisions = new Map();
+for (const file of allFiles) {
+  const m = file.match(DECISION);
+  if (m) decisions.set(m[1], { file, ...decisionParts(readFileSync(file, "utf8")) });
+}
+for (const [number, { file, intro, introAt }] of decisions) {
+  const declared = new Set();
+  for (const sentence of intro.split(/\.(?=\s|$)/)) {
+    let verb = null;
+    for (const m of sentence.matchAll(VERB)) {
+      if (m[1]) verb = m[1];
+      else if (verb && verb !== "rests on") declared.add(m[2]);
+    }
+  }
+  for (const other of [...declared].sort()) {
+    const target = decisions.get(other);
+    if (!target || other >= number) continue;
+    const back = target.head.some((l) => l.match(POINTER)?.[1] === number);
+    if (!back) {
+      fail(6, file, introAt, `says it completes, supersedes or reverses ${other}, and ${target.file} carries no pointer to ${number} under its title (decision 0059)`);
+    }
+  }
+}
+
 if (failures.length === 0) {
   console.log(`doctrine: ok (${files.length} files)`);
   process.exit(0);

@@ -49,7 +49,7 @@ describe("remainingOf", () => {
 
 const declaration = (over: Partial<SequencerDeclaration> = {}): SequencerDeclaration => ({
   enrol: { serves: "yes" },
-  pullTouches: { serves: "partially", why: "by time only, not by person" },
+  pullTouches: { serves: "no", why: "the provider lists sends by time only" },
   suspend: {
     serves: "yes",
     method: "parking the person in a far-off step",
@@ -59,7 +59,10 @@ const declaration = (over: Partial<SequencerDeclaration> = {}): SequencerDeclara
   pullUnsubscribes: { serves: "no", why: "the provider exposes no unsubscribe event" },
   ...over,
 });
-const at = (d: unknown) => checkDeclaration(d).map((i) => i.at);
+const at = (d: unknown, adapter?: unknown) => checkDeclaration(d, adapter).map((i) => i.at);
+/** An adapter with a method behind each verb this contract has one for. */
+const methods = { enrol: () => undefined, withdraw: () => undefined };
+const adapter = (declares: unknown, over: Record<string, unknown> = {}) => ({ provider: "p", declares, ...methods, ...over }) as Parameters<typeof readDeclaration>[0];
 
 describe("checkDeclaration", () => {
   it("accepts a declaration that says, for each verb, whether it is served", () => {
@@ -69,7 +72,30 @@ describe("checkDeclaration", () => {
   it("requires all four verbs, a reason for anything not fully served", () => {
     const { pullUnsubscribes: _, ...missing } = declaration();
     assert.deepEqual(at(missing), ["pullUnsubscribes"]);
-    assert.deepEqual(at(declaration({ pullTouches: { serves: "partially", why: " " } })), ["pullTouches.why"]);
+    assert.deepEqual(at(declaration({ enrol: { serves: "partially", why: " " } })), ["enrol.why"]);
+  });
+
+  it("refuses a verb declared served that the contract has no method for (0054)", () => {
+    // Pulls only: enrol and suspend are served with their methods present,
+    // so the refusal can only come from the missing method in the contract.
+    assert.deepEqual(at({ ...declaration(), pullTouches: { serves: "yes" } }, methods), ["pullTouches.serves"]);
+    assert.deepEqual(at({ ...declaration(), pullUnsubscribes: { serves: "partially", why: "by time" } }, methods), ["pullUnsubscribes.serves"]);
+  });
+
+  it("refuses, given the adapter, a verb declared served whose method is not a function on it (0054)", () => {
+    // The declaration is valid on its own, pulls not served: only the adapter is wrong.
+    assert.deepEqual(at(declaration(), methods), []);
+    assert.deepEqual(at(declaration(), { enrol: methods.enrol }), ["suspend"]);
+    assert.deepEqual(at(declaration(), { withdraw: methods.withdraw, enrol: "yes" }), ["enrol"]);
+    assert.deepEqual(at(declaration({ suspend: { serves: "no", why: "no way to stop one person" } }), { enrol: methods.enrol }), []);
+  });
+
+  it("holds the pulls in the type too, for an adapter the compiler sees", () => {
+    // @ts-expect-error — a pull has no method in the contract, so it is not served (0054)
+    const served: SequencerDeclaration = { ...declaration(), pullTouches: { serves: "yes" } };
+    // @ts-expect-error — nor served partially
+    const partial: SequencerDeclaration = { ...declaration(), pullUnsubscribes: { serves: "partially", why: "by time" } };
+    assert.ok(served && partial);
   });
 
   it("requires both sides of the cost, in the decision's vocabulary only", () => {
@@ -93,16 +119,29 @@ describe("checkDeclaration", () => {
 
 describe("readDeclaration", () => {
   it("lets the kernel enrol only through an adapter that declares, validly, that it can suspend", () => {
-    assert.equal(readDeclaration({ provider: "p", declares: declaration() }).suspends, true);
+    assert.equal(readDeclaration(adapter(declaration())).suspends, true);
     assert.equal(readDeclaration({ provider: "p" }).suspends, false);
-    assert.equal(readDeclaration({ provider: "p", declares: declaration({ suspend: { serves: "no", why: "no way to stop one person" } }) }).suspends, false);
-    assert.equal(readDeclaration({ provider: "p", declares: { ...declaration(), enrol: undefined } as never }).suspends, false);
+    assert.equal(readDeclaration(adapter(declaration({ suspend: { serves: "no", why: "no way to stop one person" } }))).suspends, false);
+    assert.equal(readDeclaration(adapter({ ...declaration(), enrol: undefined })).suspends, false);
+  });
+
+  it("refuses what the review ran: both pulls served, on an adapter with no withdraw (0054)", () => {
+    const declares = { ...declaration(), pullTouches: { serves: "yes" }, pullUnsubscribes: { serves: "yes" } };
+    const read = readDeclaration(adapter(declares, { withdraw: undefined }));
+    assert.equal(read.suspends, false);
+    for (const reason of [/pullTouches\.serves: the contract has no method/, /pullUnsubscribes\.serves: the contract has no method/, /suspend: declared served, but `withdraw` is not a function/]) {
+      assert.match(read.refusal ?? "", reason);
+    }
+  });
+
+  it("refuses a declared suspension the adapter has no withdraw for, whatever the declaration says", () => {
+    assert.equal(readDeclaration(adapter(declaration(), { withdraw: undefined })).suspends, false);
   });
 
   it("prints every incapacity and both sides of the cost, and the gap with its basis and date", () => {
-    const { lines } = readDeclaration({ provider: "p", declares: declaration() });
+    const { lines } = readDeclaration(adapter(declaration()));
     const text = lines.join("\n");
-    assert.match(text, /pull the touches: serves partially — by time only, not by person/);
+    assert.match(text, /pull the touches: does not serve — the provider lists sends by time only/);
     assert.match(text, /pull the unsubscribes: does not serve — the provider exposes no unsubscribe event/);
     assert.match(text, /costs the person: the provider's status keeps reading active/);
     assert.match(text, /costs the shared sequence: the sequence's own state changes, for everyone else in it/);
@@ -111,7 +150,7 @@ describe("readDeclaration", () => {
 
   it("says an unknown gap is unknown, and what that means for a touch after a suspension", () => {
     const s = declaration().suspend as Extract<SequencerDeclaration["suspend"], { serves: "yes" }>;
-    const { lines } = readDeclaration({ provider: "p", declares: declaration({ suspend: { ...s, gap: { known: false, why: "never measured" } } }) });
+    const { lines } = readDeclaration(adapter(declaration({ suspend: { ...s, gap: { known: false, why: "never measured" } } })));
     assert.match(lines.join("\n"), /gap: unknown — never measured; every touch after a suspension is reported, neither a breach nor accepted/);
   });
 });

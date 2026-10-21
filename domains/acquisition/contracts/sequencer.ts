@@ -241,6 +241,14 @@ export type Serves =
   | { serves: "partially"; why: string }
   | { serves: "no"; why: string };
 
+/**
+ * A verb this contract has no method for (decision 0054): it can only be
+ * declared not served. A declaration is a precondition, never evidence, and
+ * one that serves a verb nothing can call is a promise with nothing behind
+ * it. When the contract gains the method, the verb takes `Serves`.
+ */
+export type NotServed = { serves: "no"; why: string };
+
 /** What a way of suspending costs the person, in 0051's vocabulary. */
 export const PERSON_COSTS = [
   "provider_status_stays_active", // the provider's status keeps reading active
@@ -291,20 +299,40 @@ export type SuspendDeclaration =
  */
 export interface SequencerDeclaration {
   enrol: Serves;
-  pullTouches: Serves;
+  /** 0051's verb 2. No method in this contract yet. */
+  pullTouches: NotServed;
   suspend: SuspendDeclaration;
-  pullUnsubscribes: Serves;
+  /** 0051's verb 4. No method in this contract yet. */
+  pullUnsubscribes: NotServed;
 }
 
 const VERBS = ["enrol", "pullTouches", "suspend", "pullUnsubscribes"] as const;
+/**
+ * The method behind each verb, or none (decision 0054). Suspension is
+ * `withdraw`: 0011 named the act so, and 0051 calls it suspension. The type
+ * above says the same for an adapter the compiler sees; this says it for one
+ * it never saw, written in plain JavaScript (0005).
+ */
+const METHOD: Record<(typeof VERBS)[number], "enrol" | "withdraw" | null> = {
+  enrol: "enrol",
+  pullTouches: null,
+  suspend: "withdraw",
+  pullUnsubscribes: null,
+};
 const SERVES = new Set(["yes", "partially", "no"]);
 const isText = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
 
 /**
  * Everything wrong with a declaration, at once. Checked at run time as well
  * as by the compiler: an instance's adapter may be plain JavaScript (0005).
+ *
+ * Given the adapter, it reads the adapter too (decision 0054): a verb
+ * declared served whose method is not a function on it is refused. No check
+ * proves that a method works; that is the read-back's, act by act (0051).
+ * Without the adapter, only the declaration is read. `readDeclaration`, the
+ * gate before an enrolment or a suspension, always passes it.
  */
-export function checkDeclaration(declaration: unknown): ValidationIssue[] {
+export function checkDeclaration(declaration: unknown, adapter?: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const error = (at: string, message: string) => issues.push({ severity: "error", at, message });
   if (typeof declaration !== "object" || declaration === null) {
@@ -323,6 +351,14 @@ export function checkDeclaration(declaration: unknown): ValidationIssue[] {
       continue;
     }
     if (v.serves !== "yes" && !isText(v.why)) error(`${verb}.why`, `a verb served ${v.serves === "no" ? "not at all" : "partially"} says why`);
+    const method = METHOD[verb];
+    if (v.serves !== "no" && method === null) {
+      error(`${verb}.serves`, "the contract has no method for this verb, so it can only be declared not served (decision 0054)");
+      continue;
+    }
+    if (v.serves !== "no" && method !== null && adapter !== undefined && typeof (adapter as Record<string, unknown> | null)?.[method] !== "function") {
+      error(verb, `declared served, but \`${method}\` is not a function on the adapter (decision 0054)`);
+    }
     if (verb !== "suspend" || v.serves === "no") continue;
 
     if (!isText(v.method)) error("suspend.method", "a suspension names the way it stops the person");
@@ -369,13 +405,15 @@ const served = (s: Serves) => (s.serves === "yes" ? "serves" : s.serves === "par
  * adapter declares, validly, that it can suspend: a declaration that is
  * missing or malformed says nothing, and nothing is not "can suspend".
  */
-export function readDeclaration(sequencer: Pick<Sequencer, "provider" | "declares">): { suspends: boolean; lines: string[]; refusal?: string } {
+export function readDeclaration(
+  sequencer: Pick<Sequencer, "provider" | "declares"> & { enrol?: unknown; withdraw?: unknown },
+): { suspends: boolean; lines: string[]; refusal?: string } {
   const head = `the sequencer "${sequencer.provider}" declares (decision 0051):`;
   if (sequencer.declares === undefined) {
     const refusal = `the sequencer "${sequencer.provider}" declares nothing about what it can do; the kernel enrols only through one that declares it can suspend (decision 0051)`;
     return { suspends: false, lines: [`the sequencer "${sequencer.provider}" declares nothing (decision 0051)`], refusal };
   }
-  const issues = checkDeclaration(sequencer.declares);
+  const issues = checkDeclaration(sequencer.declares, sequencer);
   if (issues.length > 0) {
     const refusal = `the sequencer "${sequencer.provider}" declares itself in a form the kernel cannot read: ${issues.map((i) => `${i.at}: ${i.message}`).join("; ")}`;
     return { suspends: false, lines: [head, ...issues.map((i) => `  ✖ ${i.at}: ${i.message}`)], refusal };

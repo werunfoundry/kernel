@@ -113,7 +113,7 @@ The campaign had `insert_unsubscribe_header: true`. The email carried
 confirmation page and changes nothing; confirming unsubscribes.
 
 What the receiving client did with that header was looked at once, in
-October 2026, on a message a real recipient received from a campaign of
+October 2026, on a day that was not recorded, on a message a real recipient received from a campaign of
 this provider. The operator recorded it, and it is reported here as they
 recorded it.
 - *What was looked at:* the received message's headers, and the message as
@@ -155,11 +155,17 @@ them.
 
 ## Two things about writing campaigns
 
-- A body that mixes HTML with bare text loses the bare text at creation,
-  silently: `kt test.<br/><a href="…">x</a>` is stored as
+Both were seen on the 2026-10-20 test, in the campaign's own copy: the
+step body given to `POST /api/v2/campaigns`, in `sequences`. Neither is a
+lead's `custom_variables`, which is measured apart, by another call
+(*A whole message in a variable*, below). One does not speak for the other.
+
+- A step body that mixes HTML with bare text loses the bare text at
+  creation, silently: `kt test.<br/><a href="…">x</a>` is stored as
   `<br/><a href="…">x</a>`. A plain-text body is kept whole.
-- `{{unsubscribe_url}}` renders as an empty string. No unsubscribe variable is
-  documented: the help centre inserts the link from the editor.
+- `{{unsubscribe_url}}`, written in a step body, renders as an empty string
+  in the email sent. No unsubscribe variable is documented: the help centre
+  inserts the link from the editor.
 
 ## Payload
 
@@ -201,6 +207,12 @@ passing it as a variable. Its storage was measured on 2026-10-21, under the
 same conditions as the write above: one campaign created for the test and
 never activated (draft, no sending account, no step), and one lead, an
 address of the operator's.
+
+**Which path.** This measures a lead's `custom_variables`, sent by
+`POST /api/v2/leads/add` and read back by the adapter's two reads. It is not
+the campaign's step body, whose loss of bare text at creation is recorded
+above (*Two things about writing campaigns*): that is another call, and
+another field.
 
 **What was sent.** `POST /api/v2/leads/add`, with four values in
 `custom_variables`:

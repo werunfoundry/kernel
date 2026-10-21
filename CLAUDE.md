@@ -134,8 +134,9 @@ restate §0, §4 and §6 on purpose: this is the one list to read before acting.
   up-to-date `main`. After each merge, bring the next pull request up to date
   with `main` and wait for a fresh green check before merging it: a check
   computed before another pull request landed says nothing about the result.
-- **A merged decision is never edited**, except for the one-line pointer that
-  `decisions/README.md` describes.
+- **A merged decision is never edited**, except for the cross-references
+  `decisions/README.md` lists: a pointer, a citation's address, a *Not built*
+  note (decision 0059).
 - **Nothing is written to a real provider workspace** without explicit
   agreement in the conversation. Everything else runs as a dry run.
 - **Before carrying out a prompt, check its premises in the code**, and say

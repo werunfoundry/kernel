@@ -1,5 +1,8 @@
 # 0057 — A newly protected account is stopped when a run looks
 
+> Completed by [0060](0060-a-pending-enrolment-is-stopped-as-it-stands.md):
+> the act reaches pending rows too, asked of the provider first.
+
 > Not built, on `main` at `350656e`: none of it — neither the act, its hook
 > at enrolment, nor its command. Nothing withdraws a newly protected account
 > from a running sequence.

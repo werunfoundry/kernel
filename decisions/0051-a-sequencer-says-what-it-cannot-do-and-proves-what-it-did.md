@@ -11,6 +11,11 @@
 > Completed by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
 > a newly protected account's recorded enrolments are suspended.
 
+> Superseded in part by [0060](0060-a-pending-enrolment-is-stopped-as-it-stands.md):
+> `suspended` is reached from `enrolled`, or from `pending` under a
+> person's attestation; a read-back confirms a pending row, a person's word
+> never does.
+
 > Not built, on `main` at `350656e`: verbs 2 and 4, the two pulls: the
 > contract has no method for either (0054), so no breach is ever
 > established. Nothing calls a suspension. The shipped sequencer adapter's

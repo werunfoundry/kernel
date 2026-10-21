@@ -1,5 +1,8 @@
 # 0056 — Erasure stops the person before it forgets them
 
+> Completed by [0060](0060-a-pending-enrolment-is-stopped-as-it-stands.md):
+> an attestation stops a pending row as it stands, never through `enrolled`.
+
 > Not built, on `main` at `350656e`: none of it. `erase()` takes no adapter,
 > and erasure says, among what it does not reach, that a running sequence
 > keeps sending.

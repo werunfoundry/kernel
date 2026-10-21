@@ -57,12 +57,13 @@ export const enrolmentState = acquisition.enum("enrolment_state", [
    * the kernel decided to stop, which is a new enrolment decided anew. The
    * migration's trigger refuses every other move, whoever writes the row.
    *
-   * What it does not reach: a delete. Erasure deletes the person's
-   * enrolment rows (`domain.yaml`), suspended ones included, so a person
-   * suspended and then erased leaves no row behind, and a later run can
-   * enrol them in the same sequence again. No guard refuses the delete:
-   * it would make erasure fail. Erasure that suspends before it deletes is
-   * 0051's to build, with the order suspend-then-erase decided there.
+   * What it does not reach: an erased person found again. Erasure
+   * anonymises the person's enrolment rows (decision 0053, `domain.yaml`),
+   * suspended ones included: the row stays, naming nobody. A later run
+   * that finds them records a new person, for whom the registry holds no
+   * row, and nothing here refuses enrolling them in the same sequence
+   * again. Erasure does not suspend before it anonymises; decision 0056
+   * decides that it will.
    */
   "suspended",
 ]);

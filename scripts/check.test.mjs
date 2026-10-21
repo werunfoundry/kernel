@@ -450,6 +450,19 @@ describe("rule 6 — a rule can only hold where it can see", () => {
     );
   });
 
+  it("refuses a step before erasure the domain's package does not export (0056)", () => {
+    const declaring = { "domains/alpha/domain.yaml": BASELINE["domains/alpha/domain.yaml"] + 'beforeErasure: "@werunfoundry/alpha/runtime/before-erasure"\n' };
+    refuses(repo(declaring), 6, "does not export, so no erasure could load it");
+    accepts(
+      repo({
+        ...declaring,
+        "domains/alpha/package.json":
+          '{ "name": "@werunfoundry/alpha", "exports": { "./domain.yaml": "./domain.yaml", "./runtime/before-erasure": "./runtime/before-erasure.ts" }, ' +
+          '"publishConfig": { "exports": { "./domain.yaml": "./domain.yaml", "./runtime/before-erasure": { "default": "./dist/runtime/before-erasure.js" } } } }\n',
+      }),
+    );
+  });
+
   it("refuses a domain whose package an instance would look for under another name", () => {
     refuses(
       repo({

@@ -19,6 +19,7 @@
     "./runtime/inbound": "./runtime/inbound.ts",
     "./runtime/stage": "./runtime/stage.ts",
     "./runtime/send": "./runtime/send.ts",
+    "./runtime/before-erasure": "./runtime/before-erasure.ts",
     "./db/migrations/*": "./db/migrations/*"
   },
   "publishConfig": {
@@ -77,6 +78,10 @@
         "types": "./dist/runtime/send.d.ts",
         "default": "./dist/runtime/send.js"
       },
+      "./runtime/before-erasure": {
+        "types": "./dist/runtime/before-erasure.d.ts",
+        "default": "./dist/runtime/before-erasure.js"
+      },
       "./db/migrations/*": "./db/migrations/*"
     },
     "bin": {
@@ -85,7 +90,8 @@
       "kernel-acknowledge": "./dist/bin/acknowledge.js",
       "kernel-inbound": "./dist/bin/inbound.js",
       "kernel-stage": "./dist/bin/stage.js",
-      "kernel-list": "./dist/bin/list.js"
+      "kernel-list": "./dist/bin/list.js",
+      "kernel-attest-stop": "./dist/bin/attest-stop.js"
     }
   },
   "dependencies": {
@@ -112,6 +118,7 @@
     "kernel-acknowledge": "./bin/acknowledge.ts",
     "kernel-inbound": "./bin/inbound.ts",
     "kernel-stage": "./bin/stage.ts",
-    "kernel-list": "./bin/list.ts"
+    "kernel-list": "./bin/list.ts",
+    "kernel-attest-stop": "./bin/attest-stop.ts"
   }
 }

@@ -65,6 +65,11 @@ experimentMetrics:
   channel_test: [acquisition.enrolled, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
   signal_play: [acquisition.enrolled, acquisition.replied, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
   offer_test: [acquisition.enrolled, acquisition.replied, acquisition.meetings_booked, acquisition.bounced, acquisition.unsubscribed]
+# Before any rule, outside the transaction (decision 0056): every enrolment a
+# provider may still hold is suspended there, read back and recorded, or the
+# erasure is refused and changes nothing. The anonymised row below is then the
+# proof that the person was stopped before they were forgotten.
+beforeErasure: "@werunfoundry/acquisition/runtime/before-erasure"
 # What erasing a person does here (decisions 0040, 0049). A row that exists
 # only to say something about the person is deleted. A row that is the
 # history of what a run did is anonymised: it says what happened, not who —
@@ -81,8 +86,9 @@ erasure:
   # Since 0053, history: what a run did — the sequence, the company, the
   # state, the suspension's method and costs — without who. The key given to
   # the provider is a hash of the person's keys; the refusal and the
-  # read-back are the provider's words, and may name them. The read-back's
-  # document is the one the migration's trigger lets a suspended row take.
+  # read-back are the provider's words, and may name them; an attestation is
+  # a person's (0056), and may too. Their document is the one the migration's
+  # trigger lets a suspended row take.
   - table: enrolment
     column: person_id
     do: anonymise
@@ -91,6 +97,7 @@ erasure:
     text:
       refusal: "erased (decision 0053); the provider's answer is not kept"
       suspension_read_back: '{"erased": "decision 0053"}'
+      suspension_attestation: '{"erased": "decision 0053"}'
   - table: sourcing_result
     column: person_id
     keys: person

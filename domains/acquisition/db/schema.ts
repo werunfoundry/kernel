@@ -396,6 +396,13 @@ export const enrolment = acquisition.table(
     suspensionReadBack: jsonb("suspension_read_back"),
     suspensionMethod: text("suspension_method"),
     suspensionCosts: jsonb("suspension_costs"),
+    /**
+     * For a stop no provider read back (0056): what a person attested at a
+     * terminal, and the case it answers — never in `suspension_read_back`,
+     * which holds only what a provider returned. The run it was recorded under
+     * says who. A suspended row holds this or a read-back, never both.
+     */
+    suspensionAttestation: jsonb("suspension_attestation"),
 
     /** Doctrine 5: the run that last wrote this row. */
     actorType: actorType("actor_type").notNull(),
@@ -421,16 +428,54 @@ export const enrolment = acquisition.table(
 
     /**
      * A suspended row carries its whole record, and any other row carries
-     * none of it — not even a part. Compared as text: the value is added in
-     * the same migration, and a constraint may not use an enum value added in
-     * its own transaction. `suspension_run_id` is attribution, and may be
-     * null on either side.
+     * none of it — not even a part. The record is a proof or an attestation,
+     * exactly one (0056): what the provider read back, with the adapter's way
+     * and costs, or what a person affirmed, with none of those. A verified
+     * stop and an affirmed one are never the same row shape. Compared as
+     * text: the value was added in a migration that also used it.
+     * `suspension_run_id` is attribution, and may be null on either side.
      */
     check(
       "enrolment_suspension_recorded",
-      sql`(${t.state}::text = 'suspended' and ${t.suspensionAskedAt} is not null and ${t.suspensionReadBack} is not null and ${t.suspensionMethod} is not null and ${t.suspensionCosts} is not null)
-       or (${t.state}::text <> 'suspended' and ${t.suspensionAskedAt} is null and ${t.suspensionRunId} is null and ${t.suspensionReadBack} is null and ${t.suspensionMethod} is null and ${t.suspensionCosts} is null)`,
+      sql`(${t.state}::text = 'suspended' and ${t.suspensionAskedAt} is not null and (
+             (${t.suspensionReadBack} is not null and ${t.suspensionMethod} is not null and ${t.suspensionCosts} is not null and ${t.suspensionAttestation} is null)
+          or (${t.suspensionAttestation} is not null and ${t.suspensionReadBack} is null and ${t.suspensionMethod} is null and ${t.suspensionCosts} is null)))
+       or (${t.state}::text <> 'suspended' and ${t.suspensionAskedAt} is null and ${t.suspensionRunId} is null and ${t.suspensionReadBack} is null and ${t.suspensionMethod} is null and ${t.suspensionCosts} is null and ${t.suspensionAttestation} is null)`,
     ),
+  ],
+);
+
+/**
+ * Why a step before erasure could not stop an enrolment (decision 0056): one
+ * row per enrolment per refused erasure run. What opens a person's
+ * attestation for a provider that no longer answers — the one case the
+ * kernel cannot tell from a timeout, so it must have been refused at least
+ * once. It holds no answer from the provider, which may quote the person:
+ * only the case.
+ */
+export const suspensionRefusal = acquisition.table(
+  "suspension_refusal",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** Restrict: an enrolment is history and is never deleted (0053). */
+    enrolmentId: uuid("enrolment_id")
+      .notNull()
+      .references(() => enrolment.id, { onDelete: "restrict" }),
+    /**
+     * `unbound`: no sequencer takes the row's channel. `other_provider`: the
+     * one that does is not the one the row was made through. `cannot_suspend`:
+     * it declares that it cannot. `unanswered`: the call failed — retryable,
+     * or a provider that will never answer again.
+     */
+    reason: text("reason").notNull(),
+    /** Attribution: the erasure's run. */
+    runId: uuid("run_id").references(() => run.id, { onDelete: "set null" }),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** `refusedOn(enrolmentId)` — whether an attestation may open for it. */
+    index("suspension_refusal_enrolment_idx").on(t.enrolmentId),
+    check("suspension_refusal_reason", sql`${t.reason} in ('unbound', 'other_provider', 'cannot_suspend', 'unanswered')`),
   ],
 );
 

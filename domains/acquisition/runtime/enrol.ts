@@ -477,11 +477,12 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         // in it again. Whatever the provider now says of them is not asked:
         // the registry, not the provider, records the decision to stop.
         //
-        // What this does not reach: a suspension erased with the person.
-        // Erasure deletes their enrolment rows, suspended ones included, so a
-        // person suspended and then erased has no row here, and is enrolled
-        // again if a later run finds them. Nothing refuses that delete — a
-        // guard would make erasure fail; suspend-then-erase is 0051's to build.
+        // What this does not reach: a person found again after their erasure.
+        // Erasure suspends their enrolments and keeps the rows naming nobody
+        // (0053, 0056), so none of them is found here: a later run that finds
+        // the person records a new one, with no row in this sequence. What
+        // stops that is 0052's register, and until it exists, the provisional
+        // refusal above.
         if (row?.state === "suspended") {
           await skip({ reason: "suspended", person, company, detail: "suspended from this sequence, by the registry: not enrolled in it again (decision 0051)" });
           continue;

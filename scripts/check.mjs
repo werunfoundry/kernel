@@ -611,7 +611,8 @@ for (const file of allFiles) {
   const m = file.match(DECISION);
   if (m) decisions.set(m[1], { file, ...decisionParts(readFileSync(file, "utf8")) });
 }
-for (const [number, { file, intro, introAt }] of decisions) {
+/** What an introduction says it completes, supersedes or reverses. */
+function declaredBy(intro) {
   const declared = new Set();
   for (const sentence of intro.split(/\.(?=\s|$)/)) {
     let verb = null;
@@ -620,7 +621,11 @@ for (const [number, { file, intro, introAt }] of decisions) {
       else if (verb && verb !== "rests on") declared.add(m[2]);
     }
   }
-  for (const other of [...declared].sort()) {
+  return declared;
+}
+
+for (const [number, { file, intro, introAt }] of decisions) {
+  for (const other of [...declaredBy(intro)].sort()) {
     const target = decisions.get(other);
     if (!target || other >= number) continue;
     const back = target.head.some((l) => l.match(POINTER)?.[1] === number);
@@ -628,6 +633,32 @@ for (const [number, { file, intro, introAt }] of decisions) {
       fail(6, file, introAt, `says it completes, supersedes or reverses ${other}, and ${target.file} carries no pointer to ${number} under its title (decision 0059)`);
     }
   }
+}
+
+/**
+ * The other way (decision 0061): a pointer is backed by the introduction of
+ * the decision it names. A pointer left after an introduction was rewritten,
+ * or put under the wrong decision, otherwise passes: reading the body would
+ * not catch it, since a decision names in its body the ones it only reads.
+ *
+ * Only for decisions written once the introduction was the form, which 0059
+ * made it. Before it, an introduction was prose, or absent: 0046 renames a
+ * domain for seventeen decisions it never names, 0012 has no introduction,
+ * and both are right. Those pointers are not checked, and never will be.
+ * A pointer naming a decision that does not exist is refused whatever its age.
+ */
+const INTRODUCTION_IS_THE_FORM_FROM = "0059";
+for (const [number, { file, head }] of decisions) {
+  head.forEach((line, i) => {
+    const source = line.match(POINTER)?.[1];
+    if (!source) return;
+    const from = decisions.get(source);
+    if (!from) {
+      fail(6, file, i + 2, `points to ${source}, which is not a decision here (decision 0061)`);
+    } else if (source >= INTRODUCTION_IS_THE_FORM_FROM && !declaredBy(from.intro).has(number)) {
+      fail(6, file, i + 2, `carries a pointer to ${source}, whose introduction does not say it completes, supersedes or reverses ${number} (decision 0061)`);
+    }
+  });
 }
 
 if (failures.length === 0) {

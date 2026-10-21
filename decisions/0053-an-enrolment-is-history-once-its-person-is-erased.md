@@ -24,8 +24,9 @@ anonymised row is the proof that it did.
 channel, the provider, the company, the state, the dates, the runs, and the
 suspension's method and declared costs. It loses:
 
-- **`person_id`**, emptied. The column becomes nullable; its reference to
-  the person stays `restrict`, which an empty column does not hold back;
+- **`person_id`**, emptied. The column becomes nullable for that one case,
+  and only for it (below); its reference to the person stays `restrict`,
+  which an empty column does not hold back;
 - **`idempotency_key`**, replaced by a value derived from nothing. It is a
   hash of the person's keys, so it can be tested against an address, which
   0049 rules out in a history row;
@@ -43,10 +44,21 @@ there was nothing — and cannot fill a column a check requires to be empty,
 as `suspension_read_back` is on a row that is not suspended. Into a `jsonb`
 column, the fixed value is a JSON document.
 
+**An enrolment is born naming a person, and loses them only once they are
+erased.** A row cannot be inserted without `person_id`, and `person_id` can
+be emptied only if, when the transaction commits, the person it named no
+longer exists or no longer holds an address or a profile id — the two ends
+relations' erasure gives a person. The check is deferred to the commit,
+because erasure empties this row before it removes the person, in the same
+transaction. It makes the circumstance certain, not the writer: the schema
+cannot tell erasure from another writer that erases the person in the same
+transaction, and does not need to, because that is what erasing is.
+
 **A suspended row's record changes once, as its person leaves.** 0051's
 trigger freezes a suspended row's record. It now lets the read-back be
 replaced by the fixed document, and nothing else, in the update that empties
-`person_id`. Every other change to a suspended row's record is still refused.
+`person_id` — which the check above allows only as the person is erased.
+Every other change to a suspended row's record is still refused.
 
 ## What it does not reach
 
@@ -54,7 +66,8 @@ replaced by the fixed document, and nothing else, in the update that empties
   person there, by the way the adapter declared (0051), and that way's costs
   say what the provider keeps.
 - **A row written before the person was recorded** does not exist: an
-  enrolment always names a recorded person.
+  enrolment is born naming a recorded person, and the schema refuses one
+  that does not.
 
 ## Rules out
 
@@ -62,7 +75,10 @@ replaced by the fixed document, and nothing else, in the update that empties
 - An anonymised enrolment row that still holds a value derived from the
   person's keys, or the provider's words about them.
 - A `text` rule that writes into an empty column.
-- Any change to a suspended row's record but the one erasure makes.
+- An enrolment inserted without a person, or emptied of one who still
+  holds a key.
+- Any change to a suspended row's record but the one that accompanies its
+  person's erasure.
 
 ## Would reverse it
 

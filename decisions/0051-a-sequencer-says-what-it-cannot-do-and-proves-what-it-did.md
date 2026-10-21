@@ -8,6 +8,9 @@
 > erasure suspends every enrolment a provider may still hold, before it
 > anonymises the row.
 
+> Completed by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
+> a newly protected account's recorded enrolments are suspended.
+
 Completes:
 
 - [0014](0014-one-sequencer-contract-every-channel.md): the contract gains

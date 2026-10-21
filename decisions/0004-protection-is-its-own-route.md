@@ -4,6 +4,10 @@
 
 > Completed by [0012](0012-one-provider-workspace-per-instance.md): a provider blocklist is defence in depth, not protection.
 
+> Completed by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
+> a newly protected account is stopped when an enrolment run or its own
+> command looks, and only as often.
+
 ## Decided
 
 A target list exposes two independent reads: candidates, and protected

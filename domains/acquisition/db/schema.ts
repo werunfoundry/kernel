@@ -681,3 +681,40 @@ export const inboundCursor = acquisition.table("inbound_cursor", {
   runId: uuid("run_id").references(() => run.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * How far 0004's promise is known to hold (decision 0057): one row per run of
+ * the act that stopped every enrolment it found at a protected account, with
+ * the protected set it read. A run that found nobody to stop writes one too:
+ * it is the most telling — it says the promise held as of that set — and
+ * nothing else would keep it, not the suspensions, of which it made none.
+ *
+ * Written only once the act succeeded, and never by a dry run: a run whose
+ * act failed held nothing, and its run row says why. The promise holds only
+ * as often as a run writes here; between two rows, an account that became
+ * protected keeps receiving every step its sequences send.
+ *
+ * Its age is not stored. It is read against the run's own time
+ * (`core.run.started_at`), and a column derived from two others drifts.
+ */
+export const protectionHeld = acquisition.table(
+  "protection_held",
+  {
+    /**
+     * The run of the act: an enrolment run, whose start runs it, or the
+     * command's own. One row per run, which the primary key protects: the act
+     * runs once in a run. Cascade: the row is that run's.
+     */
+    runId: uuid("run_id")
+      .primaryKey()
+      .references(() => run.id, { onDelete: "cascade" }),
+    /** When the protected set was computed, as its source said (0041) — never the time it was read. */
+    protectedAsOf: timestamp("protected_as_of", { withTimezone: true }).notNull(),
+    /** How many distinct protected accounts that set held (0033). */
+    accounts: integer("accounts").notNull(),
+  },
+  (t) => [
+    /** "How far the promise is known to hold": the latest protected set a run held it against. */
+    index("protection_held_as_of_idx").on(t.protectedAsOf),
+  ],
+);

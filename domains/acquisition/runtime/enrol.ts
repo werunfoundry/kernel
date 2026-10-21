@@ -56,6 +56,8 @@ import { readDeclaration, remainingOf } from "../contracts/sequencer.js";
 import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
 import { enrolment, enrolmentSkip, sourcingResult } from "../db/schema.js";
 import { readAcknowledged } from "./acknowledge.js";
+import type { ProtectedStop } from "./protected.js";
+import { stopProtected } from "./protected.js";
 import type { Protection } from "./protection.js";
 import { readProtection } from "./protection.js";
 
@@ -128,6 +130,13 @@ export interface EnrolReport {
    * protect (0034). Absent when the run stopped before protection was read.
    */
   protection?: Pick<Protection, "surface" | "unkeyedRowsOfCoveredCustomers" | "uncovered">;
+  /**
+   * What the run's start did to the enrolments already running at accounts
+   * protection now excludes (decision 0057). Absent when the run stopped
+   * before protection was read. Not 0004's promise kept: that holds only as
+   * often as this or `kernel-stop-protected` runs (`PROMISE`).
+   */
+  protectedStop?: ProtectedStop;
   enrolled: Enrolled[];
   /**
    * People a previous run wrote to the registry and died before confirming,
@@ -347,6 +356,18 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       return undefined;
     };
     const personProtected = protection.person;
+
+    /* 1b. The protected it already reached, stopped first (0057) -------- */
+
+    // Every enrolment still running at an account protection now excludes,
+    // suspended before anyone new is enrolled, with the protection this run
+    // just read. A run that cannot stop the protected it already reached
+    // does not reach anyone new. This hook is not 0004's promise: it runs
+    // only when someone enrols (see `protected.ts`).
+    report.protectedStop = await stopProtected({ db: deps.db, registry: deps.registry }, protection, ctx);
+    if (report.protectedStop.refused.length > 0) {
+      throw new Stop(`enrolments already running at protected accounts could not all be stopped, so nobody new is enrolled (decision 0057): ${report.protectedStop.refused.join("; ")}`);
+    }
 
     /* 2. Capacity, known before the first enrolment, or not checked ---- */
 

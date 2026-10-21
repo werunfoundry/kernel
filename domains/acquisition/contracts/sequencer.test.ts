@@ -90,6 +90,12 @@ describe("checkDeclaration", () => {
     assert.deepEqual(at(declaration({ suspend: { serves: "no", why: "no way to stop one person" } }), { enrol: methods.enrol }), []);
   });
 
+  it("without the adapter, reads the form and nothing more: a suspension with no withdraw behind it passes", () => {
+    // Documented as partial on purpose; readDeclaration, the gate, always gives the adapter.
+    assert.deepEqual(at(declaration()), []);
+    assert.equal(readDeclaration(adapter(declaration(), { withdraw: undefined })).suspends, false);
+  });
+
   it("holds the pulls in the type too, for an adapter the compiler sees", () => {
     // @ts-expect-error — a pull has no method in the contract, so it is not served (0054)
     const served: SequencerDeclaration = { ...declaration(), pullTouches: { serves: "yes" } };

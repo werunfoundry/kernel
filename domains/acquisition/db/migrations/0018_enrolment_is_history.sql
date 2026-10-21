@@ -36,4 +36,35 @@ BEGIN
 
   RETURN NEW;
 END;
-$$;
+$$;--> statement-breakpoint
+-- Decision 0053: an enrolment is born naming a recorded person, and loses
+-- them only once that person is gone, or kept by another domain emptied of
+-- their keys (relations' `ifStillNamed`). `person_id` is nullable for that
+-- one case, not for any writer to orphan a row. The check is deferred to the
+-- commit, because erasure empties this row before it removes the person, in
+-- the same transaction (erase.ts). It says when the person may be lost, not
+-- who may lose them: any writer that erases the person in the same
+-- transaction passes it, and that is what erasure is.
+CREATE FUNCTION "acquisition"."enrolment_names_its_person"() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.person_id IS NOT NULL THEN
+    RETURN NULL;
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    RAISE EXCEPTION 'acquisition.enrolment: an enrolment is born naming a recorded person (decision 0053)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.person_id IS NOT NULL AND EXISTS (
+       SELECT 1 FROM "relations"."person" p
+        WHERE p.id = OLD.person_id AND (p.email IS NOT NULL OR p.external_id IS NOT NULL)) THEN
+    RAISE EXCEPTION 'acquisition.enrolment: an enrolment loses its person only once that person is erased; % still has a key (decision 0053)', OLD.person_id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NULL;
+END;
+$$;--> statement-breakpoint
+CREATE CONSTRAINT TRIGGER "enrolment_names_its_person"
+  AFTER INSERT OR UPDATE OF "person_id" ON "acquisition"."enrolment"
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION "acquisition"."enrolment_names_its_person"();

@@ -135,6 +135,17 @@ describe("the sequencer", () => {
     if (!other.ok) assert.equal(other.error.code, "conflict");
   });
 
+  it("says which enrolment it read, by the key its record holds, in status and in a withdrawal (0060)", async () => {
+    const status = await sequencer.status({ person: ada, sequenceKey: "welcome" }, ctx(false));
+    assert.ok(status.ok && status.value.idempotencyKey === "k1", JSON.stringify(status));
+    const dry = await sequencer.withdraw({ idempotencyKey: "k1", person: ada, sequenceKey: "welcome", reason: "x" }, ctx(true));
+    assert.ok(dry.ok && dry.value.found && dry.value.idempotencyKey === "k1", JSON.stringify(dry));
+    const done = await sequencer.withdraw({ idempotencyKey: "k1", person: ada, sequenceKey: "welcome", reason: "x" }, ctx(false));
+    assert.ok(done.ok && done.value.found && done.value.readBack && done.value.idempotencyKey === "k1", JSON.stringify(done));
+    const gone = await sequencer.status({ person: ada, sequenceKey: "welcome" }, ctx(false));
+    assert.ok(gone.ok && gone.value.state === "unknown" && gone.value.idempotencyKey === undefined, JSON.stringify(gone));
+  });
+
   it("refuses to suppress an identity it cannot act on", async () => {
     const r = await sequencer.suppress(
       { idempotencyKey: "s", reason: "x", target: { subject: "person", keys: [{ kind: "social_profile_id", network: "n", value: "p" }] } },

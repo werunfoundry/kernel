@@ -70,8 +70,11 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
       const state = loadState(path);
       if (!state.ok) return state;
       const asOf = new Date().toISOString();
-      if (!state.value.enrolments[sequenceKey]?.[email]) return { ok: true, value: { found: false, asOf } };
-      if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf } };
+      const held = state.value.enrolments[sequenceKey]?.[email];
+      if (!held) return { ok: true, value: { found: false, asOf } };
+      // The key its record holds, as the read found it (0060): what tells the
+      // kernel this is the enrolment it made.
+      if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, idempotencyKey: held.key, asOf } };
       delete state.value.enrolments[sequenceKey]![email];
       const saved = saveState(path, state.value);
       if (!saved.ok) return saved;
@@ -81,7 +84,7 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
       if (after.value.enrolments[sequenceKey]?.[email]) {
         return { ok: false, error: { code: "unknown", message: "the enrolment is still in the state file after its deletion", retryable: false } };
       }
-      return { ok: true, value: { found: true, readBack: { sequenceKey, enrolled: false }, asOf } };
+      return { ok: true, value: { found: true, readBack: { sequenceKey, enrolled: false }, idempotencyKey: held.key, asOf } };
     },
 
     async suppress({ target }, ctx) {
@@ -107,7 +110,7 @@ const factory: AdapterFactory<Sequencer> = ({ options }) => {
       const state = loadState(path);
       if (!state.ok) return state;
       const held = state.value.enrolments[sequenceKey]?.[email];
-      return { ok: true, value: held ? { state: "active", sequenceKey, channel: "email", asOf: held.at } : { state: "unknown", sequenceKey, asOf: new Date().toISOString() } };
+      return { ok: true, value: held ? { state: "active", sequenceKey, channel: "email", idempotencyKey: held.key, asOf: held.at } : { state: "unknown", sequenceKey, asOf: new Date().toISOString() } };
     },
 
     async capacity({ sender, channel }) {

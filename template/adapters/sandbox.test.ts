@@ -19,7 +19,8 @@ import { acceptCompletion } from "@werunfoundry/relations/contracts/enrichment";
 import enrichmentFactory from "./sandbox-enrichment.ts";
 import inboundFactory from "./sandbox-inbound.ts";
 import metricsFactory from "./sandbox-metrics.ts";
-import sequencerFactory from "./sandbox-sequencer.ts";
+import sequencerFactory, { sequencerOn } from "./sandbox-sequencer.ts";
+import { loadState, saveState } from "./sandbox-store.ts";
 import targetListFactory from "./sandbox-target-list.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "sandbox-"));
@@ -144,6 +145,26 @@ describe("the sequencer", () => {
     assert.ok(done.ok && done.value.found && done.value.readBack && done.value.idempotencyKey === "k1", JSON.stringify(done));
     const gone = await sequencer.status({ person: ada, sequenceKey: "welcome" }, ctx(false));
     assert.ok(gone.ok && gone.value.state === "unknown" && gone.value.idempotencyKey === undefined, JSON.stringify(gone));
+  });
+
+  it("reads a suppression back from the state file, and is refused by it afterwards (0051)", async () => {
+    const bob = { subject: "person", keys: [{ kind: "email", value: "Bob@Open.example.com" }] };
+    const before = new Date().toISOString();
+    const r = await sequencer.suppress({ idempotencyKey: "s1", reason: "x", target: bob }, ctx(false));
+    assert.ok(r.ok && !r.simulated && r.value.applied.length === 1 && r.value.asOf >= before, JSON.stringify(r));
+    const listed = loadState(state);
+    assert.ok(listed.ok && listed.value.suppressed.includes("bob@open.example.com"), JSON.stringify(listed));
+    const refused = await sequencer.enrol({ ...enrolment, idempotencyKey: "k3", person: bob }, ctx(false));
+    assert.ok(!refused.ok && refused.error.code === "invalid", JSON.stringify(refused));
+  });
+
+  it("does not report a suppression applied when the state file, read back, does not list it (0051)", async () => {
+    // A store whose writes do not hold: the save answers, and lists nothing.
+    const lost = join(dir, "lost.json");
+    const forgetful = sequencerOn({ load: loadState, save: (path, s) => saveState(path, { ...s, suppressed: [] }) })({ options: { stateFile: lost }, env: {} });
+    const r = await forgetful.suppress({ idempotencyKey: "s2", reason: "x", target: { subject: "person", keys: [{ kind: "email", value: "cy@open.example.com" }] } }, ctx(false));
+    assert.ok(!r.ok && r.error.code === "unknown" && !r.error.retryable, JSON.stringify(r));
+    if (!r.ok) assert.equal(r.error.message, "the state file, read back, lists 0 of the 1 keys written");
   });
 
   it("refuses to suppress an identity it cannot act on", async () => {

@@ -9,7 +9,10 @@
  *   a channel a domain declares — the person-level trace the reactive lane
  *   needs (0027). Nobody is created from an event;
  * - **the opt-out**, for `acquisition.unsubscribe`: an opt-out read and not applied
- *   would be a contact with someone who asked to stop.
+ *   would be a contact with someone who asked to stop. Once the pages are
+ *   stored, every enrolment still running for someone who opted out is
+ *   suspended at its sequencer (0051), outside any page's transaction; one
+ *   that cannot be stops the source's run, and the next pull tries again.
  *
  * **One writer per source.** The source's cursor row is locked for the whole
  * read, and advanced in the transaction that stores the page it covers: a
@@ -36,6 +39,7 @@ import { findPerson, recordOptOut, recordTouch } from "@werunfoundry/relations/r
 import type { Inbound, InboundEvent } from "../contracts/inbound.js";
 import { checkInboundEvent } from "../contracts/inbound.js";
 import { inboundCursor } from "../db/schema.js";
+import { suspendOptedOut } from "./suspend.js";
 
 export const INBOUND = "inbound";
 
@@ -69,6 +73,12 @@ export interface SourceReport {
   optOuts: number;
   /** Events about someone the engine never recorded: stored, not tied to a person. */
   unknownPeople: number;
+  /**
+   * The enrolments of people who opted out, stopped at their provider after
+   * the pages were stored (0051): suspended, found already gone, or — on a
+   * dry run — that would be suspended.
+   */
+  stopped: { suspended: number; notHeld: number; would: number };
   cursor: string | null;
   stoppedBy?: string;
 }
@@ -93,7 +103,7 @@ async function pullSource(deps: PullDeps, request: PullRequest, provider: string
   const { db } = deps;
   const open = await openRun(db, { processKey: `acquisition.inbound.${provider}`, trigger: request.trigger, actor: request.actor, dryRun: request.dryRun });
   const ctx: CallContext = open.context;
-  const report: SourceReport = { provider, runId: open.id, pages: 0, read: 0, recorded: 0, replayed: 0, touches: 0, optOuts: 0, unknownPeople: 0, cursor: null };
+  const report: SourceReport = { provider, runId: open.id, pages: 0, read: 0, recorded: 0, replayed: 0, touches: 0, optOuts: 0, unknownPeople: 0, stopped: { suspended: 0, notHeld: 0, would: 0 }, cursor: null };
 
   const check = (e: InboundEvent) => {
     const issues = checkInboundEvent(e, { eventTypes: deps.declared.eventTypes, identity: deps.identity });
@@ -168,6 +178,13 @@ async function pullSource(deps: PullDeps, request: PullRequest, provider: string
         });
         if (!more) break;
       }
+    }
+    // The opt-outs, applied at the provider once stored — never inside a
+    // page's transaction, which a provider call cannot be rolled back with.
+    const stopped = await suspendOptedOut({ db, registry: deps.registry }, ctx);
+    report.stopped = { suspended: stopped.suspended, notHeld: stopped.notHeld, would: stopped.would };
+    if (stopped.refused.length > 0) {
+      throw new Stop(`people who opted out could not be stopped at their provider; the next pull tries again: ${stopped.refused.join("; ")}`);
     }
     await open.finish({ status: "succeeded" });
   } catch (thrown) {

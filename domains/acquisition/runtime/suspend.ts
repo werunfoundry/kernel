@@ -1,6 +1,6 @@
 /**
  * Suspending one enrolment (decision 0051), as its callers need it: erasure
- * before it forgets the person (0056).
+ * before it forgets the person (0056), and the opt-out once it is observed.
  *
  * Through the sequencer bound to the row's channel, and only through the one
  * the row was made through. The provider's answer is read back by the
@@ -20,12 +20,13 @@
  * tell which, so it says that retrying is the remedy.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
+import { person } from "@werunfoundry/relations/db/schema";
 
 import type { Sequencer } from "../contracts/sequencer.js";
 import { readDeclaration } from "../contracts/sequencer.js";
@@ -120,3 +121,48 @@ export async function suspendEnrolment(
   return { suspended: true, through };
 }
 
+/** A recorded person as an identity, by the keys relations holds for them (0013). */
+export function personIdentity(p: { email: string | null; externalId: string | null }): Identity {
+  const keys: Identity["keys"] = [];
+  if (p.email) keys.push({ kind: "email", value: p.email });
+  const cut = p.externalId?.indexOf(":") ?? -1;
+  if (p.externalId && cut > 0) keys.push({ kind: "social_profile_id", network: p.externalId.slice(0, cut), value: p.externalId.slice(cut + 1) });
+  return { subject: "person", keys };
+}
+
+/**
+ * Every enrolment still running for someone who opted out, suspended (0051):
+ * an opt-out observed and not applied at the provider would be a contact
+ * with someone who asked to stop. All of them, not only this run's, so that a
+ * suspension refused once is tried again by the next run — the event that
+ * brought the opt-out is not read twice.
+ */
+export async function suspendOptedOut(
+  deps: { db: Database; registry: Registry },
+  ctx: CallContext,
+): Promise<{ suspended: number; notHeld: number; would: number; refused: string[] }> {
+  const rows = await deps.db
+    .select({
+      id: enrolment.id,
+      sequenceKey: enrolment.sequenceKey,
+      channel: enrolment.channel,
+      idempotencyKey: enrolment.idempotencyKey,
+      state: enrolment.state,
+      provider: enrolment.provider,
+      email: person.email,
+      externalId: person.externalId,
+    })
+    .from(enrolment)
+    .innerJoin(person, eq(person.id, enrolment.personId))
+    .where(and(isNotNull(person.optedOutAt), inArray(enrolment.state, ["enrolled", "pending"])))
+    .orderBy(enrolment.id);
+  const out = { suspended: 0, notHeld: 0, would: 0, refused: [] as string[] };
+  for (const row of rows) {
+    const r = await suspendEnrolment(deps, row as Suspendable, personIdentity(row), ctx, "the person opted out (decision 0041)");
+    if ("suspended" in r) out.suspended++;
+    else if ("notHeld" in r) out.notHeld++;
+    else if ("would" in r) out.would += r.would === "suspend" ? 1 : 0;
+    else out.refused.push(`enrolment ${row.id} in "${row.sequenceKey}": the sequencer bound as "${r.refused.binding}": ${r.refused.answered}`);
+  }
+  return out;
+}

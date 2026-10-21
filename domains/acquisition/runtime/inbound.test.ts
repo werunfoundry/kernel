@@ -94,14 +94,89 @@ function memory(events: InboundEvent[], opts: { failAfter?: number; delayMs?: nu
   return source;
 }
 
+/**
+ * The sequencer an opt-out is applied through (0051): it holds enrolments by
+ * their key, lets go of one it withdraws and reads that back — or does not
+ * answer.
+ */
+const held = new Map<string, string>();
+let sequencerDown = false;
+const sequencer = {
+  provider: "memory-sequencer",
+  channels: ["email"],
+  declares: {
+    enrol: { serves: "yes" },
+    pullTouches: { serves: "no", why: "not in this test" },
+    suspend: { serves: "yes", method: "letting go of the person", costs: { person: [], sequence: [] }, gap: { known: true, minutes: 0, basis: "by construction", measuredOn: "2026-10-21" } },
+    pullUnsubscribes: { serves: "no", why: "not in this test" },
+  },
+  async withdraw({ idempotencyKey, sequenceKey }: { idempotencyKey: string; sequenceKey: string }, ctx: { dryRun: boolean }) {
+    const asOf = new Date().toISOString();
+    if (sequencerDown) return { ok: false, error: { code: "unavailable", message: "the sequencer did not answer", retryable: true } };
+    if (!held.has(idempotencyKey)) return { ok: true, value: { found: false, asOf } };
+    if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf } };
+    held.delete(idempotencyKey);
+    return { ok: true, value: { found: true, readBack: { sequenceKey, held: false }, asOf } };
+  },
+};
+
 const registryOf = (...sources: Inbound[]) =>
-  ({ list: () => sources.map((adapter, index) => ({ contract: "inbound", specifier: "memory", provider: adapter.provider, adapter, channels: [], finds: [], index })) }) as unknown as Registry;
+  ({
+    list: () => sources.map((adapter, index) => ({ contract: "inbound", specifier: "memory", provider: adapter.provider, adapter, channels: [], finds: [], index })),
+    forChannel: (contract: string, channel: string) => (contract === "sequencer" && channel === "email" ? sequencer : undefined),
+  }) as unknown as Registry;
 
 const pull = (source: Inbound, over: { dryRun?: boolean; maxPages?: number; pageSize?: number; on?: Database } = {}) =>
   pullInbound(
     { db: over.on ?? db, registry: registryOf(source), identity, declared },
     { dryRun: over.dryRun ?? false, actor: { type: "system" }, trigger: "cli", maxPages: over.maxPages ?? 10, pageSize: over.pageSize ?? 2 },
   );
+
+describe("an opt-out, applied at the sequencer (0051)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  beforeEach(() => {
+    held.clear();
+    sequencerDown = false;
+  });
+  /** Ada, enrolled in `welcome` through the memory sequencer, which holds her. */
+  async function enrolledAda(): Promise<string> {
+    const [{ id }] = await rows("insert into relations.person (email) values ('ada@example.com') returning id");
+    await client.query("insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type) values ($1, 'welcome', 'email', 'key-ada', 'enrolled', 'memory-sequencer', 'system')", [id]);
+    held.set("key-ada", "welcome");
+    return id;
+  }
+  const state = async () => (await rows("select state, suspension_read_back from acquisition.enrolment"))[0];
+
+  it("suspends the running enrolments of whoever unsubscribed, once the page is stored", async () => {
+    await enrolledAda();
+    const [r] = await pull(memory([ev("u1", "acquisition.unsubscribe", "ada@example.com", "email")]));
+    assert.equal(r!.stoppedBy, undefined);
+    assert.deepEqual(r!.stopped, { suspended: 1, notHeld: 0, would: 0 });
+    assert.deepEqual(await state(), { state: "suspended", suspension_read_back: { sequenceKey: "welcome", held: false } });
+    assert.equal(held.size, 0, "the sequencer still holds someone who asked to stop");
+  });
+
+  it("says so when the sequencer does not answer, and the next pull stops them without the event again", async () => {
+    await enrolledAda();
+    sequencerDown = true;
+    const [first] = await pull(memory([ev("u1", "acquisition.unsubscribe", "ada@example.com", "email")]));
+    assert.match(first!.stoppedBy!, /people who opted out could not be stopped at their provider; the next pull tries again/);
+    assert.equal((await state()).state, "enrolled");
+    sequencerDown = false;
+    const [second] = await pull(memory([ev("u1", "acquisition.unsubscribe", "ada@example.com", "email")]));
+    assert.equal(second!.read, 0, "the second pull read the event again");
+    assert.deepEqual(second!.stopped, { suspended: 1, notHeld: 0, would: 0 });
+    assert.equal((await state()).state, "suspended");
+  });
+
+  it("on a dry run, says whom it would stop, and stops nobody", async () => {
+    const id = await enrolledAda();
+    await client.query("update relations.person set opted_out_at = now() where id = $1", [id]);
+    const [r] = await pull(memory([]), { dryRun: true });
+    assert.deepEqual(r!.stopped, { suspended: 0, notHeld: 0, would: 1 });
+    assert.equal((await state()).state, "enrolled");
+    assert.equal(held.size, 1);
+  });
+});
 
 describe("pulling inbound", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
   it("stores every event once, ties it to a recorded person, applies an opt-out, and advances the cursor", async () => {
@@ -113,7 +188,7 @@ describe("pulling inbound", { skip: base ? false : "TEST_DATABASE_URL is not set
       ev("r2", "acquisition.reply", "nobody@example.org", "email"),
     ]);
     const [r] = await pull(source);
-    assert.deepEqual({ ...r, runId: undefined }, { provider: "memory", runId: undefined, pages: 3, read: 4, recorded: 4, replayed: 0, touches: 2, optOuts: 1, unknownPeople: 1, cursor: "4" });
+    assert.deepEqual({ ...r, runId: undefined }, { provider: "memory", runId: undefined, pages: 3, read: 4, recorded: 4, replayed: 0, touches: 2, optOuts: 1, unknownPeople: 1, stopped: { suspended: 0, notHeld: 0, would: 0 }, cursor: "4" });
     assert.equal((await rows("select count(*)::int as n from core.event"))[0].n, 4);
     assert.deepEqual(await rows("select provider_event_id as id, direction::text from relations.touch order by 1"), [{ id: "r1", direction: "inbound" }, { id: "u1", direction: "inbound" }]);
     assert.ok((await rows("select opted_out_at from relations.person where id = $1", [ada]))[0].opted_out_at instanceof Date);

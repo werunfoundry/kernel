@@ -7,6 +7,10 @@
 
 > Completed by [0012](0012-one-provider-workspace-per-instance.md): one provider workspace per instance.
 
+> Superseded in part by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
+> protection after enrolment depends on `withdraw` and `suppress`, not on
+> `suppress` alone, because 0051 requires an effect read back and recorded.
+
 ## Decided
 
 The `Sequencer` contract changes in five places, all forced by writing its

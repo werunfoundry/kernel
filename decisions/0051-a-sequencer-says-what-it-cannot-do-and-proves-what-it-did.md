@@ -4,6 +4,9 @@
 > verb is declared served only where the contract has a method for it, and
 > the declaration is checked against the adapter.
 
+> Completed by [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md):
+> a newly protected account's recorded enrolments are suspended.
+
 Completes:
 
 - [0014](0014-one-sequencer-contract-every-channel.md): the contract gains

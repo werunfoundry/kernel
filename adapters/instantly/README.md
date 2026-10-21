@@ -112,6 +112,18 @@ The campaign had `insert_unsubscribe_header: true`. The email carried
 `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. A `GET` on it shows a
 confirmation page and changes nothing; confirming unsubscribes.
 
+What the receiving client did with that header was looked at once, in
+October 2026, on a message a real recipient received from a campaign of
+this provider. The operator recorded it, and it is reported here as they
+recorded it.
+- *What was looked at:* the received message's headers, and the message as
+  Gmail displayed it.
+- *What was seen:* the headers carried `List-Unsubscribe`. Gmail displayed
+  no unsubscribe link for the message.
+
+This is one message, in one client, on one day. Why Gmail showed no link
+was not looked into.
+
 After confirming, read at +30 s and again at +4 min 30:
 
 - `GET /api/v2/leads/{id}`: `status` -2, and `timestamp_updated` at the

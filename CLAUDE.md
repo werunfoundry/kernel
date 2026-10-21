@@ -37,7 +37,8 @@ It checks secrets, fixtures, provider names and — rule 2 — that every import
 and every foreign key between layers is one the importing domain declared in
 its `domain.yaml`. A dependency you did not declare does not compile past it.
 Under `decisions/`, it refuses a decision cited by line, and a decision that
-completes, supersedes or reverses another without a pointer back (0059).
+completes, supersedes or reverses another without a pointer back (0059),
+and a pointer its decision's introduction does not back (0061).
 
 Never commit on `main`. Branch first: `git switch -c <type>/<short-name>`, with
 `feat/`, `fix/`, `docs/`, `chore/` or `ci/`. The pre-commit hook enforces both,

@@ -580,6 +580,42 @@ describe("rule 6 — a decision's cross-references hold", () => {
   });
 });
 
+describe("rule 6 — a pointer is backed by the decision it names", () => {
+  // Numbered after the first decision written under the introduction's form,
+  // which 0059 made it: before it, a pointer is not read this way. Each fixture's
+  // introduction declares nothing, so the pointer-back rule has nothing to
+  // refuse and only this one can.
+  const target = (pointer) => `# 0070 — Target\n\n${pointer}\n\nIt says one thing.\n\n## Decided\n\nThat.\n`;
+  const source = (intro, body = "More.") => `# 0071 — Source\n\n${intro}\n\n## Decided\n\n${body}\n`;
+  const pair = (t, s) => ({ "decisions/0070-target.md": t, "decisions/0071-source.md": s });
+  const completedBy = "> Completed by [0071](0071-source.md): more.";
+
+  it("refuses a pointer whose decision's introduction does not say it changes this one", () => {
+    refuses(repo(pair(target(completedBy), source("It says another thing."))), 6, "carries a pointer to 0071, whose introduction does not say");
+  });
+
+  it("refuses it when the decision names this one in its body only", () => {
+    refuses(repo(pair(target(completedBy), source("It says another thing.", "It reads 0070, *Decided*."))), 6, "whose introduction does not say");
+  });
+
+  it("refuses the same for a Superseded in part pointer", () => {
+    refuses(repo(pair(target("> Superseded in part by [0071](0071-source.md): part."), source("It says another thing."))), 6, "whose introduction does not say");
+  });
+
+  it("allows a pointer the decision's introduction backs", () => {
+    accepts(repo(pair(target(completedBy), source("Completes [0070](0070-target.md)."))));
+  });
+
+  it("does not read a pointer from a decision written before the introduction was the form", () => {
+    const old = { "decisions/0001-old.md": "# 0001 — Old\n\n> Completed by [0002](0002-older.md): renamed.\n\nIt.\n\n## Decided\n\nThat.\n", "decisions/0002-older.md": "# 0002 — Older\n\n## Decided\n\nIt renames a domain.\n" };
+    accepts(repo(old));
+  });
+
+  it("refuses a pointer to a decision that does not exist, whatever its age", () => {
+    refuses(repo({ "decisions/0001-old.md": "# 0001 — Old\n\n> Completed by [0002](0002-gone.md): gone.\n\nIt.\n\n## Decided\n\nThat.\n" }), 6, "points to 0002, which is not a decision here");
+  });
+});
+
 describe("--staged", () => {
   const stage = (dir, paths) => execFileSync("git", ["add", ...paths], { cwd: dir });
 

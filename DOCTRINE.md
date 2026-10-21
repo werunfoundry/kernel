@@ -98,7 +98,9 @@ this system asks.
 - **A decision's cross-references are checked** (decision 0059). A decision
   is cited by its section and its sentence, never by line; one that
   completes, supersedes or reverses another finds the pointer back under
-  that one's title.
+  that one's title; and a pointer is backed by the introduction of the
+  decision it names, from the first decision written to that form
+  (decision 0061).
 - **Every machine-read file is parsed by the checks.** A manifest only a human
   has read is not known to be valid. A file that the build parses and the
   checks do not is a gap that is discovered in CI at best.

@@ -31,7 +31,10 @@ file and symbol, or by line at a named commit ("On `main` at …").
 **An introduction says what a decision changes.** *Completes*, *Supersedes*
 or *Reverses* names a decision it changes; *rests on* names one it only
 builds on. `scripts/check.mjs` refuses a citation by line, and a decision
-that changes another which carries no pointer back to it.
+that changes another which carries no pointer back to it. It also refuses
+a pointer its decision's introduction does not back, for decisions written
+to this form, and a pointer to a decision that does not exist
+([0061](0061-a-pointer-is-backed-by-the-decision-it-names.md)).
 
 **A decision says what it has not built.** One merged ahead of its code
 says so in a section `## Not built yet`. One already merged that is ahead

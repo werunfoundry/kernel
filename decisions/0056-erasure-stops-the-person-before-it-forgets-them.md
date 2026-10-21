@@ -68,14 +68,51 @@ binding is to a provider other than the one the row was made through; or the
 binding declares that it cannot suspend. A provider that never answers
 again — an account closed — is a fourth.
 
-**The way out of a refusal is a person's act, never a renunciation.**
-Someone stops the person at the provider by hand, then attests it at a
-terminal, under their name. The erasure then goes on because the stop
+**In those four cases only, the way out is a person's act, never a
+renunciation.** A person attests at a terminal, under their name, that the
+enrolment can no longer send. The erasure then goes on because the stop
 happened, not because anyone gave up on it.
+
+In every other case, the remedy is to retry. No attestation is open there:
+a timeout, a refusal or an error that retrying may clear is retried.
+
+- *Where it opens.* The first three cases are in the instance's
+  configuration, and the kernel sees them. It opens the attestation only
+  for an enrolment it finds in one of them. The fourth it cannot tell from
+  a timeout, so it opens only for an enrolment an erasure has already been
+  refused on. There, the case itself is part of what the person attests.
+- *What it says is what the person affirms, and that differs by case.*
+  - Where the provider still runs: "I stopped this person in this
+    sequence, by hand, this way."
+  - Where the account is closed: "The account is closed; no sequence can
+    send any more."
+
+  There is no single formula for different facts. An attestation names one
+  enrolment, never the erasure as a whole.
 - *Its form is 0047's.* A person's act is recorded as a person's act, and
   never deduced.
 - *An attestation can be false*, as any attestation can. The registry says
   who gave it.
+
+**The registry tells an attested stop from a proved one.** 0051 made the
+suspension's record a proof: a suspended row holds what the provider
+answered when the stop was read back, in `suspension_read_back`, and the
+schema requires it (`enrolment_suspension_recorded`). An attested stop has
+no such answer. It has a person's word.
+- *An attestation never goes in `suspension_read_back`.* That column holds
+  only what a provider returned.
+- *It goes in a column of its own, `suspension_attestation`.* That column
+  holds what the person affirms and the case it answers. The stop is
+  recorded under a run the person opened, so the run's attribution says
+  who.
+- *The constraint changes accordingly.* A suspended row holds exactly one
+  of the two: a read-back, with the adapter's method and costs, or an
+  attestation.
+- *Erasure treats it as it treats the read-back.* The attestation may name
+  the person, so 0053's anonymisation replaces it with a fixed document.
+
+A stop that was verified and a stop that was affirmed are never read as
+the same thing.
 - *Erasing anyway, saying what was not stopped, is not a way out.* It turns
   a delayed erasure into a contact without end and without remedy. The
   kernel forgets the person, the sequence keeps running, and nobody knows
@@ -127,7 +164,9 @@ as a dry run, which reads and writes nothing.
 - A call to a provider inside the erasure's transaction.
 - The core importing a domain's code.
 - An erasure that goes on when a step did not complete, unless a person
-  attested the stop.
+  attested the stop in one of the four cases.
+- An attestation where retrying may still work.
+- A person's affirmation recorded where a provider's answer belongs.
 - An erasure that goes on because someone gave up on stopping the person.
 - A stop by hand deduced rather than attested.
 - A refusal that does not name the adapter that failed.
@@ -149,7 +188,7 @@ the person is reached at the provider before the kernel forgets where.
 ## Not decided here
 
 - **The shapes**: the manifest's field, the step's signature, what the plan
-  prints, and the attestation's command and record.
+  prints, and the attestation's command.
 - **Deleting the person at the provider rather than suspending them.** This
   is not a question of the kernel's design. It is a question of processing:
   what the agreement with the provider obliges it to do with a datum, and

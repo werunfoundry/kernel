@@ -78,7 +78,19 @@ experimentMetrics:
 erasure:
   - { table: draft, column: person_id, do: delete }
   - { table: person_state, column: person_id, do: delete }
-  - { table: enrolment, column: person_id, do: delete }
+  # Since 0053, history: what a run did — the sequence, the company, the
+  # state, the suspension's method and costs — without who. The key given to
+  # the provider is a hash of the person's keys; the refusal and the
+  # read-back are the provider's words, and may name them. The read-back's
+  # document is the one the migration's trigger lets a suspended row take.
+  - table: enrolment
+    column: person_id
+    do: anonymise
+    columns: [person_id]
+    random: [idempotency_key]
+    text:
+      refusal: "erased (decision 0053); the provider's answer is not kept"
+      suspension_read_back: '{"erased": "decision 0053"}'
   - table: sourcing_result
     column: person_id
     keys: person

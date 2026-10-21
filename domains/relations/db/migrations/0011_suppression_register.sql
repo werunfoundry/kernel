@@ -1,3 +1,12 @@
+-- Decision 0052: the register of objections that outlive an erasure. It holds
+-- four fields (0052, *Rules out*): the fingerprint, the secret's version (a
+-- chain since 0058, §4), the time it was written, and the run.
+--
+-- `id` is a fifth, and it is not one of them: it says nothing about anyone.
+-- It is there because the fingerprint cannot be the primary key — the
+-- rewrap of 0058, §3 changes it — and a key that changes would carry the
+-- change into whatever refers to the row. Uniqueness is the fingerprint's,
+-- and the unique index below holds it: one entry per fingerprint.
 CREATE TABLE "relations"."suppression" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"fingerprint" text NOT NULL,

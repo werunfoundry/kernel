@@ -539,6 +539,11 @@ export const message = relations.table(
 export const suppression = relations.table(
   "suppression",
   {
+    /**
+     * Not one of 0052's four fields, and it says nothing about anyone. The
+     * fingerprint cannot be the primary key: the rewrap of 0058, §3 changes
+     * it. Uniqueness stays the fingerprint's, held by the index below.
+     */
     id: uuid("id").defaultRandom().primaryKey(),
 
     /** HMAC-SHA-256 of the normalised key under its chain's secrets, as 64 lower-case hexadecimal characters. */

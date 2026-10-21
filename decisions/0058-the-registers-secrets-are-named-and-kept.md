@@ -4,6 +4,10 @@
 > boot hands the versions to the erasure, and one function in the core
 > fingerprints under them, with an encoding that never changes.
 
+> Superseded in part by [0063](0063-a-lost-secret-stops-contact-not-erasure.md):
+> boot refuses an unset variable only for the version that writes; another
+> unset version is a warning, erasure goes on, and contact stops.
+
 > Not built, on `main` at `350656e`: none of it — no `fingerprints` section,
 > no check at boot, no command that generates a version, no rewrap. Nothing
 > depends on it yet: 0052's register is not built.

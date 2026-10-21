@@ -1,5 +1,9 @@
 # 0062 — The register is written by its domain, inside the erasure's transaction
 
+> Completed by [0063](0063-a-lost-secret-stops-contact-not-erasure.md):
+> the erasure needs the version that writes and no other, so a lost old
+> secret does not stop it.
+
 Completes [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),
 whose one writer is "an erasure … in the transaction that deletes the keys"
 and which says nothing of how a domain's table is written there; and

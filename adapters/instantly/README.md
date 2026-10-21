@@ -87,6 +87,14 @@ Before this, `enrol` answered `active` on `leads_uploaded: 1` alone.
 Every answer carries the time of the read it rests on. `status` used to give
 a lead's `timestamp_updated`, which every change to the record moves (0051).
 
+`status` and `withdraw` find a lead by address, and say which enrolment it
+is (0060): each answer carries the key the lead holds in
+`engine_idempotency_key`, as the read found it — the read-back's lead, for
+`withdraw` — or no key when the lead holds none, as a lead enrolled outside
+this engine does. The adapter compares nothing: the requests carry no
+enrolment key, and a lead without the key is still parked, by address.
+Matching the key to the registry's row is the kernel's.
+
 ## Pulling what was sent
 
 `GET /api/v2/emails?campaign_id=…&email_type=sent&min_timestamp_created=<ISO, ms>`
@@ -161,10 +169,17 @@ them.
     `POST /api/v2/leads/list` as soon as the upload answers. If it lags, the
     adapter reports an error for an upload that landed: the run stops with
     the registry row left pending, and the next run confirms it from
-    `status`, which finds the lead by address and does not read the key;
+    `status`. `status` now reports the key the lead carries, but the
+    reconciliation does not compare it yet (0060);
   - whether `leads/list` returns `payload` with the custom variables the
     upload set. The read-back decides by the key kept there; without it, a
     landed upload reads back as a conflict.
+- Whether `GET /api/v2/leads/{id}` returns `payload` with the custom
+  variables the upload set. `withdraw` reports the key from its read-back
+  there, as `status` does from `leads/list`. If either leaves `payload` out,
+  every lead reads as carrying no key, and the kernel can confirm none of
+  its own enrolments (0060). The test's fake returns it on both; nobody has
+  seen Instantly do so.
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

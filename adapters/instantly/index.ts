@@ -286,6 +286,17 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     return { ok: true, value: lead ?? null };
   }
 
+  /**
+   * The key the lead carries, as this read found it (0060): the lead is
+   * found by address, and only this says it is the enrolment the kernel
+   * made rather than another one under the same address. Absent when the
+   * lead carries none — enrolled outside this engine.
+   */
+  const keyOf = (lead: Lead): { idempotencyKey?: string } => {
+    const key = lead.payload?.[KEY];
+    return typeof key === "string" && key !== "" ? { idempotencyKey: key } : {};
+  };
+
   // A parked lead still reads active (README): it is stopped, by this adapter.
   // `asOf` is when the lead was read, never its `timestamp_updated`: every
   // change to the record moves that one (0051).
@@ -295,6 +306,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         ? "stopped"
         : ((lead.status !== undefined ? STATES[lead.status] : undefined) ?? "unknown"),
     sequenceKey,
+    ...keyOf(lead),
     asOf: readAt,
   });
 
@@ -428,7 +440,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       if (sub.value.parent_campaign !== campaign) {
         return fail("invalid", `the parking subsequence ${parking} belongs to another campaign than the sequence "${request.sequenceKey}"`);
       }
-      if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, asOf: new Date().toISOString() } };
+      if (ctx.dryRun) return { ok: true, simulated: true, value: { found: true, ...keyOf(found.value), asOf: new Date().toISOString() } };
 
       const lead = found.value;
       if (lead.subsequence_id !== parking) {
@@ -446,7 +458,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
           `Instantly accepted the move, but the lead does not read back as parked: subsequence ${String(back.value.subsequence_id ?? "none")}, campaign ${String(back.value.campaign ?? "none")}`,
         );
       }
-      return { ok: true, value: { found: true, readBack: back.value, asOf: new Date().toISOString() } };
+      return { ok: true, value: { found: true, readBack: back.value, ...keyOf(back.value), asOf: new Date().toISOString() } };
     },
 
     async suppress(request, ctx): Promise<CallResult<Suppression>> {

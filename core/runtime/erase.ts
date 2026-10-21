@@ -57,10 +57,11 @@ export const NOT_REACHED: readonly string[] = [
   "working copies: dumps, exports, copies of the database, target lists",
   "core.event payloads, which name a person by keys and are append-only",
   "core.run.error, free text that may quote a provider's answer",
-  // Erasure calls no provider, and deletes the enrolment registry's rows —
-  // the kernel's only record of where the person is enrolled. Said here
-  // until erasure suspends each enrolment before it deletes the row.
-  "the sequencer: a person enrolled in a running sequence stays in it at the provider, and its next steps still reach them; erasure calls no provider, and deletes the kernel's record of where they are enrolled",
+  // Erasure calls no provider, and empties the enrolment registry's rows of
+  // the person (decision 0053) — the kernel's only record of where they are
+  // enrolled, which then names nobody. Said here until erasure suspends each
+  // enrolment before it anonymises the row.
+  "the sequencer: a person enrolled in a running sequence stays in it at the provider, and its next steps still reach them; erasure calls no provider, and the kernel's record of where they were enrolled is kept naming nobody, so it can no longer say where to stop them",
 ];
 
 /** Upper domains first: a domain is erased before every domain it depends on. */

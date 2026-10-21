@@ -1,5 +1,9 @@
 # 0049 — Erasure reaches a person by their keys, and says what it does not reach
 
+> Superseded in part by [0055](0055-one-passage-reaches-a-person.md): the
+> threshold is the first live contact through the passage; only the kernel's
+> own sandbox, recognised by the module it resolves to, is spared.
+
 Completes [0040](0040-an-http-api-and-erasure-declared-per-domain.md).
 
 ## What was found

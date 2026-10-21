@@ -336,3 +336,97 @@ describe("the reference case — what was done by hand (0049)", { skip: base ? f
     assert.deepEqual(await rows("select opted_out_at from relations.person"), [{ opted_out_at: null }]);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* An enrolment is history once its person is erased (decision 0053)            */
+/* -------------------------------------------------------------------------- */
+
+describe("an enrolment, once its person is erased (0053)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const MARK = { erased: "decision 0053" };
+  /** The key `enrol.ts` gives the provider: a hash of the person's keys. */
+  const keyOf = (email: string, sequence: string) => createHash("sha256").update([sequence, "email", `email::${email}`].join("\n")).digest("hex").slice(0, 32);
+
+  /**
+   * Ada in three sequences: enrolled, refused with the provider's words about
+   * her, and suspended with a read-back that names her in clear — what a
+   * provider's lead record returns.
+   */
+  async function enrolled(): Promise<{ id: string; suspendedBy: string }> {
+    const [{ id }] = await rows("insert into relations.person (email, external_id, full_name) values ('ada@example.com', 'network_a:ada-1', 'Ada') returning id");
+    const [{ id: company }] = await rows("insert into relations.company (domain, name) values ('example.com', 'Example') returning id");
+    const suspendedBy = await aRun("acquisition.suspend");
+    const row = (sequence: string, state: string, refusal: string | null = null) =>
+      rows(
+        "insert into acquisition.enrolment (person_id, company_id, sequence_key, channel, idempotency_key, state, provider, refusal, actor_type) values ($1, $2, $3, 'email', $4, $5, 'memory', $6, 'system') returning id",
+        [id, company, sequence, keyOf("ada@example.com", sequence), state, refusal],
+      );
+    await row("welcome", "enrolled");
+    await row("nurture", "refused", "invalid: ada@example.com is not deliverable");
+    const [{ id: suspended }] = await row("winback", "enrolled");
+    await client.query(
+      `update acquisition.enrolment set state = 'suspended', suspension_asked_at = '2026-10-20T07:34:23Z', suspension_run_id = $2,
+         suspension_read_back = $3, suspension_method = 'parking the person in a far-off step',
+         suspension_costs = '{"person":["provider_status_stays_active"],"sequence":["shared_state_changes"]}'
+       where id = $1`,
+      [suspended, suspendedBy, { state: "active", lead: { email: "ada@example.com", id: "lead-1", first_name: "Ada" } }],
+    );
+    return { id, suspendedBy };
+  }
+  const enrolments = async () =>
+    rows(
+      `select sequence_key, person_id, company_id is not null as company, state, idempotency_key, refusal, suspension_asked_at, suspension_run_id,
+              suspension_read_back, suspension_method, suspension_costs, provider
+         from acquisition.enrolment order by sequence_key`,
+    );
+
+  it("keeps every enrolment row, naming nobody: the suspension stays as the proof that it happened", async () => {
+    const { id, suspendedBy } = await enrolled();
+    const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" });
+    assert.deepEqual([r.steps.find((s) => s.table === "enrolment")?.do, r.steps.find((s) => s.table === "enrolment")?.rows], ["anonymise", 3]);
+    assert.equal((await rows("select count(*)::int as n from relations.person"))[0].n, 0, "the person is still on record");
+    const after = await enrolments();
+    assert.deepEqual(after.map((e) => [e.sequence_key, e.person_id, e.company, e.state]), [
+      ["nurture", null, true, "refused"],
+      ["welcome", null, true, "enrolled"],
+      ["winback", null, true, "suspended"],
+    ]);
+    const winback = after.find((e) => e.sequence_key === "winback")!;
+    assert.deepEqual(
+      [winback.suspension_asked_at.toISOString(), winback.suspension_run_id, winback.suspension_method, winback.suspension_costs.sequence],
+      ["2026-10-20T07:34:23.000Z", suspendedBy, "parking the person in a far-off step", ["shared_state_changes"]],
+      "the suspension's record did not survive the erasure",
+    );
+  });
+
+  it("leaves nothing of her: not the read-back, not the provider's refusal, not the key derived from her keys", async () => {
+    const { id } = await enrolled();
+    await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase" });
+    const after = await enrolments();
+    const byKey = Object.fromEntries(after.map((e) => [e.sequence_key, e]));
+    assert.deepEqual(byKey.winback.suspension_read_back, MARK);
+    assert.equal(byKey.nurture.refusal, "erased (decision 0053); the provider's answer is not kept");
+    // `text` writes only where there was something (0053): no invented refusal, no read-back on a row that was never suspended.
+    assert.deepEqual([byKey.welcome.refusal, byKey.welcome.suspension_read_back, byKey.nurture.suspension_read_back], [null, null, null]);
+    for (const e of after) assert.match(e.idempotency_key, /^erased:[0-9a-f-]{36}$/);
+    assert.equal(new Set(after.map((e) => e.idempotency_key)).size, 3, "a value derived from nothing is not shared by two rows");
+    // Value by value, as 0049's reference case checks: nothing names her, and no key derived from hers is left.
+    const naming = ["ada@example.com", "ada-1", "lead-1", "Ada", keyOf("ada@example.com", "welcome"), keyOf("ada@example.com", "nurture"), keyOf("ada@example.com", "winback")];
+    const strings = (v: unknown): string[] => (typeof v === "string" ? [v] : v instanceof Date ? [] : v && typeof v === "object" ? [...Object.keys(v), ...Object.values(v).flatMap(strings)] : []);
+    const left = strings(after).filter((s) => naming.some((k) => s.includes(k)));
+    assert.deepEqual(left, [], JSON.stringify(after));
+  });
+
+  it("does not let anything but the erasure touch a suspended row's read-back", async () => {
+    await enrolled();
+    await assert.rejects(
+      client.query("update acquisition.enrolment set suspension_read_back = $1 where sequence_key = 'winback'", [MARK]),
+      /a suspended enrolment is terminal/,
+      "the read-back was replaced without the person leaving",
+    );
+    await assert.rejects(
+      client.query("update acquisition.enrolment set person_id = null, suspension_read_back = '{\"erased\": \"something else\"}' where sequence_key = 'winback'"),
+      /a suspended enrolment is terminal/,
+      "the read-back was replaced by another document than the erasure's",
+    );
+  });
+});

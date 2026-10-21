@@ -159,8 +159,9 @@ them.
   (`GET /api/v2/leads/{id}`); this README records nothing of:
   - whether a lead uploaded with `POST /api/v2/leads/add` is returned by
     `POST /api/v2/leads/list` as soon as the upload answers. If it lags, the
-    adapter reports an error for an upload that landed, and the next run
-    finds the lead and confirms it by its key;
+    adapter reports an error for an upload that landed: the run stops with
+    the registry row left pending, and the next run confirms it from
+    `status`, which finds the lead by address and does not read the key;
   - whether `leads/list` returns `payload` with the custom variables the
     upload set. The read-back decides by the key kept there; without it, a
     landed upload reads back as a conflict.

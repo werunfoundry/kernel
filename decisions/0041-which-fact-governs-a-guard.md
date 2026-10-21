@@ -1,5 +1,14 @@
 # 0041 — Which fact governs a guard
 
+> Superseded in part by [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md):
+> at sending, protection judges a list member by the company `relations`
+> recorded, which *Protection reads the source, never the declaration*
+> says it never does (0050, *The missing affiliation*).
+
+> Completed by [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md):
+> the global opt-out is also read from a register of fingerprints, for an
+> erased person who had objected.
+
 Completes [0036](0036-a-state-is-declared-and-kept.md) and
 [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md).
 Each left a fact with two possible readings and a guard that reads one of

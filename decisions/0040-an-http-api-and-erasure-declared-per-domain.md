@@ -1,8 +1,11 @@
 # 0040 — An HTTP API, and erasure declared by each domain
 
-> Completed by [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md):
+> Superseded in part by [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md):
 > erasure reaches a person by their keys too, and a run's history is
 > anonymised, not deleted as acquisition first declared it.
+
+> Superseded in part by [0053](0053-an-enrolment-is-history-once-its-person-is-erased.md):
+> acquisition's enrolment row is anonymised, no longer deleted.
 
 > Completed by [0056](0056-erasure-stops-the-person-before-it-forgets-them.md):
 > a domain may declare a step the core runs before erasure, outside its

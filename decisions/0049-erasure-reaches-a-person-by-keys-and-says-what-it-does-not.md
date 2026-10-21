@@ -1,5 +1,16 @@
 # 0049 — Erasure reaches a person by their keys, and says what it does not reach
 
+> Completed by [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md):
+> suspension is the verb that will reach the sequencer; until erasure
+> calls it, the sequencer is among what erasure does not reach.
+
+> Completed by [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md):
+> the opt-out survives an erasure, as one keyed fingerprint per key, for
+> whoever objected.
+
+> Superseded in part by [0053](0053-an-enrolment-is-history-once-its-person-is-erased.md):
+> `text` writes only where the column holds a value.
+
 > Superseded in part by [0055](0055-one-passage-reaches-a-person.md): the
 > threshold is the first live contact through the passage; only the kernel's
 > own sandbox, recognised by the module it resolves to, is spared.

@@ -1,5 +1,9 @@
 # 0052 — An objection outlives the erasure, as a fingerprint and nothing else
 
+> Completed by [0053](0053-an-enrolment-is-history-once-its-person-is-erased.md):
+> the enrolment row is anonymised, not deleted, the question this decision
+> left open.
+
 > Superseded in part by [0055](0055-one-passage-reaches-a-person.md): its count
 > of the reads — five, in four files, with three answers for a person not on
 > record; the read in `queue` belongs to the sending run, not to drafting.

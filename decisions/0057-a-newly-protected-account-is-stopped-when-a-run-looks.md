@@ -1,5 +1,9 @@
 # 0057 — A newly protected account is stopped when a run looks
 
+> Not built, on `main` at `350656e`: none of it — neither the act, its hook
+> at enrolment, nor its command. Nothing withdraws a newly protected account
+> from a running sequence.
+
 Completes [0004](0004-protection-is-its-own-route.md), whose promise that
 a newly protected account is withdrawn from running sequences nothing
 keeps; and [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md),

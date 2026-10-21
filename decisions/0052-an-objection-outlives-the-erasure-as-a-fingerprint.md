@@ -13,6 +13,10 @@
 > rewrap on a compromise is the one other writer and the one edit the
 > register admits, and an entry's version is the chain it is keyed under.
 
+> Not built, on `main` at `350656e`: none of it — no register, no question
+> at `kernel-erase`, no one reader. A live enrolment is refused once an
+> erasure has run, provisionally (0055, *The threshold is held by code*).
+
 Completes [0049](0049-erasure-reaches-a-person-by-keys-and-says-what-it-does-not.md),
 which named the hole this decision closes and set the threshold it is due
 by: the first live enrolment into a real sequencer, or the first real

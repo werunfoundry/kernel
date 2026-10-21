@@ -1,5 +1,9 @@
 # 0058 — The register's secrets are named, checked, and rewrapped only on compromise
 
+> Not built, on `main` at `350656e`: none of it — no `fingerprints` section,
+> no check at boot, no command that generates a version, no rewrap. Nothing
+> depends on it yet: 0052's register is not built.
+
 Completes [0052](0052-an-objection-outlives-the-erasure-as-a-fingerprint.md),
 which left "the shape of the secret's rotation" undecided. Supersedes 0052
 in part, on four points (below). Changes what an instance holds, which is

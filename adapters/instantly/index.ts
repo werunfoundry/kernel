@@ -44,7 +44,9 @@
  * - **suppress is the workspace blocklist**, which takes an email or a whole
  *   domain and, per Instantly's help centre, is checked "across ongoing
  *   campaigns" as well as at upload. Workspace-wide: it stops every campaign,
- *   and refuses the address in future uploads.
+ *   and refuses the address in future uploads. It reads every entry it
+ *   writes back from the blocklist, and an entry that does not read back is
+ *   an error (0051): the blocklist's own answer to a write is not trusted.
  * - **One channel, `email`** (decision 0014). A person is reached by the
  *   `email` key of their identity; an identity without one is refused.
  *   `suppress` applies an identity's `email` keys and, for a company, its
@@ -460,6 +462,15 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         if (!blocked.value && !ctx.dryRun) {
           const created = await call<unknown>("POST", "/api/v2/block-lists-entries", ctx, { bl_value: value });
           if (!created.ok) return created;
+          // Read back (0051): the answer to the write proves nothing — ten
+          // writes to a lead answered 200 and did nothing (README). Only the
+          // entry, read again from the blocklist, says the value is refused.
+          const back = await isListed(value, ctx);
+          if (!back.ok) return back;
+          if (!back.value) {
+            const confirmed = applied.length ? `; read back before it: ${applied.map((k) => k.value).join(", ")}` : "";
+            return fail("unknown", `Instantly accepted the blocklist entry ${value}, but the blocklist does not read it back${confirmed}`);
+          }
         }
         applied.push(key);
       }
@@ -534,15 +545,30 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     const wanted = value.toLowerCase();
     const candidates = wanted.includes("@") ? [wanted, wanted.split("@")[1] ?? ""] : [wanted];
     for (const candidate of candidates.filter(Boolean)) {
-      const listed = await call<Page<{ bl_value: string }>>(
-        "GET",
-        `/api/v2/block-lists-entries?search=${encodeURIComponent(candidate)}&limit=50`,
-        ctx,
-      );
+      const listed = await isListed(candidate, ctx);
       if (!listed.ok) return listed;
-      if (listed.value.items.some((e) => e.bl_value.toLowerCase() === candidate)) return { ok: true, value: true };
+      if (listed.value) return { ok: true, value: true };
     }
     return { ok: true, value: false };
+  }
+
+  /**
+   * Whether this exact value — an address or a domain — has an entry of its
+   * own on the blocklist. What a read-back asks: the entry just written, not
+   * a domain that would cover it. The read takes the first 50 results. If
+   * the search matches parts of values — the test's fake assumes it, and
+   * nobody has observed it (README) — a value buried under more than 50
+   * longer matches reads as absent: an error, never a false success.
+   */
+  async function isListed(value: string, ctx: CallContext): Promise<CallResult<boolean>> {
+    const wanted = value.toLowerCase();
+    const listed = await call<Page<{ bl_value: string }>>(
+      "GET",
+      `/api/v2/block-lists-entries?search=${encodeURIComponent(wanted)}&limit=50`,
+      ctx,
+    );
+    if (!listed.ok) return listed;
+    return { ok: true, value: listed.value.items.some((e) => e.bl_value.toLowerCase() === wanted) };
   }
 };
 

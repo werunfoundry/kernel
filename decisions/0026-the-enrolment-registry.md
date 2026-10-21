@@ -7,6 +7,10 @@
 > the registry gains a state, `suspended`, reached from `enrolled` and
 > terminal.
 
+> Superseded in part by [0060](0060-a-pending-enrolment-is-stopped-as-it-stands.md):
+> a run that reconciles a pending row confirms it by replaying its key,
+> never on a status found by person and sequence.
+
 Completes [0019](0019-the-enrolment-path.md), whose outcomes were returned
 and printed, not stored, and [0013](0013-an-identity-is-a-set-of-keys.md),
 whose identities had nowhere to be recorded.

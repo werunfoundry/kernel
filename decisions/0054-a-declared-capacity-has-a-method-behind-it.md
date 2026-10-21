@@ -5,6 +5,14 @@
 > checks no declaration. Only the test double is held to its declaration
 > (`170f4a2`).
 
+> Built by #116: the declaration's type lets a pull be only not served, and
+> `checkDeclaration`, given the adapter, refuses a verb declared served whose
+> method is not a function on it; `readDeclaration`, the gate, always gives
+> it. Not built, and not buildable while the architecture stands: the
+> refusal at boot. Boot is `core`, and `core` cannot import a domain's
+> contract (doctrine 2). The refusal comes before an enrolment and before a
+> suspension instead.
+
 Completes [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md),
 whose declaration is checked for its form and against nothing else.
 

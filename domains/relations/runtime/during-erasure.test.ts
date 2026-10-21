@@ -182,6 +182,20 @@ describe("an erasure keeps an objection as fingerprints (0052, 0062)", { skip: b
     ]);
   });
 
+  it("erases a person found again and erased again under the same keys: the entries already there say what they must (0052)", async () => {
+    // Nothing reads the register yet (0055): the same person can be sourced
+    // again, object again, and be erased again, under the same version.
+    await erasing(await ada(true), false);
+    const again = await ada(false);
+    const r = await erasing(again, true);
+    assert.deepEqual(await rows("select count(*)::int as n from relations.person"), [{ n: 0 }]);
+    assert.equal((await rows("select count(*)::int as n from relations.suppression"))[0].n, 2);
+    assert.deepEqual(r.during[0]!.acts, [
+      { what: "entries written in the register, one per key of a person who objected (decision 0052)", rows: 0 },
+      { what: "keys already in the register, from someone erased before under the same key: the entry there stands", rows: 2 },
+    ]);
+  });
+
   it("says in a plan what it would write under either answer, and writes nothing", async () => {
     const id = await ada(false);
     const [plan] = await planDuringErasure(db, [relations], id, reach);

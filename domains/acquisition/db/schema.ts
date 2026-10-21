@@ -66,7 +66,7 @@ export const enrolmentState = acquisition.enum("enrolment_state", [
    * 0053, 0056), suspended ones included: the row stays, naming nobody. A
    * later run that finds them records a new person, for whom the registry
    * holds no row, and nothing here refuses enrolling them in the same
-   * sequence again; 0052's register will.
+   * sequence again; 0052's register will, once 0055's reader reads it.
    */
   "suspended",
 ]);

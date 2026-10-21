@@ -117,7 +117,7 @@ async function main(): Promise<number> {
         .limit(1);
       if (erased.length > 0) {
         console.log(
-          "enrol: refused — an erasure has run on this instance, and the suppression register (decision 0052) is not built: " +
+          "enrol: refused — an erasure has run on this instance, and nothing reads the suppression register yet (decisions 0052, 0055): " +
             "a person erased after opting out would be enrolled as someone who never did. Nobody was enrolled and no provider was called; a dry run is still allowed.",
         );
         return 1;

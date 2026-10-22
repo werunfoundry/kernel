@@ -1,5 +1,9 @@
 # 0067 — The way out is recorded on the enrolment, after the body
 
+> Completed by [0069](0069-the-way-out-line-is-set-on-the-sequencer-binding-for-the-domain-to-read.md):
+> the line's wording is set on the sequencer's binding; with none, the
+> enrolment records the absence and the run says it.
+
 Supersedes in part [0065](0065-the-kernel-writes-what-is-delivered-and-every-message-says-how-to-stop.md),
 its section 1, in form and not in guarantee: the message delivered is no
 longer one record, it is two. The guarantee stands: the kernel knows what

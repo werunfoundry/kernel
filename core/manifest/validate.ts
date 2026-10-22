@@ -78,6 +78,8 @@ export const domainManifestSchema = z.object({
   experimentTypes: z.array(identifier).optional(),
   eventTypes: z.array(namespacedKey).optional(),
   truthKinds: z.array(identifier).optional(),
+  // Decision 0069: what an instance may set on a binding, for this domain to read.
+  bindingSettings: z.array(z.object({ contract: identifier, key: z.string().regex(/^[a-z][a-zA-Z0-9]*$/, "a lower camel-case key") }).strict()).optional(),
   metrics: z.array(z.object({ key: namespacedKey, unit: z.string().min(1), channels: z.array(identifier).optional() })).optional(),
   experimentMetrics: z.record(identifier, z.array(namespacedKey)).optional(),
   identityKeys: z
@@ -144,6 +146,7 @@ export const providerBindingSchema = z.object({
   options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   channels: z.array(identifier).optional(),
   finds: z.array(identifier).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** A fingerprint version's label: written into entries, so never renamed (0058). */
@@ -408,6 +411,12 @@ export function validateInstance(
       if (!declaredKinds.has(kind)) issues.push(issue("error", at, `no enabled domain declares the identity key "${kind}"`, 1));
       if (kinds.has(kind)) issues.push(issue("error", at, `"${kind}" is listed twice`));
       kinds.add(kind);
+    }
+    // Decision 0069: a setting is a key some enabled domain declared for this
+    // contract. Its value is that domain's to read; the core reads none.
+    for (const key of Object.keys(binding.settings ?? {})) {
+      const declared = m.enabledDomains.some((n) => (known.get(n)?.bindingSettings ?? []).some((d) => d.contract === binding.contract && d.key === key));
+      if (!declared) issues.push(issue("error", `providers.${i}.settings.${key}`, `no enabled domain declares the setting "${key}" for a "${binding.contract}" binding`, 1));
     }
     if (binding.finds && binding.channels) {
       issues.push(issue("error", `providers.${i}`, "a binding takes channels or finds keys in sequence, never both (decision 0030)"));

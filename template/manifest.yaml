@@ -53,6 +53,14 @@ providers:
   - contract: sequencer
     adapter: ./adapters/sandbox-sequencer.ts
     env: []
+    # The line the kernel adds after every message it writes, with the
+    # provider's link where `{link}` stands (decisions 0067, 0069). Yours to
+    # word, in the language of your messages: one line per binding, so one
+    # language per channel. Or `wayOut: cut`, which every enrolment records.
+    # Left out, people are enrolled with no way out, and every run says so.
+    settings:
+      wayOut:
+        line: "If you would rather not hear from me again, this link stops it: {link}"
   - contract: inbound
     adapter: ./adapters/sandbox-inbound.ts
     env: []

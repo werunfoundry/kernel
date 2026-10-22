@@ -1,19 +1,23 @@
 # 0068 — An account no company on record can match stops the enrolment until it is named
 
-Supersedes in part [0019](0019-the-enrolment-path.md), its steps 3 and 4:
-the enrolment reads no candidates and finds no people; it takes them from
-a sealed list. Supersedes [0032](0032-enrolment-reads-what-sourcing-kept.md):
-an enrolment no longer reads a sourcing run. What a run kept reaches a
-person through a list, drafts and their approval, and the operator's gate
-it kept stays: a person constitutes the list. Completes
-[0034](0034-an-uncovered-customer-is-acknowledged-by-a-person.md), whose
-acknowledgement names a customer, with one that names an account; and
-[0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md),
+Completes [0034](0034-an-uncovered-customer-is-acknowledged-by-a-person.md),
+whose acknowledgement names a customer, with one that names an account;
+and [0057](0057-a-newly-protected-account-is-stopped-when-a-run-looks.md),
 whose stop does not reach such an account and now says so. Rests on
 [0044](0044-protection-matches-a-domains-ancestors-and-fails-closed.md),
 which fails closed on an account nothing can be matched against, and on
 [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md), whose
 section 1 left the list as the only way to a person.
+
+**A correction of the record, folded in here; not this decision's
+subject.** 0064 removed two forms of the enrolment without naming the
+decisions that made them, so they read as standing; they are named here.
+Supersedes in part [0019](0019-the-enrolment-path.md), its steps 3 and 4:
+the enrolment reads no candidates and finds no people; it takes them from
+a sealed list. Supersedes [0032](0032-enrolment-reads-what-sourcing-kept.md):
+an enrolment no longer reads a sourcing run. What a run kept reaches a
+person through a list, drafts and their approval, and the operator's gate
+it kept stays: a person constitutes the list.
 
 ## What was found
 
@@ -69,6 +73,14 @@ keeps receiving the steps of their sequence. Nothing here stops them. A
 person who knows can stop them at the provider, and nothing here records
 that they did: `kernel-attest-stop` attests a stop for an erasure that was
 refused (0056), not this one.
+
+**The asymmetry, named.** The enrolment closes; the stop of what runs
+stays open. Each is right on its own ground, and side by side they say
+this: the kernel refuses to start contacting someone it might not have to
+leave alone, and goes on contacting someone it cannot identify. The case
+blocked is the hypothetical one; the case left unprotected is the one
+already receiving messages. Section 1 does not mean the instance is
+protected: it means no one new is added to the hole.
 
 ### 4. Sourcing is unchanged
 

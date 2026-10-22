@@ -74,8 +74,11 @@ import type {
   Enrolment,
   EnrolmentState,
   EnrolmentStatus,
+  SequenceStep,
+  SequenceSteps,
   Sequencer,
   SequencerDeclaration,
+  StepCopy,
   Suppression,
   UnsubscribesRead,
   Withdrawal,
@@ -96,6 +99,20 @@ interface Lead {
   status?: number;
   payload?: Record<string, unknown> | null;
   timestamp_updated?: string;
+}
+
+/** A campaign's sequence, as `GET /api/v2/campaigns/{id}` returns it. */
+interface CampaignSteps {
+  sequences?: {
+    steps?: {
+      type?: string;
+      /** "The delay value before sending the NEXT email", in `delay_unit` (the API's schema). */
+      delay?: number;
+      /** `minutes`, `hours` or `days`; days when absent (the API's schema). */
+      delay_unit?: string;
+      variants?: { subject?: string; body?: string; v_disabled?: boolean }[];
+    }[];
+  }[];
 }
 
 interface Page<T> {
@@ -248,6 +265,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
                 ? "no sequence is bound: add campaign.<sequenceKey> and subsequence.<sequenceKey>"
                 : `no parking subsequence is bound for ${unparked.map((s) => `"${s}"`).join(", ")}: add subsequence.<sequenceKey>`,
           },
+    readSteps: { serves: "yes" },
     pullUnsubscribes: {
       serves: "partially",
       why: "Instantly shows an unsubscribe as a lead's state, with no date of its own: an event carries the lead's last update (README); only the bound campaigns' unsubscribes are read",
@@ -451,6 +469,57 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
      * read live, and moved by any later change to the lead — or, with none,
      * the time of the read: an opt-out is never dropped for want of a date.
      */
+    /**
+     * Decision 0064's steps verb: the bound campaign's one sequence, read.
+     * A step's `delay` is, by the API's schema, the wait before the NEXT
+     * step, in its `delay_unit`: so a step leaves after the previous one by
+     * the previous one's delay, and the first after nothing. Documented, not
+     * measured: the one run with two steps saw them about 26 minutes apart
+     * for a delay of 20 (README, *Suspending one lead*). A variant turned
+     * off (`v_disabled`) is not one the provider chooses between. A subject
+     * or body is the kernel's when it is exactly one `{{variable}}`;
+     * anything else is copy written at the provider. An empty subject is
+     * none: the step goes as a reply in the thread.
+     */
+    async readSteps(sequenceKey, ctx): Promise<CallResult<SequenceSteps>> {
+      const campaign = campaignFor(sequenceKey);
+      if (!campaign) return unmapped(sequenceKey);
+      const read = await call<CampaignSteps>("GET", `/api/v2/campaigns/${encodeURIComponent(campaign)}`, ctx);
+      if (!read.ok) return read;
+      const asOf = new Date().toISOString();
+      const sequences = read.value.sequences ?? [];
+      if (sequences.length !== 1) return fail("unknown", `the campaign of "${sequenceKey}" reads ${sequences.length} sequences; this adapter reads one`);
+      const raw = sequences[0]!.steps ?? [];
+      const MINUTES: Record<string, number> = { minutes: 1, hours: 60, days: 24 * 60 };
+      const copy = (text: string): StepCopy => {
+        const m = /^\s*\{\{\s*([A-Za-z0-9_]+)\s*\}\}\s*$/.exec(text);
+        return m ? { variable: m[1]! } : { written: text.trim() === "" ? "empty" : "text of its own" };
+      };
+      const steps: SequenceStep[] = [];
+      for (const [i, step] of raw.entries()) {
+        let afterPreviousMinutes = 0;
+        if (i > 0) {
+          const before = raw[i - 1]!;
+          const unit = MINUTES[before.delay_unit ?? "days"];
+          if (unit === undefined || typeof before.delay !== "number") {
+            return fail("unknown", `step ${i} of "${sequenceKey}" gives no delay this adapter can read (${String(before.delay)} ${String(before.delay_unit)})`);
+          }
+          afterPreviousMinutes = before.delay * unit;
+        }
+        const variants = (step.variants ?? []).filter((v) => v.v_disabled !== true);
+        const first = variants[0];
+        steps.push({
+          step: i + 1,
+          channel: step.type ?? "unknown",
+          afterPreviousMinutes,
+          subject: first?.subject ? copy(first.subject) : null,
+          body: copy(first?.body ?? ""),
+          variants: variants.length,
+        });
+      }
+      return { ok: true, value: { sequenceKey, steps, asOf } };
+    },
+
     async pullUnsubscribes(ctx): Promise<CallResult<UnsubscribesRead>> {
       const items: InboundEvent[] = [];
       let complete = true;

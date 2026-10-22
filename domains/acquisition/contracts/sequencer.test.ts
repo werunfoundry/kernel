@@ -88,6 +88,18 @@ describe("checkDeclaration", () => {
     assert.deepEqual(at(served, methods), ["pullUnsubscribes"]);
   });
 
+  it("reads the steps verb as not served when left out, and checks it as any verb when declared (0064, 0054)", () => {
+    assert.deepEqual(at(declaration(), methods), []);
+    const served = { ...declaration(), readSteps: { serves: "yes" } };
+    assert.deepEqual(at(served, { ...methods, readSteps: () => undefined }), []);
+    assert.deepEqual(at(served, methods), ["readSteps"]);
+    assert.deepEqual(at({ ...declaration(), readSteps: { serves: "maybe" } }), ["readSteps.serves"]);
+    assert.deepEqual(at({ ...declaration(), readSteps: { serves: "no" } }), ["readSteps.why"]);
+    assert.deepEqual(at({ ...declaration(), readSteps: null }), ["readSteps"]);
+    assert.ok(readDeclaration(adapter(declaration())).lines.includes("  read a sequence's steps: does not serve — the adapter does not say (decision 0064)"));
+    assert.ok(readDeclaration(adapter(served, { readSteps: () => undefined })).lines.includes("  read a sequence's steps: serves"));
+  });
+
   it("refuses, given the adapter, a verb declared served whose method is not a function on it (0054)", () => {
     // The declaration is valid on its own, pulls not served: only the adapter is wrong.
     assert.deepEqual(at(declaration(), methods), []);

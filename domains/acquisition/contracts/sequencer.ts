@@ -227,6 +227,35 @@ export interface UnsubscribesRead {
   complete: boolean;
 }
 
+/**
+ * What one step renders (decision 0064): a variable, which the kernel fills
+ * with the message it wrote, or copy written at the provider, which the
+ * kernel did not write and refuses.
+ */
+export type StepCopy = { variable: string } | { written: string };
+
+/** One step of a sequence, as the provider will run it (0064's steps verb). */
+export interface SequenceStep {
+  /** 1 for the first step, as a template counts its `step`. */
+  step: number;
+  channel: string;
+  /** How long after the previous step this one leaves, in minutes; 0 for the first. */
+  afterPreviousMinutes: number;
+  /** `null`: the step has no subject of its own, and goes as a reply in the thread. */
+  subject: StepCopy | null;
+  body: StepCopy;
+  /** How many variants the provider chooses between at send time. The kernel writes one message per step. */
+  variants: number;
+}
+
+/** A sequence's steps, read from the provider (0064). */
+export interface SequenceSteps {
+  sequenceKey: string;
+  steps: SequenceStep[];
+  /** When the read was made. */
+  asOf: string;
+}
+
 /** What a suppression reached. */
 export interface Suppression {
   /** The keys the provider now refuses, including those it already refused. */
@@ -362,6 +391,8 @@ export interface SequencerDeclaration {
   suspend: SuspendDeclaration;
   /** 0051's verb 4: `pullUnsubscribes`. */
   pullUnsubscribes: Serves;
+  /** Decision 0064's steps verb: `readSteps`. Absent: not served — nothing said is not "yes". */
+  readSteps?: Serves;
   /** Decision 0065. Absent: a body that reads the same in either form. */
   deliveredForm?: DeliveredForm;
   /** Decision 0065. Absent: no way out, recorded as such. */
@@ -467,6 +498,20 @@ export function checkDeclaration(declaration: unknown, adapter?: unknown): Valid
     const passed = v.notTheLeastDestructive as Record<string, unknown> | undefined;
     if (passed !== undefined && (!isText(passed.available) || !isText(passed.why))) {
       error("suspend.notTheLeastDestructive", "names the way passed over, and why");
+    }
+  }
+
+  // Decision 0064's steps verb: optional, and not served when left out. One
+  // that is declared is read as the four above are, method included (0054).
+  if (d.readSteps !== undefined) {
+    const v = d.readSteps as Record<string, unknown> | null;
+    if (typeof v !== "object" || v === null) error("readSteps", "not an object; leave it out for not served");
+    else if (!SERVES.has(v.serves as string)) error("readSteps.serves", `"${String(v.serves)}" is not yes, partially or no`);
+    else {
+      if (v.serves !== "yes" && !isText(v.why)) error("readSteps.why", `a verb served ${v.serves === "no" ? "not at all" : "partially"} says why`);
+      if (v.serves !== "no" && adapter !== undefined && typeof (adapter as Record<string, unknown> | null)?.readSteps !== "function") {
+        error("readSteps", "declared served, but `readSteps` is not a function on the adapter (decision 0054)");
+      }
     }
   }
 
@@ -589,7 +634,13 @@ export function readDeclaration(
     return { suspends: false, lines: [head, ...issues.map((i) => `  ✖ ${i.at}: ${i.message}`)], refusal };
   }
   const d = sequencer.declares;
-  const lines = [head, `  enrol: ${served(d.enrol)}`, `  pull the touches: ${served(d.pullTouches)}`, `  pull the unsubscribes: ${served(d.pullUnsubscribes)}`];
+  const lines = [
+    head,
+    `  enrol: ${served(d.enrol)}`,
+    `  pull the touches: ${served(d.pullTouches)}`,
+    `  pull the unsubscribes: ${served(d.pullUnsubscribes)}`,
+    `  read a sequence's steps: ${served(d.readSteps ?? { serves: "no", why: "the adapter does not say (decision 0064)" })}`,
+  ];
   const delivery = deliveryOf(d);
   const s = d.suspend;
   if (s.serves === "no") {
@@ -677,6 +728,18 @@ export interface Sequencer extends Contract {
    * no method (0054).
    */
   pullUnsubscribes?(ctx: CallContext): Promise<CallResult<UnsubscribesRead>>;
+
+  /**
+   * Decision 0064's steps verb: the steps the provider will run for a
+   * sequence, read from it — each step's channel, its delay after the one
+   * before, and what it renders. The kernel compares them with the
+   * templates of the messages it wrote before it enrols anyone: a plan the
+   * provider will not run caps nothing. Reads only.
+   *
+   * Optional: an adapter that does not serve the verb declares so, and has
+   * no method (0054).
+   */
+  readSteps?(sequenceKey: string, ctx: CallContext): Promise<CallResult<SequenceSteps>>;
 
   /**
    * Stop this provider reaching a person or a whole account, on every

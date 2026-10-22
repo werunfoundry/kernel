@@ -32,8 +32,11 @@ export interface SandboxData {
 }
 
 export interface SandboxState {
-  /** sequenceKey → email → the idempotency key it was enrolled under, and when. */
-  enrolments: Record<string, Record<string, { key: string; at: string }>>;
+  /**
+   * sequenceKey → email → the idempotency key it was enrolled under, when,
+   * and the variables it carried: the messages the kernel wrote (0064).
+   */
+  enrolments: Record<string, Record<string, { key: string; at: string; variables?: Record<string, string> }>>;
   suppressed: string[];
   crm: { email: string; reason: string }[];
   notes: { subject: string; body: string; at: string }[];

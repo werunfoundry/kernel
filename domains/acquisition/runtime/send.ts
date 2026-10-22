@@ -3,8 +3,14 @@
  *
  * `draftFromList` reads the list (sealed; nothing about consent or
  * protection is read from it: a list is a selection, never a permission,
- * 0037), composes each person's text with the caller's composer, and
- * proposes the draft, which applies the objection and the lane (0027).
+ * 0037), reads each person's objection, composes the text of those who did
+ * not object with the caller's composer, and proposes the draft, which
+ * applies the objection again and the lane (0027).
+ *
+ * **The objection is read before the composer is called**, not only by
+ * `propose` after it. A composer — an agent, a model, a service — handed the
+ * address and the name of someone who objected has been handed what they
+ * objected to being used for, whatever is done with the text afterwards.
  *
  * What 0050 called run 2 — a hand-over of each message — is withdrawn
  * (0064 §1): no hand-over was ever bound, and one verb reaches a person,
@@ -20,6 +26,7 @@ import type { ActorKind, Database, Trigger } from "@werunfoundry/core/runtime/ru
 import { openRun } from "@werunfoundry/core/runtime/run";
 import { person as personTable } from "@werunfoundry/relations/db/schema";
 import { readList } from "@werunfoundry/relations/runtime/list";
+import { readObjection } from "@werunfoundry/relations/runtime/record";
 
 import { template } from "../db/schema.js";
 import type { Gate } from "./draft.js";
@@ -84,6 +91,18 @@ export async function draftFromList(db: Database, fingerprints: Fingerprinter, r
       if (!member.personId) {
         // Finding the people at a company is sourcing's work (0031), not sending's.
         report.skipped.push({ member: { companyId: member.companyId! }, reason: "a company on a list names nobody to write to" });
+        continue;
+      }
+      // Before anything of the person is read for the composer: an objector's
+      // address never reaches it, on a dry run either.
+      const objection = await readObjection(db, fingerprints, { personId: member.personId });
+      if (objection.answer === "cannot_answer" && objection.stops) throw new Error(`the objection cannot be read: ${objection.why}`);
+      if (objection.answer === "cannot_answer") {
+        report.skipped.push({ member: { personId: member.personId }, reason: `the person is not on record: ${objection.why}` });
+        continue;
+      }
+      if (objection.answer === "objected") {
+        report.skipped.push({ member: { personId: member.personId }, reason: "the person opted out: nothing of them is handed to the composer, and nothing is drafted" });
         continue;
       }
       const [who] = await db.select({ email: personTable.email, fullName: personTable.fullName }).from(personTable).where(eq(personTable.id, member.personId));

@@ -15,7 +15,7 @@ import { Client } from "pg";
 
 import { identityVocabulary } from "@werunfoundry/core/identity";
 import { loadDomain } from "@werunfoundry/core/manifest/load";
-import { fingerprinter, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
+import { fingerprinter, fingerprintOf, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import { constituteList } from "@werunfoundry/relations/runtime/list";
 import { writeMessage } from "@werunfoundry/relations/runtime/message";
@@ -23,7 +23,9 @@ import { writeMessage } from "@werunfoundry/relations/runtime/message";
 import { draftFromList, messageKey } from "./send.js";
 
 /** The register's reader, under one version whose secret is held (0055). */
-const register = fingerprinter("T1", { T1: generateSecret() }, [], identityVocabulary([loadDomain(join(import.meta.dirname, "../../relations/domain.yaml")).manifest!]));
+const SECRET = generateSecret();
+const vocabulary = identityVocabulary([loadDomain(join(import.meta.dirname, "../../relations/domain.yaml")).manifest!]);
+const register = fingerprinter("T1", { T1: SECRET }, [], vocabulary);
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_send_${process.pid}`;
@@ -108,6 +110,51 @@ describe("drafting from a list", { skip: base ? false : "TEST_DATABASE_URL is no
     const r = await draftFromList(db, register, { listKey: "the-list", experimentId, templateId, compose, gate: { autonomyAfter: 5 }, dryRun: true, trigger: "cli", actor: agent });
     assert.deepEqual(r.drafted, [{ personId, outcome: "would_propose" }]);
     assert.equal((await one("select count(*)::int as n from acquisition.draft")).n, 0);
+  });
+
+  // What a composer is handed, recorded: an objector's address must never be in it.
+  const handed: unknown[] = [];
+  const watching = (p: unknown, t: { subject?: string; body: string }) => {
+    handed.push(p);
+    return compose(p, t);
+  };
+  const draftWatched = (experimentId: string, templateId: string, dryRun: boolean, fingerprints = register) =>
+    draftFromList(db, fingerprints, { listKey: "the-list", experimentId, templateId, compose: watching, gate: { autonomyAfter: 5 }, dryRun, trigger: "cli", actor: agent });
+
+  it("hands nothing of a person who opted out to the composer, live or dry, and drafts nothing for them", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const bo = await aPerson("bo@example.com", "example.com");
+    await client.query("update relations.person set opted_out_at = now() where id = $1", [ada]);
+    const { experimentId, templateId } = await aCampaign([{ personId: ada }, { personId: bo }]);
+    for (const dryRun of [true, false]) {
+      handed.length = 0;
+      const r = await draftWatched(experimentId, templateId, dryRun);
+      assert.deepEqual(handed.map((p) => (p as { email?: string }).email), ["bo@example.com"], "the composer was handed an objector");
+      assert.deepEqual(r.skipped, [{ member: { personId: ada }, reason: "the person opted out: nothing of them is handed to the composer, and nothing is drafted" }]);
+    }
+    assert.deepEqual((await rows("select person_id from acquisition.draft")).map((d) => d.person_id), [bo]);
+  });
+
+  it("hands nothing to the composer of a person the register holds an objection for", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    await client.query("insert into relations.suppression (fingerprint, chain, written_at) values ($1, '{T1}', now())", [fingerprintOf(SECRET, { kind: "email", value: "ada@example.com" }, vocabulary)]);
+    try {
+      const { experimentId, templateId } = await aCampaign([{ personId: ada }]);
+      handed.length = 0;
+      const r = await draftWatched(experimentId, templateId, false);
+      assert.deepEqual(handed, []);
+      assert.equal(r.skipped.length, 1);
+    } finally {
+      await client.query("set session_replication_role = replica; truncate relations.suppression; set session_replication_role = origin");
+    }
+  });
+
+  it("stops, handing nobody to the composer, while the register cannot be read", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templateId } = await aCampaign([{ personId: ada }]);
+    handed.length = 0;
+    await assert.rejects(draftWatched(experimentId, templateId, false, fingerprinter("T1", { T1: SECRET }, ["T0"], vocabulary)), /the objection cannot be read/);
+    assert.deepEqual(handed, []);
   });
 
   it("holds one touch per message in the DDL", async () => {

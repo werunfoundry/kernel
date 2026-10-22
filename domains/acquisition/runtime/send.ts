@@ -43,7 +43,9 @@ import type { TargetCompany, TargetList } from "../contracts/target-list.js";
 import { draft, template } from "../db/schema.js";
 import { readAcknowledged } from "./acknowledge.js";
 import type { Gate } from "./draft.js";
-import { drop, propose, queue, settle } from "./draft.js";
+import { drop, messageKey, propose, queue, settle } from "./draft.js";
+
+export { messageKey };
 import { CONTRACTS } from "./enrol.js";
 import { readProtection } from "./protection.js";
 
@@ -74,8 +76,6 @@ export type Compose = (
   template: { channel: string; step: number; subject?: string; body: string },
 ) => Promise<{ subject?: string; body: string }> | { subject?: string; body: string };
 
-/** The message's key for a draft: a replayed send is one message. */
-export const messageKey = (draftId: string) => `acquisition.draft:${draftId}`;
 
 type Status = "succeeded" | "partial" | "failed";
 

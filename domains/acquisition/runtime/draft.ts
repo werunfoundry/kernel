@@ -93,6 +93,9 @@ async function reactiveLicense(db: Database, input: DraftInput, gate: Gate, now:
 }
 
 
+/** The message's key for a draft (0038): a replayed write of it is one message, by whatever path carries it. */
+export const messageKey = (draftId: string) => `acquisition.draft:${draftId}`;
+
 async function locked(db: Database, id: string): Promise<Draft | undefined> {
   const [row] = await db.select().from(draft).where(eq(draft.id, id)).for("update");
   return row;

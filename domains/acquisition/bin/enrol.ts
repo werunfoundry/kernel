@@ -14,7 +14,21 @@
  *   --limit <n>         how many candidate companies to read
  *   --from-run <id>     enrol the people this live sourcing run kept
  *                       (`kernel-source --live`), instead of finding people
+ *   --list <key>        enrol the people of this sealed list, carrying the
+ *                       messages the kernel wrote (decision 0064); with:
+ *   --experiment <id>   the experiment whose approved drafts they carry
+ *   --solicited         the person asked for it; without it the enrolment is
+ *                       unsolicited, refused until the cap is judged ahead
+ *   --reactive-within <min>  for a draft the reactive lane approved
  *   --live              actually enrol
+ *
+ * **The enrolment without messages stays, though 0064 rules it out.** Its
+ * forms — from the target list, or `--from-run` — hand a person to a
+ * sequence whose copy the provider holds. 0064 replaces them with `--list`,
+ * whose enrolment carries the kernel's messages. They are removed with the
+ * cap judged ahead over the whole plan (0064 §3), in the change that lifts
+ * `--list`'s refusal of an unsolicited enrolment, and not before: until
+ * then they are the only unsolicited enrolment there is.
  *
  * With `--from-run`, nobody that run did not keep is considered, and
  * protection, the opt-out and the registry are checked again here: what the
@@ -63,6 +77,10 @@ async function main(): Promise<number> {
   const maxAge = Number(value("max-age"));
   if (!sequenceKey || !channel || !(maxAge > 0)) {
     console.log("enrol: --sequence, --channel and --max-age (minutes) are required.");
+    return 1;
+  }
+  if (value("list") && !value("experiment")) {
+    console.log("enrol: --list takes --experiment <id>: the experiment whose approved drafts the enrolment carries (decision 0064).");
     return 1;
   }
 
@@ -137,6 +155,16 @@ async function main(): Promise<number> {
         actor: { type: "human" },
         ...(limit > 0 ? { query: { limit } } : {}),
         ...(value("from-run") ? { fromSourcingRun: value("from-run")! } : {}),
+        ...(value("list")
+          ? {
+              fromList: {
+                listKey: value("list")!,
+                experimentId: value("experiment") ?? "",
+                unsolicited: !flag("solicited"),
+                ...(Number(value("reactive-within")) > 0 ? { reactiveWithinMinutes: Number(value("reactive-within")) } : {}),
+              },
+            }
+          : {}),
         ...(values("sender").length ? { senders: values("sender").map((externalId) => ({ externalId })) } : {}),
       },
       );
@@ -188,7 +216,7 @@ async function main(): Promise<number> {
       console.log(`  reconciled, enrolled by an earlier run that stopped before recording it: ${report.reconciled.length}`);
       for (const e of report.reconciled) console.log(`    = ${shown(e.person)} (${e.state})`);
     }
-    const reasons = ["protected", "unreadable_key", "opted_out", "suspended", "capacity", "duplicate", "unreachable"] as const;
+    const reasons = ["protected", "unreadable_key", "opted_out", "suspended", "not_drafted", "refused", "capacity", "duplicate", "unreachable"] as const;
     for (const reason of reasons) {
       const these = report.skipped.filter((s) => s.reason === reason);
       if (these.length === 0) continue;

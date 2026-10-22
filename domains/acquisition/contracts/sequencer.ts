@@ -294,6 +294,54 @@ export type SuspendDeclaration =
   | { serves: "no"; why: string };
 
 /**
+ * A claim about what the provider does, proved the way 0051 asks: by what
+ * was measured, and when. A claim nobody measured is not made; the
+ * declaration that would carry it is left out, and its default holds.
+ */
+interface Measured {
+  /** What was measured, and how. */
+  basis: string;
+  /** When, as YYYY-MM-DD. */
+  measuredOn: string;
+}
+
+/**
+ * The form the provider delivers a body in (decision 0065). Undeclared, the
+ * kernel writes a body that reads the same in either: no markup, no line
+ * break that carries meaning, single spaces, bare URLs — nothing is lost
+ * whether delivery removes markup or collapses blanks.
+ */
+export type DeliveredForm = { form: "plain_text" | "html" } & Measured;
+
+/**
+ * How long, after the call that returns the way out, before the provider's
+ * first step can leave (decision 0065). A step leaving inside it carries no
+ * way out. Measured, or said to be unknown.
+ */
+export type WayOutWindow = ({ known: true; seconds: number } & Measured) | { known: false; why: string };
+
+/**
+ * The way out the provider offers inside a body, and when it is known
+ * (decision 0065). Undeclared, it is `none`: the kernel writes none, and the
+ * enrolment records that its body carried none because the adapter said
+ * nothing.
+ */
+export type WayOutDeclaration =
+  /** A provider with no such thing — a channel without unsubscribe links. A fact, not a failure. */
+  | { offered: "none"; why: string }
+  /** Known before the first call: the body goes complete, in one call. */
+  | { offered: "known_before"; what: string }
+  /** Known once the adapter's call returns: the kernel writes it in after, inside the window. */
+  | { offered: "known_after"; what: string; window: WayOutWindow };
+
+/**
+ * Whether the provider classes a reply asking to stop as an unsubscribe
+ * (decision 0065). Undeclared, it does not: nothing said is not "yes", and a
+ * person reads the replies at a terminal. `yes` is proved, never assumed.
+ */
+export type StopClassing = ({ classes: "yes" } & Measured) | { classes: "no"; why: string };
+
+/**
  * Everything an adapter says about itself, read without calling the
  * provider: a constant on the adapter, like its channels.
  */
@@ -304,6 +352,25 @@ export interface SequencerDeclaration {
   suspend: SuspendDeclaration;
   /** 0051's verb 4. No method in this contract yet. */
   pullUnsubscribes: NotServed;
+  /** Decision 0065. Absent: a body that reads the same in either form. */
+  deliveredForm?: DeliveredForm;
+  /** Decision 0065. Absent: no way out, recorded as such. */
+  wayOut?: WayOutDeclaration;
+  /** Decision 0065. Absent: the provider does not class a stop. */
+  classesStop?: StopClassing;
+}
+
+/**
+ * What the kernel holds of 0065's three declarations once their defaults
+ * apply — the least an adapter's silence allows (decision 0065).
+ */
+export interface Delivery {
+  /** `either` when undeclared: a body that reads the same as plain text and as HTML. */
+  form: "plain_text" | "html" | "either";
+  wayOut: WayOutDeclaration;
+  /** Whether the way out was declared, or is the default for an adapter that said nothing. */
+  wayOutDeclared: boolean;
+  classesStop: boolean;
 }
 
 const VERBS = ["enrol", "pullTouches", "suspend", "pullUnsubscribes"] as const;
@@ -392,8 +459,95 @@ export function checkDeclaration(declaration: unknown, adapter?: unknown): Valid
       error("suspend.notTheLeastDestructive", "names the way passed over, and why");
     }
   }
+
+  // Decision 0065: each is optional, and its default holds when it is left
+  // out. One that is present says something, so it must be readable, and a
+  // claim about the provider carries what it was measured from.
+  const measured = (at: string, m: Record<string, unknown>) => {
+    if (!isText(m.basis)) error(`${at}.basis`, "a claim about the provider says what it was measured from (decision 0065)");
+    if (typeof m.measuredOn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(m.measuredOn) || Number.isNaN(Date.parse(m.measuredOn))) {
+      error(`${at}.measuredOn`, "a claim about the provider carries the date it was measured, as YYYY-MM-DD (decision 0065)");
+    }
+  };
+  if (d.deliveredForm !== undefined) {
+    const f = d.deliveredForm as Record<string, unknown> | null;
+    if (typeof f !== "object" || f === null) error("deliveredForm", "not an object; leave it out to keep the default");
+    else {
+      if (f.form !== "plain_text" && f.form !== "html") error("deliveredForm.form", `"${String(f.form)}" is not plain_text or html`);
+      measured("deliveredForm", f);
+    }
+  }
+  if (d.wayOut !== undefined) {
+    const w = d.wayOut as Record<string, unknown> | null;
+    if (typeof w !== "object" || w === null) error("wayOut", "not an object; leave it out to keep the default");
+    else if (w.offered === "none") {
+      if (!isText(w.why)) error("wayOut.why", "a provider that offers no way out in a body says why");
+    } else if (w.offered === "known_before" || w.offered === "known_after") {
+      if (!isText(w.what)) error("wayOut.what", "names the way out the provider offers");
+      if (w.offered === "known_after") {
+        const win = w.window as Record<string, unknown> | undefined;
+        if (!win || typeof win.known !== "boolean") error("wayOut.window", "declared, as a measured window or as unknown (decision 0065)");
+        else if (win.known) {
+          if (typeof win.seconds !== "number" || !Number.isFinite(win.seconds) || win.seconds < 0) error("wayOut.window.seconds", "a window is a number of seconds, zero or more");
+          measured("wayOut.window", win);
+        } else if (!isText(win.why)) error("wayOut.window.why", "an unknown window says why it is unknown");
+      }
+    } else error("wayOut.offered", `"${String(w.offered)}" is not none, known_before or known_after`);
+  }
+  if (d.classesStop !== undefined) {
+    const c = d.classesStop as Record<string, unknown> | null;
+    if (typeof c !== "object" || c === null) error("classesStop", "not an object; leave it out to keep the default");
+    else if (c.classes === "yes") measured("classesStop", c);
+    else if (c.classes === "no") {
+      if (!isText(c.why)) error("classesStop.why", "says why");
+    } else error("classesStop.classes", `"${String(c.classes)}" is not yes or no`);
+  }
   return issues;
 }
+
+/**
+ * 0065's three declarations with their defaults applied: what an adapter's
+ * silence allows is the least — a body that reads the same in either form,
+ * no way out, a provider that does not class a stop. For a declaration
+ * `checkDeclaration` accepted.
+ */
+export function deliveryOf(d: SequencerDeclaration): Delivery {
+  return {
+    form: d.deliveredForm?.form ?? "either",
+    wayOut: d.wayOut ?? { offered: "none", why: "the adapter does not say (decision 0065)" },
+    wayOutDeclared: d.wayOut !== undefined,
+    classesStop: d.classesStop?.classes === "yes",
+  };
+}
+
+const deliveryLines = (d: SequencerDeclaration): string[] => {
+  const lines: string[] = [];
+  const f = d.deliveredForm;
+  lines.push(
+    f
+      ? `  delivers a body as: ${f.form === "plain_text" ? "plain text" : "HTML"} (${f.basis}, measured ${f.measuredOn})`
+      : "  delivers a body as: not declared — the kernel writes a body that reads the same in either form (decision 0065)",
+  );
+  const w = d.wayOut;
+  if (!w) lines.push("  a way out in the body: not declared — none is written, and each enrolment records that its body carried none (decision 0065)");
+  else if (w.offered === "none") lines.push(`  a way out in the body: none — ${w.why}`);
+  else if (w.offered === "known_before") lines.push(`  a way out in the body: ${w.what}, known before the first call`);
+  else {
+    lines.push(`  a way out in the body: ${w.what}, known only after the call`);
+    lines.push(
+      w.window.known
+        ? `    window before a first step can leave: ${w.window.seconds} seconds (${w.window.basis}, measured ${w.window.measuredOn})`
+        : `    window before a first step can leave: unknown — ${w.window.why}`,
+    );
+  }
+  const c = d.classesStop;
+  lines.push(
+    c?.classes === "yes"
+      ? `  a reply asking to stop: classed by the provider as an unsubscribe (${c.basis}, measured ${c.measuredOn})`
+      : `  a reply asking to stop: not classed by the provider${c ? ` — ${c.why}` : " — not declared, so held not to be (decision 0065)"}; a person records it at a terminal`,
+  );
+  return lines;
+};
 
 const SAID: Record<PersonCost | SequenceCost, string> = {
   provider_status_stays_active: "the provider's status keeps reading active",
@@ -413,7 +567,7 @@ const served = (s: Serves) => (s.serves === "yes" ? "serves" : s.serves === "par
  */
 export function readDeclaration(
   sequencer: Pick<Sequencer, "provider" | "declares"> & { enrol?: unknown; withdraw?: unknown },
-): { suspends: boolean; lines: string[]; refusal?: string } {
+): { suspends: boolean; lines: string[]; refusal?: string; delivery?: Delivery } {
   const head = `the sequencer "${sequencer.provider}" declares (decision 0051):`;
   if (sequencer.declares === undefined) {
     const refusal = `the sequencer "${sequencer.provider}" declares nothing about what it can do; the kernel enrols only through one that declares it can suspend (decision 0051)`;
@@ -426,11 +580,12 @@ export function readDeclaration(
   }
   const d = sequencer.declares;
   const lines = [head, `  enrol: ${served(d.enrol)}`, `  pull the touches: ${served(d.pullTouches)}`, `  pull the unsubscribes: ${served(d.pullUnsubscribes)}`];
+  const delivery = deliveryOf(d);
   const s = d.suspend;
   if (s.serves === "no") {
-    lines.push(`  suspend one person: does not serve — ${s.why}`);
+    lines.push(`  suspend one person: does not serve — ${s.why}`, ...deliveryLines(d));
     const refusal = `the sequencer "${sequencer.provider}" cannot suspend one person in a sequence (${s.why}); the kernel does not enrol through it (decision 0051)`;
-    return { suspends: false, lines, refusal };
+    return { suspends: false, lines, refusal, delivery };
   }
   lines.push(`  suspend one person: ${s.serves === "yes" ? "serves" : `serves partially — ${s.why}`}, by ${s.method}`);
   const costs = (list: readonly (PersonCost | SequenceCost)[]) => (list.length ? list.map((c) => SAID[c]).join("; ") : "none declared");
@@ -442,7 +597,8 @@ export function readDeclaration(
       ? `    gap: ${s.gap.minutes} minutes after the read-back (${s.gap.basis}, measured ${s.gap.measuredOn})`
       : `    gap: unknown — ${s.gap.why}; every touch after a suspension is reported, neither a breach nor accepted`,
   );
-  return { suspends: true, lines };
+  lines.push(...deliveryLines(d));
+  return { suspends: true, lines, delivery };
 }
 
 export interface Sequencer extends Contract {

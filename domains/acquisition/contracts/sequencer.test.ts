@@ -7,7 +7,7 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
 import type { Capacity, CapacityLimit, SequencerDeclaration } from "./sequencer.js";
-import { checkDeclaration, readDeclaration, remainingOf } from "./sequencer.js";
+import { checkDeclaration, deliveryOf, readDeclaration, remainingOf } from "./sequencer.js";
 
 const capacity = (...limits: CapacityLimit[]): Capacity => ({
   sender: { externalId: "sender@example.com" },
@@ -158,5 +158,83 @@ describe("readDeclaration", () => {
     const s = declaration().suspend as Extract<SequencerDeclaration["suspend"], { serves: "yes" }>;
     const { lines } = readDeclaration(adapter(declaration({ suspend: { ...s, gap: { known: false, why: "never measured" } } })));
     assert.match(lines.join("\n"), /gap: unknown — never measured; every touch after a suspension is reported, neither a breach nor accepted/);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Decision 0065: the form delivered, the way out, a reply asking to stop      */
+/* -------------------------------------------------------------------------- */
+
+const measuredOn = { basis: "one send, read at the client", measuredOn: "2026-10-21" };
+
+describe("0065's declarations", () => {
+  it("are optional: an adapter that says nothing of them is a well-formed declaration", () => {
+    assert.deepEqual(checkDeclaration(declaration()), []);
+  });
+
+  it("hold the defaults that assume the least when left out", () => {
+    assert.deepEqual(deliveryOf(declaration()), {
+      form: "either",
+      wayOut: { offered: "none", why: "the adapter does not say (decision 0065)" },
+      wayOutDeclared: false,
+      classesStop: false,
+    });
+  });
+
+  it("read a declared form, way out and stop-classing as declared", () => {
+    const d = declaration({
+      deliveredForm: { form: "plain_text", ...measuredOn },
+      wayOut: { offered: "known_after", what: "the provider's unsubscribe link", window: { known: true, seconds: 60, ...measuredOn } },
+      classesStop: { classes: "yes", ...measuredOn },
+    });
+    assert.deepEqual(checkDeclaration(d), []);
+    const r = deliveryOf(d);
+    assert.deepEqual([r.form, r.wayOut.offered, r.wayOutDeclared, r.classesStop], ["plain_text", "known_after", true, true]);
+  });
+
+  it("refuse a form claimed without what it was measured from, or one that is not a form", () => {
+    assert.deepEqual(at(declaration({ deliveredForm: { form: "plain_text", basis: "", measuredOn: "yesterday" } })), ["deliveredForm.basis", "deliveredForm.measuredOn"]);
+    assert.deepEqual(at(declaration({ deliveredForm: { form: "rtf" as never, ...measuredOn } })), ["deliveredForm.form"]);
+  });
+
+  it("refuse a way out with no name, a window neither measured nor said unknown, and none without why", () => {
+    assert.deepEqual(at(declaration({ wayOut: { offered: "known_before", what: " " } })), ["wayOut.what"]);
+    assert.deepEqual(at(declaration({ wayOut: { offered: "known_after", what: "a link", window: {} as never } })), ["wayOut.window"]);
+    assert.deepEqual(at(declaration({ wayOut: { offered: "known_after", what: "a link", window: { known: true, seconds: -1, ...measuredOn } } })), ["wayOut.window.seconds"]);
+    assert.deepEqual(at(declaration({ wayOut: { offered: "known_after", what: "a link", window: { known: false, why: "" } } })), ["wayOut.window.why"]);
+    assert.deepEqual(at(declaration({ wayOut: { offered: "none", why: "" } })), ["wayOut.why"]);
+    assert.deepEqual(at(declaration({ wayOut: { offered: "maybe" } as never })), ["wayOut.offered"]);
+  });
+
+  it("refuse a stop classed by the provider without proof", () => {
+    assert.deepEqual(at(declaration({ classesStop: { classes: "yes", basis: "", measuredOn: "" } })), ["classesStop.basis", "classesStop.measuredOn"]);
+    assert.deepEqual(at(declaration({ classesStop: { classes: "no", why: "" } })), ["classesStop.why"]);
+    assert.deepEqual(at(declaration({ classesStop: { classes: "maybe" } as never })), ["classesStop.classes"]);
+  });
+
+  it("make a malformed declaration refuse the enrolment, as any unreadable declaration does (0051)", () => {
+    const read = readDeclaration(adapter(declaration({ classesStop: { classes: "yes", basis: "", measuredOn: "2026-10-21" } })));
+    assert.equal(read.suspends, false);
+    assert.match(read.refusal ?? "", /classesStop\.basis: a claim about the provider says what it was measured from/);
+  });
+
+  it("print each default as the default, so that silence reads as what it is", () => {
+    const text = readDeclaration(adapter(declaration())).lines.join("\n");
+    assert.match(text, /delivers a body as: not declared — the kernel writes a body that reads the same in either form/);
+    assert.match(text, /a way out in the body: not declared — none is written, and each enrolment records that its body carried none/);
+    assert.match(text, /a reply asking to stop: not classed by the provider — not declared, so held not to be/);
+  });
+
+  it("print what is declared, with what it was measured from", () => {
+    const d = declaration({
+      deliveredForm: { form: "plain_text", ...measuredOn },
+      wayOut: { offered: "known_after", what: "the provider's unsubscribe link", window: { known: false, why: "never measured" } },
+      classesStop: { classes: "no", why: "not proved" },
+    });
+    const text = readDeclaration(adapter(d)).lines.join("\n");
+    assert.match(text, /delivers a body as: plain text \(one send, read at the client, measured 2026-10-21\)/);
+    assert.match(text, /a way out in the body: the provider's unsubscribe link, known only after the call/);
+    assert.match(text, /window before a first step can leave: unknown — never measured/);
+    assert.match(text, /a reply asking to stop: not classed by the provider — not proved; a person records it at a terminal/);
   });
 });

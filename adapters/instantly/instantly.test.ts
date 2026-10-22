@@ -454,6 +454,17 @@ describe("what it declares (decision 0051)", () => {
     assert.equal(read.suspends, false);
     assert.match(read.refusal ?? "", /no parking subsequence is bound for "welcome"/);
   });
+
+  it("declares what the send of 2026-10-21 showed, and only that (decision 0065)", () => {
+    const d = adapter().declares!;
+    assert.deepEqual([d.deliveredForm?.form, d.deliveredForm?.measuredOn], ["plain_text", "2026-10-21"]);
+    assert.equal(d.wayOut?.offered, "known_after");
+    if (d.wayOut?.offered === "known_after") assert.equal(d.wayOut.window.known, false, "a window nobody measured is declared as a number");
+    assert.equal(d.classesStop?.classes, "no", "a stop the provider was never seen to class is declared classed");
+    const text = readDeclaration(adapter()).lines.join("\n");
+    assert.match(text, /delivers a body as: plain text/);
+    assert.match(text, /a way out in the body: Instantly's unsubscribe link, \/unsub\/1\/<lead id>, whose id comes back with the upload, known only after the call/);
+  });
 });
 
 describe("suppress", () => {

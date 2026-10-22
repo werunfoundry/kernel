@@ -246,6 +246,24 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       serves: "no",
       why: "not built: Instantly shows an unsubscribe as a lead's state, with no date of its own (README), and this adapter does not read it yet",
     },
+    // Decision 0065, from the README's send of 2026-10-21 and nothing else.
+    deliveredForm: {
+      form: "plain_text",
+      basis: "one step whose body was a lead's custom variable, sent once and read at the receiving client: text/plain, no HTML part (README, A whole message, sent)",
+      measuredOn: "2026-10-21",
+    },
+    wayOut: {
+      offered: "known_after",
+      what: "Instantly's unsubscribe link, /unsub/1/<lead id>, whose id comes back with the upload",
+      window: {
+        known: false,
+        why: "one observation, not a bound: a lead added to a running campaign left 156 seconds after the upload answered (2026-10-22, one lead, one idle account; README)",
+      },
+    },
+    classesStop: {
+      classes: "no",
+      why: "not proved: no reply asking to stop has been sent to this provider and read back",
+    },
   };
 
   async function call<T>(

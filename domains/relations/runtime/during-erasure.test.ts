@@ -19,9 +19,11 @@ import { validateDomain } from "@werunfoundry/core/manifest/validate";
 import type { DomainManifest } from "@werunfoundry/core/manifest/types";
 import type { ErasureReach } from "@werunfoundry/core/runtime/erase";
 import { erase, ErasureRefused, planDuringErasure } from "@werunfoundry/core/runtime/erase";
-import { fingerprinter, fingerprintOf, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
+import { fingerprinter, fingerprintOf, generateSecret, wrap } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
+
+import { readObjection } from "./record.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_during_erasure_${process.pid}`;
@@ -34,7 +36,7 @@ const relations = loadDomain(join(import.meta.dirname, "../domain.yaml")).manife
 const vocabulary = identityVocabulary([relations], ["network_a"]);
 const SECRET = generateSecret();
 const nobody: Registry = { get: () => undefined, require: () => undefined as never, forChannel: () => undefined, all: () => [], sequence: () => [], list: () => [] };
-const reachWith = (missing: string[] = []): ErasureReach => ({ registry: nobody, root: join(import.meta.dirname, ".."), fingerprints: fingerprinter("T1", SECRET, missing, vocabulary) });
+const reachWith = (missing: string[] = []): ErasureReach => ({ registry: nobody, root: join(import.meta.dirname, ".."), fingerprints: fingerprinter("T1", { T1: SECRET }, missing, vocabulary) });
 const reach = reachWith();
 
 before(async () => {
@@ -274,5 +276,63 @@ describe("relations.suppression in the schema (0052, 0058)", { skip: base ? fals
       await assert.rejects(client.query("insert into relations.suppression (fingerprint, chain, written_at) values ($1, $2, now())", [fingerprint, chain]), /suppression_(fingerprint|chain)_form/);
     }
     await assert.rejects(client.query("insert into relations.suppression (fingerprint, chain, written_at) values ($1, '{T2}', now())", ["a".repeat(64)]), /suppression_fingerprint_uidx/);
+  });
+});
+
+describe("the one reader of an objection (0055, §3)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const read = (asked: Parameters<typeof readObjection>[2], f = reach.fingerprints!) => readObjection(db, f, asked);
+  const by = (...keys: { kind: string; network?: string; value: string }[]) => ({ identity: { subject: "person", keys } });
+
+  it("finds an erased objector by any key the erasure gathered, written as the erasure wrote it, and nobody else", async () => {
+    await erasing(await ada(true), false);
+    assert.deepEqual(await read(by({ kind: "email", value: " Ada@Example.com" })), { answer: "objected", by: "register" });
+    assert.deepEqual(await read(by(profile)), { answer: "objected", by: "register" });
+    assert.deepEqual(await read(by({ kind: "email", value: "bob@example.org" })), { answer: "none" });
+  });
+
+  it("finds them again once recorded as someone new, by the keys of the new row", async () => {
+    await erasing(await ada(true), false);
+    const [{ id }] = await rows("insert into relations.person (email) values ('ada@example.com') returning id");
+    assert.deepEqual(await read({ personId: id }), { answer: "objected", by: "register", personId: id });
+    assert.deepEqual(await read(by({ kind: "email", value: "ada@example.com" })), { answer: "objected", by: "register", personId: id });
+  });
+
+  it("answers from the record first: an opt-out on record is an objection, by an id or by any key", async () => {
+    const id = await ada(true);
+    assert.deepEqual(await read({ personId: id }), { answer: "objected", by: "record", personId: id });
+    assert.deepEqual(await read(by({ kind: "email", value: "other@example.org" }, profile)), { answer: "objected", by: "record", personId: id });
+  });
+
+  it("answers no objection on record for keys that name nobody and match no entry, never an objection", async () => {
+    assert.deepEqual(await read(by({ kind: "email", value: "new@example.org" })), { answer: "none" });
+    const id = await ada(false);
+    assert.deepEqual(await read({ personId: id }), { answer: "none", personId: id });
+  });
+
+  it("cannot answer for an id that names no row, nor for keys that name two people, and does not stop the run for them", async () => {
+    assert.deepEqual(await read({ personId: "00000000-0000-4000-8000-000000000000" }), { answer: "cannot_answer", why: "no person 00000000-0000-4000-8000-000000000000 is on record", stops: false });
+    await ada(false);
+    await rows("insert into relations.person (email) values ('bob@example.org')");
+    const two = await read(by({ kind: "email", value: "ada@example.com" }, { kind: "email", value: "bob@example.org" }));
+    assert.ok(two.answer === "cannot_answer" && !two.stops && /two recorded people/.test(two.why), JSON.stringify(two));
+  });
+
+  it("cannot answer, and stops the run, while a declared version's secret is missing (0063)", async () => {
+    const r = await read(by({ kind: "email", value: "new@example.org" }), reachWith(["T0"]).fingerprints!);
+    assert.deepEqual(r, { answer: "cannot_answer", why: "the register cannot be read: no secret is held for version T0 (decision 0063)", stops: true });
+  });
+
+  it("cannot answer, and stops the run, for an entry keyed under a version whose secret it does not hold", async () => {
+    await rows("insert into relations.suppression (fingerprint, chain, written_at) values ($1, '{T0}', now())", ["1".repeat(64)]);
+    const r = await read(by({ kind: "email", value: "new@example.org" }));
+    assert.ok(r.answer === "cannot_answer" && r.stops && /keyed under T0, and a secret of that chain is not held/.test(r.why), JSON.stringify(r));
+  });
+
+  it("recognises an entry carried under the next version, wrapped (0058, §3)", async () => {
+    const T0 = generateSecret();
+    const both = fingerprinter("T1", { T0, T1: SECRET }, [], vocabulary);
+    await rows("insert into relations.suppression (fingerprint, chain, written_at) values ($1, '{T0,T1}', now())", [wrap(SECRET, fingerprintOf(T0, email, vocabulary))]);
+    assert.deepEqual(await read(by(email), both), { answer: "objected", by: "register" });
+    assert.deepEqual(await read(by(profile), both), { answer: "none" });
   });
 });

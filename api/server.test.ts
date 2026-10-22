@@ -14,7 +14,9 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
+import { identityVocabulary } from "@werunfoundry/core/identity";
 import { loadDomain } from "@werunfoundry/core/manifest/load";
+import { fingerprinter, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
 import type { Database } from "@werunfoundry/core/runtime/run";
 
 import { createApi, routes } from "./server.js";
@@ -28,6 +30,8 @@ let server: Server;
 let origin = "";
 
 const domains = ["relations", "acquisition"].map((d) => loadDomain(join(import.meta.dirname, `../domains/${d}/domain.yaml`)).manifest!);
+/** The register's reader, under one version whose secret is held (0055). */
+const fingerprints = fingerprinter("T1", { T1: generateSecret() }, [], identityVocabulary(domains));
 const spec = JSON.parse(readFileSync(join(import.meta.dirname, "openapi.json"), "utf8")) as { paths: Record<string, Record<string, unknown>> };
 
 before(async () => {
@@ -43,7 +47,7 @@ before(async () => {
     const dir = join(import.meta.dirname, layer, "db/migrations");
     for (const f of readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()) await client.query(readFileSync(join(dir, f), "utf8"));
   }
-  server = createServer(createApi({ db: drizzle(client) as unknown as Database, domains, token }));
+  server = createServer(createApi({ db: drizzle(client) as unknown as Database, fingerprints, domains, token }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -86,7 +90,7 @@ describe("the contract", () => {
   });
 
   it("refuses to exist without a token long enough to be one", () => {
-    assert.throws(() => createApi({ db: {} as Database, domains, token: "short" }), /at least 32/);
+    assert.throws(() => createApi({ db: {} as Database, fingerprints, domains, token: "short" }), /at least 32/);
   });
 });
 

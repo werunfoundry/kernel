@@ -21,17 +21,18 @@
  *   a window the caller gives, with no default (decision 0042). No window, no
  *   template, or no such touch, and a human approves, as on `reviewed`.
  *
- * Whatever the lane, a person who opted out is never queued, and a draft is
- * queued only while its experiment is running.
+ * Whatever the lane, a person who objected — as the one reader answers
+ * (0055) — is never queued, and a draft is queued only while its experiment
+ * is running.
  */
 
 import { and, eq } from "drizzle-orm";
 
 import { laneOf, recordReview } from "@werunfoundry/core/runtime/experiment";
 import { experiment } from "@werunfoundry/core/db/schema";
+import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { ActorKind, Database } from "@werunfoundry/core/runtime/run";
-import { person } from "@werunfoundry/relations/db/schema";
-import { engagedSince } from "@werunfoundry/relations/runtime/record";
+import { engagedSince, readObjection } from "@werunfoundry/relations/runtime/record";
 
 import { draft, template } from "../db/schema.js";
 
@@ -91,10 +92,6 @@ async function reactiveLicense(db: Database, input: DraftInput, gate: Gate, now:
   return engagedSince(db, input.personId, t.channel, new Date(now.getTime() - gate.reactiveWithinMinutes * 60_000));
 }
 
-async function optedOut(db: Database, personId: string): Promise<boolean | undefined> {
-  const [row] = await db.select({ optedOutAt: person.optedOutAt }).from(person).where(eq(person.id, personId));
-  return row ? row.optedOutAt !== null : undefined;
-}
 
 async function locked(db: Database, id: string): Promise<Draft | undefined> {
   const [row] = await db.select().from(draft).where(eq(draft.id, id)).for("update");
@@ -109,7 +106,7 @@ async function locked(db: Database, id: string): Promise<Draft | undefined> {
  * undecided draft takes the new text and keeps its state; a decided one is
  * kept as it is, and says so — regenerating a batch never reopens a decision.
  */
-export async function propose(db: Database, input: DraftInput, by: Attribution, gate: Gate): Promise<Proposed> {
+export async function propose(db: Database, fingerprints: Fingerprinter, input: DraftInput, by: Attribution, gate: Gate): Promise<Proposed> {
   if (!Number.isInteger(gate.autonomyAfter) || gate.autonomyAfter < 1) {
     throw new Error("autonomyAfter must be a whole number of approvals, at least 1");
   }
@@ -119,9 +116,12 @@ export async function propose(db: Database, input: DraftInput, by: Attribution, 
   return db.transaction(async (tx) => {
     const lane = await laneOf(tx, input.experimentId);
     if (!lane) return { ok: false, refused: "no such experiment" };
-    const out = await optedOut(tx, input.personId);
-    if (out === undefined) return { ok: false, refused: "no such person" };
-    if (out) return { ok: false, refused: "the person opted out; nothing is drafted for them" };
+    // Through the one reader (0055): it spares a draft, and never stands in
+    // for the message gate's read.
+    const objection = await readObjection(tx, fingerprints, { personId: input.personId });
+    if (objection.answer === "cannot_answer" && !objection.stops) return { ok: false, refused: "no such person" };
+    if (objection.answer === "cannot_answer") return { ok: false, refused: `cannot answer whether the person objected: ${objection.why}` };
+    if (objection.answer === "objected") return { ok: false, refused: "the person opted out; nothing is drafted for them" };
 
     const [existing] = await tx
       .select()
@@ -244,11 +244,12 @@ export async function drop(db: Database, draftId: string, decision: { by: string
 
 /**
  * The gate itself: hands an approved draft to sending. Anything not approved
- * stays where it is. A person who opted out since the approval is dropped
- * here, by the system, whatever the lane; an experiment that is not running
- * sends nothing.
+ * stays where it is. A person who objected since the approval is dropped
+ * here, by the system, whatever the lane; one the reader cannot answer for is
+ * refused and left approved, never dropped as an objection (0055). An
+ * experiment that is not running sends nothing.
  */
-export async function queue(db: Database, draftId: string, attribution: Attribution): Promise<Decided> {
+export async function queue(db: Database, fingerprints: Fingerprinter, draftId: string, attribution: Attribution): Promise<Decided> {
   return db.transaction(async (tx) => {
     const current = await locked(tx, draftId);
     if (!current) return { ok: false, refused: "no such draft" };
@@ -257,7 +258,9 @@ export async function queue(db: Database, draftId: string, attribution: Attribut
     const [exp] = await tx.select({ status: experiment.status }).from(experiment).where(eq(experiment.id, current.experimentId));
     if (exp?.status !== "running") return { ok: false, refused: `the experiment is ${exp?.status ?? "gone"}, not running` };
 
-    if ((await optedOut(tx, current.personId)) !== false) {
+    const objection = await readObjection(tx, fingerprints, { personId: current.personId });
+    if (objection.answer === "cannot_answer") return { ok: false, refused: `cannot answer whether the person objected: ${objection.why}` };
+    if (objection.answer === "objected") {
       await tx
         .update(draft)
         .set({ state: "dropped", decidedBy: "system", decidedAt: new Date(), dropReason: "the person opted out after the approval", ...attributed(attribution) })

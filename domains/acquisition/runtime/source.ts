@@ -54,6 +54,7 @@ import type { CallContext } from "@werunfoundry/core/contracts/types";
 import { run as runTable } from "@werunfoundry/core/db/schema";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
 import { checkIdentity, hostOf, normalizeIdentity } from "@werunfoundry/core/identity";
+import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
@@ -61,8 +62,7 @@ import type { Crm, CrmCompany } from "@werunfoundry/relations/contracts/crm";
 import type { Cost, Enrichment, KeyStatus, SequenceStep } from "@werunfoundry/relations/contracts/enrichment";
 import { completeInSequence } from "@werunfoundry/relations/contracts/enrichment";
 import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
-import { person as personTable } from "@werunfoundry/relations/db/schema";
-import { findPerson, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
+import { readObjection, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
 import { sourcingResult } from "../db/schema.js";
@@ -168,6 +168,8 @@ export interface SourceDeps {
   db: Database;
   registry: Registry;
   identity: IdentityVocabulary;
+  /** What the one reader recognises the register's entries with (0055): boot's. */
+  fingerprints: Fingerprinter;
   now?: () => Date;
 }
 
@@ -560,17 +562,17 @@ export async function source(deps: SourceDeps, request: SourceRequest): Promise<
           await excludeAfter("known_to_crm", `known to the CRM as ${knownAs}`);
           continue;
         }
-        const recorded = await findPerson(deps.db, person);
-        if ("conflict" in recorded) {
-          await excludeAfter("unreachable", `the registry cannot tell who this is: ${recorded.conflict}`);
+        // Through the one reader (0055): it spares a payment, and never stands
+        // in for the read at contact.
+        const objection = await readObjection(deps.db, deps.fingerprints, { identity: person });
+        if (objection.answer === "cannot_answer" && objection.stops) throw new Stop(`the objection cannot be read: ${objection.why}`);
+        if (objection.answer === "cannot_answer") {
+          await excludeAfter("unreachable", `the registry cannot tell who this is: ${objection.why}`);
           continue;
         }
-        if ("id" in recorded) {
-          const [row] = await deps.db.select({ optedOutAt: personTable.optedOutAt }).from(personTable).where(eq(personTable.id, recorded.id));
-          if (row?.optedOutAt) {
-            await excludeAfter("opted_out", "opted out");
-            continue;
-          }
+        if (objection.answer === "objected") {
+          await excludeAfter("opted_out", objection.by === "record" ? "opted out" : "objected before an erasure; the register holds it");
+          continue;
         }
 
         if (request.dryRun) {

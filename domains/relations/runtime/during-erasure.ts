@@ -11,9 +11,8 @@
  * nothing of them survives, as 0049 has it.
  *
  * The entries are computed from the keys the transaction is about to
- * delete, so they commit or roll back with the deletion. Nothing reads them
- * yet: the one reader is 0055's. They are computed as it will compute them,
- * and are readable the day it arrives.
+ * delete, so they commit or roll back with the deletion. The one reader
+ * (0055, `readObjection`) recomputes them with the same function.
  */
 
 import { eq, sql } from "drizzle-orm";

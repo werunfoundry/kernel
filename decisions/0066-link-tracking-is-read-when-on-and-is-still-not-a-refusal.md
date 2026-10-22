@@ -32,38 +32,49 @@ send to one address of the operator's.
 
 ### 2. Still no refusal, for another reason than 0065's
 
-**The read gives a reliable positive and no reliable negative.**
+**A refusal would protect against nothing observed.**
+- *Nothing was rewritten.* With tracking on, the one body measured
+  arrived with its URL and its bare domain as written.
+- *No link of the kernel's crosses the provider.* The way out is the
+  provider's own link (0065 §2), and the kernel serves none. A rewritten
+  provider link still lands at the provider; tracking cannot take the way
+  out away from anyone.
+- *What a rewrite would cost, if one is seen.* The kernel's record of a
+  message with links would hold the URL it wrote, where the person
+  received another: a cost to what the record says, not to whether the
+  person can stop us. That is 0065's cost, and it stays a declared unknown
+  for an HTML body, which was not measured.
+
+**Not a check either.** The read gives a reliable positive and no reliable
+negative:
 - *On:* `link_tracking: true` is on.
 - *Absent:* the field may be missing because tracking is off, because the
   read did not return it, or because the campaign is older than the field.
-  An absence has been seen once, on one day; it is not a negative.
+  An absence has been seen once, on one day.
 
-**Under 0051's rule an absence would read as on.** Nothing said is read
-as the answer that assumes the least, and here that is "on". A refusal
-resting on the read would then refuse every campaign that does not return
-the field: everything, for an unknown. That is what 0065
-§4 already declined to do to the only adapter there is.
-
-So the refusal is not ruled out because the setting cannot be read. It is
-ruled out because its absence cannot be read. Whoever finds the setting
-readable must not take that as the reason to bring the refusal back.
+So the read cannot serve as a safety check: whatever rested on it would be
+answered by an absence nobody can interpret. That is a caution about the
+read, not the reason there is no refusal; the reason is the measure above.
 
 ## Rules out
 
-- A refusal of link tracking resting on the read.
-- An absent `link_tracking` read as off.
+- A refusal of link tracking for a harm nobody observed.
+- The read used as a safety check, and an absent `link_tracking` read as
+  off.
 - The setting known by the provider's record of a send (0065 stands).
 
 ## Would reverse it
 
-- **A read that returns the field in both states**, documented and seen
-  off as well as on. Off would then be a negative, and a refusal could
-  rest on it.
-- **A rewrite seen in a delivered message.** 0065's cost would be back:
-  the kernel's record of a message with links would hold the URL it wrote,
-  where the person received another.
+- **A rewrite seen in a delivered message** that harms the way out: a
+  provider link turned into one that no longer lands at the provider. A
+  refusal would then protect someone, and the read's positive could carry
+  it. A rewrite that only changes what the record says brings back 0065's
+  cost, not a refusal.
 
 ## Not decided here
+
+- Whether a read that returns the field in both states, documented and
+  seen off as well as on, would make the read a check.
 
 - Whether the positive is used: shown at enrolment, recorded on it.
 - What tracking does to an HTML body.

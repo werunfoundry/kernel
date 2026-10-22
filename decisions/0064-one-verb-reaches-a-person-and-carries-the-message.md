@@ -1,5 +1,10 @@
 # 0064 — One verb reaches a person, and it carries the message
 
+> Completed by [0065](0065-the-kernel-writes-what-is-delivered-and-every-message-says-how-to-stop.md):
+> the kernel writes the form the provider delivers, adds a way out to every
+> body by default, records a cut on the enrolment, and serves no link of
+> its own.
+
 Supersedes in part [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md):
 its run 2 hands over to nothing, and its cap judges only the window behind.
 Supersedes in part [0055](0055-one-passage-reaches-a-person.md): the whole

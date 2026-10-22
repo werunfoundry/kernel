@@ -272,7 +272,12 @@ operator's and to no one else. Each fact below names its source:
 - *The lead.* One lead carried the values measured above, read back byte
   for byte.
 - *The send.* The campaign was activated at 22:29:48 UTC. The one email
-  left at 22:31:29, and the campaign was paused at 22:31:35. The lead and
+  left at 22:31:29, and the campaign was paused at 22:31:35.
+- *One hundred and one seconds.* That is the time from the activation
+  answering to the send. The activation's time is the kernel's test log;
+  the send's is the provider's record. It measures a campaign activated
+  with its lead already in it. It does not measure a lead added to a
+  campaign already running. The lead and
   the campaign were then deleted and read 404. The provider's record of the
   email is still listed.
 
@@ -306,6 +311,21 @@ client). A bare domain, `example.org`, became a link too (the client).
   id `leads/list` returned for the lead, and the `lead_id` of the
   provider's record (the kernel's test). The id is known once the upload
   answers, before the first send.
+
+## What the next throwaway campaign measures, at once
+
+One campaign, created for it and never left running, with one lead on an
+address of the operator's. Each of these was left open by a run above,
+and one send can settle them together:
+- a reply asking to stop, sent from the operator's address, and what the
+  provider does with it: the lead's status, its interest status, its
+  unsubscribe state, and whether the sequence goes on;
+- reading the workspace blocklist, and the lead's interest status,
+  through the API;
+- the rendering with link tracking on;
+- whether `leads/add` accepts a lead id the caller chooses;
+- the time from a lead added to a campaign already running to its first
+  send: the window decision 0065 asks the adapter to declare.
 
 ## Not observed
 

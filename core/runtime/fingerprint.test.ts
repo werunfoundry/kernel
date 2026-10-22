@@ -75,11 +75,32 @@ describe("a fingerprint (0062)", () => {
 describe("what an erasure is handed (0062)", () => {
   it("fingerprints under the version that writes, says what is missing, and holds no secret it would show", () => {
     const secret = generateSecret();
-    const f = fingerprinter("V2", secret, ["V1"], vocabulary);
+    const f = fingerprinter("V2", { V2: secret }, ["V1"], vocabulary);
     const key = { kind: "email", value: "ada@example.com" };
     assert.deepEqual(f.fingerprint(key), { fingerprint: byHand(secret, "email", "", "ada@example.com"), chain: ["V2"] });
     assert.deepEqual([f.writes, [...f.missing]], ["V2", ["V1"]]);
     assert.doesNotMatch(JSON.stringify(f), new RegExp(secret));
     assert.ok(Object.isFrozen(f));
+  });
+
+  it("recomputes a key as an entry under any chain holds it, wrapped label after label (0055, 0058 §3)", () => {
+    const [v1, v2] = [generateSecret(), generateSecret()];
+    const f = fingerprinter("V2", { V1: v1, V2: v2 }, [], vocabulary);
+    const key = { kind: "email", value: "Ada@Example.com " };
+    assert.equal(f.under(["V1"], key), byHand(v1, "email", "", "ada@example.com"));
+    assert.equal(f.under(["V1", "V2"], key), wrap(v2, byHand(v1, "email", "", "ada@example.com")));
+    assert.equal(f.under(["V2"], key), f.fingerprint(key).fingerprint);
+  });
+
+  it("cannot recompute a key under a chain whose secret it does not hold, and says so rather than guess (0063)", () => {
+    const f = fingerprinter("V2", { V2: generateSecret() }, ["V1"], vocabulary);
+    const key = { kind: "email", value: "ada@example.com" };
+    assert.equal(f.under(["V1"], key), undefined);
+    assert.equal(f.under(["V1", "V2"], key), undefined);
+    assert.equal(f.under([], key), undefined);
+  });
+
+  it("refuses to be built without the secret of the version that writes", () => {
+    assert.throws(() => fingerprinter("V2", { V1: generateSecret() }, [], vocabulary), /the secret of version V2, which writes, is not held/);
   });
 });

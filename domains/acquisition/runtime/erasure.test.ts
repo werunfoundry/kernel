@@ -22,7 +22,7 @@ import { fingerprinter, fingerprintOf, generateSecret } from "@werunfoundry/core
 import { identityVocabulary } from "@werunfoundry/core/identity";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import * as relationsSchema from "@werunfoundry/relations/db/schema";
-import { recordPerson } from "@werunfoundry/relations/runtime/record";
+import { readObjection, recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import type { Contract } from "@werunfoundry/core/contracts/types";
 import type { ErasureReach } from "@werunfoundry/core/runtime/erase";
@@ -138,7 +138,7 @@ const registry: Registry = {
 const SECRET = generateSecret();
 const vocabulary = identityVocabulary([relations, acquisition], ["network_a"]);
 /** Resolved for real, from this package: the modules `domain.yaml` names, not ones handed in. */
-const reach: ErasureReach = { registry, root: join(import.meta.dirname, ".."), fingerprints: fingerprinter("T1", SECRET, [], vocabulary) };
+const reach: ErasureReach = { registry, root: join(import.meta.dirname, ".."), fingerprints: fingerprinter("T1", { T1: SECRET }, [], vocabulary) };
 
 /** A person named by a row in every table that can name one. */
 async function someone(): Promise<string> {
@@ -413,15 +413,17 @@ describe("the reference case — what was done by hand (0049)", { skip: base ? f
     assert.deepEqual((await sourcing()).map((s) => s.person), [null, null]);
   });
 
-  it("keeps the opt-out as a fingerprint, which nothing reads yet: a person found again is a new person, contactable until 0055's reader (0052)", async () => {
+  it("keeps the opt-out as a fingerprint, which the one reader finds again: a person found again is a new person, and objecting (0052, 0055)", async () => {
     const [{ id }] = await rows("insert into relations.person (email, opted_out_at) values ('ada@example.com', now()) returning id");
     const r = await erase(db, [relations, acquisition], { trigger: "cli", subjectId: id, by: "an operator", processKey: "relations.person.erase", objects: false }, reach);
     assert.deepEqual(await rows("select fingerprint, chain from relations.suppression"), [{ fingerprint: fingerprintOf(SECRET, ada.email, vocabulary), chain: ["T1"] }]);
     assert.deepEqual(r.during, [{ domain: "relations", acts: [{ what: "entries written in the register, one per key of a person who objected (decision 0052)", rows: 1 }] }]);
-    // The hole 0049 named stays open on the reading side: 0055's reader is not built.
+    // The hole 0049 named, closed on the reading side: the row is new and
+    // carries no opt-out, and the one reader finds the objection by its key.
     const again = await recordPerson(db, { subject: "person", keys: [ada.email] });
     assert.ok("id" in again && again.id !== id);
     assert.deepEqual(await rows("select opted_out_at from relations.person"), [{ opted_out_at: null }]);
+    assert.deepEqual(await readObjection(db, reach.fingerprints!, { personId: again.id }), { answer: "objected", by: "register", personId: again.id });
   });
 });
 

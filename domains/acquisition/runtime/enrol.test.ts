@@ -24,6 +24,7 @@ import type { CallContext, CallResult, Contract } from "@werunfoundry/core/contr
 import type { Identity } from "@werunfoundry/core/identity";
 import { identityVocabulary } from "@werunfoundry/core/identity";
 import { loadDomain } from "@werunfoundry/core/manifest/load";
+import { fingerprinter, fingerprintOf, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
@@ -231,6 +232,8 @@ const registry: Registry = {
 const relationsDomain = loadDomain(join(import.meta.dirname, "../../relations/domain.yaml")).manifest;
 if (!relationsDomain) throw new Error("relations/domain.yaml does not load");
 const identity = identityVocabulary([relationsDomain], ["net_a"]);
+/** The register's secret, under one version (0055). */
+const SECRET = generateSecret();
 
 const request = (over: Partial<EnrolRequest> = {}): EnrolRequest => ({
   sequenceKey: "welcome",
@@ -242,7 +245,7 @@ const request = (over: Partial<EnrolRequest> = {}): EnrolRequest => ({
   ...over,
 });
 
-const run = (over: Partial<EnrolRequest> = {}) => enrol({ db, registry, identity, now: () => NOW }, request(over));
+const run = (over: Partial<EnrolRequest> = {}, fingerprints = fingerprinter("T1", { T1: SECRET }, [], identity)) => enrol({ db, registry, identity, fingerprints, now: () => NOW }, request(over));
 
 const row = async (id: string) =>
   (await client.query("select status, dry_run, error from core.run where id = $1", [id])).rows[0] as {
@@ -688,6 +691,9 @@ describe("what the people source is asked", { skip: base ? false : "TEST_DATABAS
 /* The opt-out, read by every path that contacts anyone                        */
 /* -------------------------------------------------------------------------- */
 
+/** The register refuses a truncate that would destroy an entry (0052); between tests, its triggers are set aside, as only a database's owner can. */
+const forgetRegister = () => client.query("set session_replication_role = replica; truncate relations.suppression; set session_replication_role = origin");
+
 describe("the opt-out", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
   // P1 and P1c (0013: an identity is a set of keys). Bo opted out under one
   // address; the people source attests two. Only the order differs between
@@ -721,6 +727,25 @@ describe("the opt-out", { skip: base ? false : "TEST_DATABASE_URL is not set" },
     assert.deepEqual(r.skipped.filter((s) => s.reason === "opted_out").map((s) => emailOf(s.person!)), ["ada@open.example.com"]);
     const kept = (await client.query("select reason from acquisition.enrolment_skip where run_id = $1 and reason = 'opted_out'", [r.runId])).rows;
     assert.equal(kept.length, 1, "the opt-out skip was not kept with the run");
+  });
+
+  // Ada objected and was erased: nothing of her is on record, and the
+  // register holds her address (0052). The one reader finds her (0055).
+  it("skips a person the register holds an objection for, though nobody is on record", async () => {
+    await client.query("insert into relations.suppression (fingerprint, chain, written_at) values ($1, '{T1}', now())", [fingerprintOf(SECRET, { kind: "email", value: "ada@open.example.com" }, identity)]);
+    try {
+      const r = await run();
+      assert.deepEqual(held(), ["bo@open.example.com"], "an erased objector was enrolled");
+      assert.deepEqual(r.skipped.filter((s) => s.reason === "opted_out").map((s) => [emailOf(s.person!), s.detail]), [["ada@open.example.com", "objected before an erasure; the register holds it"]]);
+    } finally {
+      await forgetRegister();
+    }
+  });
+
+  it("stops the run, enrolling nobody, while the register cannot be read: a version's secret is missing (0063)", async () => {
+    const r = await run({}, fingerprinter("T1", { T1: SECRET }, ["T0"], identity));
+    assert.match(r.stoppedBy ?? "", /the objection cannot be read: the register cannot be read: no secret is held for version T0/);
+    assert.deepEqual(held(), []);
   });
 });
 

@@ -23,6 +23,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
 import type { CallResult, Contract } from "@werunfoundry/core/contracts/types";
+import { identityVocabulary } from "@werunfoundry/core/identity";
+import { loadDomain } from "@werunfoundry/core/manifest/load";
+import { fingerprinter, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import { constituteList } from "@werunfoundry/relations/runtime/list";
@@ -31,6 +34,9 @@ import type { ProtectedAccount, TargetList } from "../contracts/target-list.js";
 import { approve } from "./draft.js";
 import type { HandOver, SendRequest } from "./send.js";
 import { draftFromList, messageKey, sendFromList } from "./send.js";
+
+/** The register's reader, under one version whose secret is held (0055). */
+const register = fingerprinter("T1", { T1: generateSecret() }, [], identityVocabulary([loadDomain(join(import.meta.dirname, "../../relations/domain.yaml")).manifest!]));
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_send_${process.pid}`;
@@ -154,7 +160,7 @@ const agent = { type: "agent" as const, id: "a drafting agent" };
 
 /** Run 1, then a person approves every draft it proposed. */
 async function draftAndApprove(experimentId: string, templateId: string) {
-  const drafted = await draftFromList(db, { listKey: "the-list", experimentId, templateId, compose, gate: { autonomyAfter: 5 }, dryRun: false, trigger: "cli", actor: agent });
+  const drafted = await draftFromList(db, register, { listKey: "the-list", experimentId, templateId, compose, gate: { autonomyAfter: 5 }, dryRun: false, trigger: "cli", actor: agent });
   for (const d of drafted.drafted) {
     const a = await approve(db, d.draftId!, { by: "an operator" }, { actor: { type: "human", id: "an operator" } });
     assert.ok(a.ok, "the approval was refused");
@@ -173,7 +179,7 @@ const sendRequest = (experimentId: string, over: Partial<SendRequest> = {}): Sen
   actor: { type: "system", id: "the sending path" },
   ...over,
 });
-const send = (experimentId: string, over: Partial<SendRequest> = {}) => sendFromList({ db, registry, handOver: stub }, sendRequest(experimentId, over));
+const send = (experimentId: string, over: Partial<SendRequest> = {}) => sendFromList({ db, registry, handOver: stub, fingerprints: register }, sendRequest(experimentId, over));
 
 /** An unsolicited outbound touch nobody wrote a message for: a send the sequencer made on its own. */
 const aSequencerSend = (personId: string) =>
@@ -340,7 +346,7 @@ describe("the sending path", { skip: base ? false : "TEST_DATABASE_URL is not se
   it("writes nothing on a dry run but its run", async () => {
     const personId = await aPerson("ada@example.com", "example.com");
     const { experimentId, templateId } = await aCampaign([{ personId }]);
-    const dryDraft = await draftFromList(db, { listKey: "the-list", experimentId, templateId, compose, gate: { autonomyAfter: 5 }, dryRun: true, trigger: "cli", actor: agent });
+    const dryDraft = await draftFromList(db, register, { listKey: "the-list", experimentId, templateId, compose, gate: { autonomyAfter: 5 }, dryRun: true, trigger: "cli", actor: agent });
     assert.deepEqual(dryDraft.drafted.map((d) => d.outcome), ["would_propose"]);
     assert.equal((await one("select count(*)::int as n from acquisition.draft")).n, 0);
 
@@ -357,7 +363,7 @@ describe("the sending path", { skip: base ? false : "TEST_DATABASE_URL is not se
     const personId = await aPerson("ada@example.com", "example.com");
     const companyId = (await one("insert into relations.company (name, domain) values ('Other', 'example.org') returning id")).id;
     const { experimentId, templateId } = await aCampaign([{ personId }, { companyId }]);
-    const r = await draftFromList(db, { listKey: "the-list", experimentId, templateId, compose, gate: { autonomyAfter: 5 }, dryRun: false, trigger: "cli", actor: agent });
+    const r = await draftFromList(db, register, { listKey: "the-list", experimentId, templateId, compose, gate: { autonomyAfter: 5 }, dryRun: false, trigger: "cli", actor: agent });
     assert.deepEqual(r.drafted.map((d) => d.personId), [personId]);
     assert.deepEqual(r.skipped, [{ member: { companyId }, reason: "a company on a list names nobody to write to" }]);
   });

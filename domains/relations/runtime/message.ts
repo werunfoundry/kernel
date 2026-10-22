@@ -10,8 +10,10 @@
  *
  * Refused, all at once, and nothing written:
  *
- * - **consent** — the person opted out. The opt-out is global today, so it
- *   refuses every message, solicited or not, until consent is per purpose;
+ * - **consent** — the person objected, as the one reader answers (0055): an
+ *   opt-out on record, or a key in the register; or the reader cannot
+ *   answer. The objection is global today, so it refuses every message,
+ *   solicited or not, until consent is per purpose;
  * - **cadence** — an unsolicited message with no cap given (there is no
  *   default), or past it. The cap reads touches (decision 0050): the
  *   unsolicited outbound touches to the person inside the cap's window,
@@ -34,10 +36,11 @@
 import { and, eq, gt, notExists, sql } from "drizzle-orm";
 
 import { experiment } from "@werunfoundry/core/db/schema";
+import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { ActorKind, Database } from "@werunfoundry/core/runtime/run";
 
-import { message, person, touch } from "../db/schema.js";
-import { engagedSince } from "./record.js";
+import { message, touch } from "../db/schema.js";
+import { engagedSince, readObjection } from "./record.js";
 
 export interface MessageInput {
   /** The writer's key for this send. Writing it again is the same message. */
@@ -64,17 +67,19 @@ export type Written = { ok: true; messageId: string; written: boolean } | { ok: 
 
 const DAY = 86_400_000;
 
-export async function writeMessage(db: Database, input: MessageInput, now = new Date()): Promise<Written> {
+export async function writeMessage(db: Database, fingerprints: Fingerprinter, input: MessageInput, now = new Date()): Promise<Written> {
   return db.transaction(async (tx) => {
     const [already] = await tx.select({ id: message.id }).from(message).where(eq(message.key, input.key));
     if (already) return { ok: true, messageId: already.id, written: false };
 
     const refused: string[] = [];
 
-    // Locked, so two writes to one person count the cap one after the other.
-    const [who] = await tx.select({ optedOutAt: person.optedOutAt }).from(person).where(eq(person.id, input.personId)).for("update");
-    if (!who) return { ok: false, refused: ["the person is not recorded"] };
-    if (who.optedOutAt !== null) refused.push("consent: the person opted out");
+    // Through the one reader (0055), the person's row locked, so two writes
+    // to one person count the cap one after the other.
+    const objection = await readObjection(tx, fingerprints, { personId: input.personId }, { lock: true });
+    if (objection.answer === "cannot_answer" && !objection.stops) return { ok: false, refused: ["the person is not recorded"] };
+    if (objection.answer === "cannot_answer") refused.push(`consent: cannot answer whether the person objected — ${objection.why}`);
+    if (objection.answer === "objected") refused.push(objection.by === "record" ? "consent: the person opted out" : "consent: the person objected before an erasure, and the register holds it");
 
     if (input.unsolicited) {
       const cap = input.cap;

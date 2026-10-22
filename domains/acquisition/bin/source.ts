@@ -79,7 +79,7 @@ async function main(): Promise<number> {
     let report;
     try {
       report = await source(
-        { db: connection.db, registry: booted.registry, identity: booted.identity },
+        { db: connection.db, registry: booted.registry, identity: booted.identity, fingerprints: booted.fingerprints },
         {
           maxPeople,
           want: values("want").length ? values("want") : ["email"],

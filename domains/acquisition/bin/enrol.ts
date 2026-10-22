@@ -100,15 +100,15 @@ async function main(): Promise<number> {
   }
   try {
     // PROVISIONAL — removed when the guard decision 0055 brings lands, and not
-    // to be extended to anything else in the meantime. Until 0052's
-    // suppression register is built, erasure takes a person's opt-out with
-    // them, and a later run finds them again as someone who never opted out.
-    // That window opens with the first erasure, and the register would only
-    // ever hold people the kernel erased, so a live run is refused once one
-    // has run here. It holds only as long as those runs do: an erasure run
-    // deleted by hand reopens it. Read by `run_process_started_at_idx`. The
-    // runtime refuses the same (`ErasedWithoutRegister`), for every caller;
-    // this says it before anything else is read, as 0051's refusal does.
+    // to be extended to anything else in the meantime. The one reader finds
+    // an erased objector by the keys the erasure kept, and enrolment asks it;
+    // the threshold is the passage's to hold, and 0055 removes this guard
+    // with it, never before. The register would only ever hold people the
+    // kernel erased, so a live run is refused once one has run here. It holds
+    // only as long as those runs do: an erasure run deleted by hand reopens
+    // it. Read by `run_process_started_at_idx`. The runtime refuses the same
+    // (`ErasedWithoutRegister`), for every caller; this says it before
+    // anything else is read, as 0051's refusal does.
     if (flag("live")) {
       const erased = await connection.db
         .select({ id: run.id })
@@ -117,8 +117,8 @@ async function main(): Promise<number> {
         .limit(1);
       if (erased.length > 0) {
         console.log(
-          "enrol: refused — an erasure has run on this instance, and nothing reads the suppression register yet (decisions 0052, 0055): " +
-            "a person erased after opting out would be enrolled as someone who never did. Nobody was enrolled and no provider was called; a dry run is still allowed.",
+          "enrol: refused — an erasure has run on this instance, and the passage that holds the threshold is not built (decision 0055): " +
+            "live enrolment stays refused until it is. Nobody was enrolled and no provider was called; a dry run is still allowed.",
         );
         return 1;
       }
@@ -127,7 +127,7 @@ async function main(): Promise<number> {
     let report;
     try {
       report = await enrol(
-      { db: connection.db, registry: booted.registry, identity: booted.identity },
+      { db: connection.db, registry: booted.registry, identity: booted.identity, fingerprints: booted.fingerprints },
       {
         sequenceKey,
         channel,

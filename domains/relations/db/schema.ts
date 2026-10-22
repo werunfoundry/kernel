@@ -531,10 +531,11 @@ export const message = relations.table(
  *   during-erasure.ts`). The rewrap of 0058, §3 is the one other change the
  *   schema admits: the triggers in migration `0011` refuse every other
  *   update, every delete, and a truncate that would destroy an entry.
- * - **One reader**, 0055's, not built: until it is, nothing reads this
- *   table but the erasure's plan, which counts the entries a missing version
- *   no longer protects (0063). The entries written meanwhile are computed
- *   as that reader will compute them (`core/runtime/fingerprint.ts`).
+ * - **One reader**, 0055's (`readObjection`, `runtime/record.ts`): it
+ *   recomputes the keys in hand under every chain an entry is keyed under,
+ *   with the function the erasure writes with (`core/runtime/fingerprint.ts`).
+ *   Besides it, only the erasure's plan reads this table, to count the
+ *   entries a missing version no longer protects (0063).
  */
 export const suppression = relations.table(
   "suppression",

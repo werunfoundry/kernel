@@ -43,7 +43,7 @@ async function main(): Promise<number> {
   }
   const connection = await connect(url, root, "api");
   const host = process.env.KERNEL_API_HOST ?? "127.0.0.1";
-  const server = createServer(createApi({ db: connection.db, domains: booted.domains, token }));
+  const server = createServer(createApi({ db: connection.db, fingerprints: booted.fingerprints, domains: booted.domains, token }));
   server.listen(port, host, () => console.log(`api: listening on ${host}:${port}`));
   const stop = () => server.close(() => void connection.end().finally(() => process.exit(0)));
   process.on("SIGINT", stop);

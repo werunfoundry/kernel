@@ -194,6 +194,7 @@ export async function boot(options: BootOptions): Promise<BootResult> {
   // needed at once — the version that writes; another is lost, which stops
   // contact and leaves erasure possible, and is said.
   let writing: string | undefined;
+  const held: Record<string, string> = {};
   const missing: string[] = [];
   const declared = validated.manifest?.fingerprints;
   for (const [i, v] of (declared?.versions ?? []).entries()) {
@@ -217,6 +218,7 @@ export async function boot(options: BootOptions): Promise<BootResult> {
       issues.push(error(at, `${variable} does not reproduce version ${v.label}'s check value: under it, no entry would ever match (decision 0058)`));
       continue;
     }
+    held[v.label] = value;
     if (v.label === declared!.writes) writing = value;
   }
 
@@ -235,6 +237,6 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     domains: loaded.domains,
     registry: resolved.registry,
     identity,
-    fingerprints: fingerprinter(declared.writes, writing, missing, identity),
+    fingerprints: fingerprinter(declared.writes, held, missing, identity),
   };
 }

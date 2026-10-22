@@ -281,7 +281,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       what: "Instantly's unsubscribe link, /unsub/1/<lead id>, whose id comes back with the upload",
       window: {
         known: false,
-        why: "one observation, not a bound: a lead added to a running campaign left 156 seconds after the upload answered (2026-10-22, one lead, one idle account; README)",
+        why: "two observations, not a bound: a lead added to a running campaign left 156, then 382 seconds after the upload answered (2026-10-22, one lead each, one idle account; README)",
       },
     },
     classesStop: {

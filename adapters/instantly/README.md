@@ -388,13 +388,55 @@ either address, before and after the reply.
 provider's record of the two emails, the send and the reply, is still
 listed.
 
+## The way out, written after the upload (2026-10-22, afternoon)
+
+Decision 0065 has the kernel write the provider's link into the body once
+the adapter returns it: the link holds the lead's id, which comes back with
+the upload, and a caller-chosen id is not kept. One campaign, created for
+it, one step, one lead on the operator's alias, nobody else. Sources as
+above: *the provider's record*, *the message* received, *the run*.
+
+**The upload, then the rewrite.**
+- The lead was uploaded into the running campaign with a first body that
+  carried no link (13:50:49.546 UTC, the run).
+- `PATCH /api/v2/leads/{id}` with `custom_variables` holding the body
+  rewritten with the link `https://<tracking domain>/unsub/1/<lead id>`
+  answered 200, 147 ms later, with the rewritten variables in its answer
+  (the provider's record). The same route answered 200 to a status on
+  2026-10-20 and changed nothing; the answer was not taken as the proof.
+- *Read back:* `GET /api/v2/leads/{id}` and `POST /api/v2/leads/list` both
+  returned the rewritten body, not the first (the provider's record).
+
+**What was delivered** (the message): the body as rewritten, as
+`text/plain`, its last line the link with the lead's id — the same link the
+`List-Unsubscribe` header carried. Nothing of the first body arrived. The
+provider's record of the send, once listed, held the rewritten body too.
+
+**The window, a second time.** The send left at 13:57:12 (the message; the
+provider's record), 382 seconds after the upload answered; the morning's
+was 156. Two observations, one lead each, on the same account: the window
+is not stable, and neither is a bound. The rewrite landed 147 ms after the
+upload.
+
+**The provider's record of sends lags.** The lead read its step executed at
+13:57:13.920 within the minute, but `GET /api/v2/emails?campaign_id=…` did
+not list the send until about 14:03:25 — some six minutes after it left,
+polled every five seconds. *Pulling what was sent*, above, saw a send listed
+within a minute; this one was not.
+
+**Afterwards.** The campaign was paused, then the lead and the campaign
+deleted and read 404. Unlike the morning's, `GET /api/v2/emails` read just
+after listed nothing for the deleted campaign.
+
 ## What a later throwaway campaign would measure
 
 - What link tracking does to an HTML body: the provider delivered none.
 - A reply asking to stop sent from the lead's own address, rather than
   from another address in the same thread.
-- The window again, on a busy account and more than once, before it is
-  declared as a bound.
+- The window again, on a busy account and more often, before it is
+  declared as a bound: two observations, 156 and 382 seconds.
+- How long the provider's record of sends lags a send, and whether a
+  deleted campaign's sends stay listed: seen both ways.
 
 ## Not observed
 

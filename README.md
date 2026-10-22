@@ -48,7 +48,7 @@ scripts/              checks that make the doctrine enforceable
 | A person's acts | commands at a terminal, refused without one (0047): `kernel-stage`, `kernel-relationship`, `kernel-list`, `kernel-decide`, beside `kernel-acknowledge`, `kernel-erase` and `kernel-attest-stop` |
 | HTTP API | written (0040): `kernel-api`, one token per instance; health, a run, listing and proposing drafts, an erasure's plan. It refuses `actorType: human`, so no act reserved to a person is on it |
 | Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not. Before any of it, each enrolment a provider may hold is suspended there, or the erasure is refused (0056); where retrying cannot help, a person attests the stop with `kernel-attest-stop`. An objector's keys survive as fingerprints in `relations.suppression`, written by the erasure alone (0052, 0062) under versions `kernel-fingerprint` generates (0058); the one reader (0055) reads them wherever the objection is read: sourcing, enrolment, drafting, queueing and the message gate. The API's plan shows the rules only |
-| Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent. The hand-over is withdrawn, and so is the enrolment without messages: `--list` is the only form |
+| Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent. After the body, the way-out line the instance sets on the sequencer's binding is written and read back at the provider, or the enrolment records that it went without one and why; the run says so aloud (0067, 0069). Written means read back there, not received: the closing rule was measured once in a message received, in the email adapter's README. The hand-over is withdrawn, and so is the enrolment without messages: `--list` is the only form |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
 | Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
@@ -90,6 +90,12 @@ one at an account the protected set knows by the target list's own
 identifier alone: the registry records no such identifier. It names those
 accounts each time, and an enrolment there keeps running until a person
 stops it at the provider (0068).
+
+**Sourcing pays before it reads the opt-out.** A known defect, next in
+line. The person pass reads the objection (0055) on the completed identity,
+after the enrichment sources were asked (`source.ts`): a person who objected
+under a key the people source already gave is paid for, then excluded.
+Protection by address is asked before paying; the objection is not.
 
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.

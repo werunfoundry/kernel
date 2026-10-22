@@ -2,9 +2,9 @@
  * acquisition/runtime — the way-out line an instance declares (decisions
  * 0065, 0067, 0069).
  *
- * Set on the sequencer's binding, under `settings.wayOut`, and read here,
- * never by the adapter: the line a person reads is not held by the layer
- * that talks to the provider (0069). Two forms:
+ * Set on the sequencer's binding, under `settings.acquisition.wayOut`, and
+ * read here, never by the adapter: the line a person reads is not held by
+ * the layer that talks to the provider (0069). Two forms:
  *
  * - `{ line: "…{link}…" }` — the words the kernel adds after every body it
  *   writes, on one line, with `{link}` once where the provider's link goes.
@@ -25,9 +25,9 @@ export type WayOutSetting =
   | { undeclared: true }
   | { malformed: string };
 
-/** What the binding's `settings.wayOut` says, read once per run. */
-export function readWayOut(settings: Readonly<Record<string, unknown>> | undefined): WayOutSetting {
-  const value = settings?.wayOut;
+/** What the binding's `settings.acquisition.wayOut` says, read once per run. */
+export function readWayOut(settings: Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined): WayOutSetting {
+  const value = settings?.acquisition?.wayOut;
   if (value === undefined) return { undeclared: true };
   if (value === "cut") return { cut: true };
   if (typeof value !== "object" || value === null || Array.isArray(value)) {

@@ -47,7 +47,7 @@ export interface ResolvedAdapter {
    * the domain that declared each key to read. The adapter is never handed
    * them, and the core reads none.
    */
-  settings: Readonly<Record<string, unknown>>;
+  settings: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   /** Its position in the manifest's `providers`, for messages. */
   index: number;
 }

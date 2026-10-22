@@ -25,10 +25,19 @@ for which a declaration is not a proof; and on
 
 **A domain declares the settings an instance may put on a binding of a
 contract it reads**: `bindingSettings` in `domain.yaml`, a contract and a
-key each. The instance sets them under the binding's `settings`. The core
-refuses a key that no enabled domain declares for that contract, and
-reads none of the values. The domain reads them, and the adapter is never
-handed them.
+key each. The instance sets them under the binding's `settings`, in a
+section named after the domain that reads them: `settings.acquisition`.
+The core reads none of the values. The domain reads them, and the adapter
+is never handed them.
+
+**What the core checks, and what it does not.**
+- Under an enabled domain, a key that domain does not declare for the
+  binding's contract is refused at boot: a misspelt setting is a setting
+  not applied.
+- Under a domain that is not enabled, nothing is read, and the instance
+  boots with a warning. A domain disabled with its settings left in the
+  manifest is not a lock — the shape 0058 gave the register's versions, and
+  0063 had to bound after the fact.
 
 Acquisition declares one: `wayOut`, on a sequencer binding. Its value is a
 line, `{ line: "…{link}…" }`, with `{link}` once where the provider's link
@@ -77,21 +86,37 @@ nobody is surprised by the limit either.
 
 ## Rules out
 
+- **A line declared without `{link}`, or with it twice.** "To stop
+  receiving these messages, click here" with no link behind it is a
+  promise of a way out with no way out, worse than no line: the family of
+  "reply STOP" before its path existed, which 0065 §3 refused for that
+  reason. The core does not read the value, so boot cannot refuse it; the
+  enrolment does, before a run is opened, a dry run too, and nobody is
+  enrolled.
 - The line in the adapter's options, or anywhere the adapter reports it.
 - A word of a domain's in the core's binding type.
 - A line written by the kernel when the instance declares none.
 - An enrolment without a way out that the run does not say.
-- A setting on a binding that no enabled domain declares.
+- A key under an enabled domain that it does not declare for the contract.
+- An instance that cannot boot because a domain it disabled left settings
+  behind.
 
 ## Would reverse it
 
-- **An instance that needs several languages on one sequencer.** The line
-  carried by the experiment, as section 5 names it, would then take
-  precedence over the binding's.
+- **A core that could carry a domain's words.** A field on the core's own
+  binding would then do, and the mechanism of section 1 would be needless.
+- **A provider that puts its link in the body itself**, in a form the
+  kernel can read back. The line would then be the provider's, and the
+  instance would declare none.
+
+An instance that needs several languages on one sequencer does not reverse
+this: it makes it insufficient, and section 5 already names what is added
+then — the experiment's line, over the binding's.
 
 ## Not built yet
 
 The core loads and checks the settings, acquisition declares `wayOut` and
 reads it, and the template declares a line. The enrolment does not use it
-yet: writing the line after the upload, recording it on the enrolment
-(0067), and saying aloud who went without one come with 0067's record.
+yet: refusing a line without its link, writing the line after the upload,
+recording it on the enrolment (0067), and saying aloud who went without one
+come with 0067's record.

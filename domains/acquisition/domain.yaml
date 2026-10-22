@@ -27,8 +27,9 @@ experimentTypes:
 truthKinds:
   - icp
   - persona
-# What an instance may set on a binding, for this domain to read and never
-# the adapter (decision 0069). `wayOut` on a sequencer binding: the line the
+# What an instance may set on a binding, under `settings.acquisition`, for
+# this domain to read and never the adapter (decision 0069). `wayOut` on a
+# sequencer binding: the line the
 # kernel adds after every body it writes, with the provider's link in it, or
 # `cut` (decisions 0065, 0067).
 bindingSettings:

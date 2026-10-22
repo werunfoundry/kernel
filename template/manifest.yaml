@@ -59,8 +59,9 @@ providers:
     # language per channel. Or `wayOut: cut`, which every enrolment records.
     # Left out, people are enrolled with no way out, and every run says so.
     settings:
-      wayOut:
-        line: "If you would rather not hear from me again, this link stops it: {link}"
+      acquisition:
+        wayOut:
+          line: "If you would rather not hear from me again, this link stops it: {link}"
   - contract: inbound
     adapter: ./adapters/sandbox-inbound.ts
     env: []

@@ -181,10 +181,12 @@ export interface ProviderBinding {
   options?: Record<string, string | number | boolean>;
   /**
    * Values a domain declared for this contract's bindings (decision 0069),
-   * by key. Not the adapter's: it is never handed them. The core checks the
-   * keys and nothing else.
+   * under the domain's name, then by key: `settings.<domain>.<key>`. Not the
+   * adapter's: it is never handed them. The core checks the keys of enabled
+   * domains and nothing else; a domain not enabled is warned of and read by
+   * nobody, so disabling a domain never stops an instance from booting.
    */
-  settings?: Record<string, unknown>;
+  settings?: Record<string, Record<string, unknown>>;
   /**
    * The channels this binding takes (decision 0015). Defaults to every
    * channel the adapter declares. A contract may be bound more than once,

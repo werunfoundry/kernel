@@ -146,7 +146,7 @@ export const providerBindingSchema = z.object({
   options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   channels: z.array(identifier).optional(),
   finds: z.array(identifier).optional(),
-  settings: z.record(z.string(), z.unknown()).optional(),
+  settings: z.record(identifier, z.record(z.string(), z.unknown())).optional(),
 });
 
 /** A fingerprint version's label: written into entries, so never renamed (0058). */
@@ -412,11 +412,20 @@ export function validateInstance(
       if (kinds.has(kind)) issues.push(issue("error", at, `"${kind}" is listed twice`));
       kinds.add(kind);
     }
-    // Decision 0069: a setting is a key some enabled domain declared for this
-    // contract. Its value is that domain's to read; the core reads none.
-    for (const key of Object.keys(binding.settings ?? {})) {
-      const declared = m.enabledDomains.some((n) => (known.get(n)?.bindingSettings ?? []).some((d) => d.contract === binding.contract && d.key === key));
-      if (!declared) issues.push(issue("error", `providers.${i}.settings.${key}`, `no enabled domain declares the setting "${key}" for a "${binding.contract}" binding`, 1));
+    // Decision 0069: settings are kept under the name of the domain that
+    // reads them. Under an enabled domain, a key it does not declare for this
+    // contract is refused: a misspelt setting is a setting not applied. Under
+    // a domain not enabled, nothing is read, and the instance still boots: a
+    // domain disabled with its settings left in place is not a lock.
+    for (const [domain, values] of Object.entries(binding.settings ?? {})) {
+      if (!enabled.has(domain)) {
+        issues.push(issue("warning", `providers.${i}.settings.${domain}`, `"${domain}" is not enabled: these settings are read by nobody`));
+        continue;
+      }
+      for (const key of Object.keys(values)) {
+        const declared = (known.get(domain)?.bindingSettings ?? []).some((d) => d.contract === binding.contract && d.key === key);
+        if (!declared) issues.push(issue("error", `providers.${i}.settings.${domain}.${key}`, `"${domain}" declares no setting "${key}" for a "${binding.contract}" binding`, 1));
+      }
     }
     if (binding.finds && binding.channels) {
       issues.push(issue("error", `providers.${i}`, "a binding takes channels or finds keys in sequence, never both (decision 0030)"));

@@ -76,10 +76,16 @@ describe("checkDeclaration", () => {
   });
 
   it("refuses a verb declared served that the contract has no method for (0054)", () => {
-    // Pulls only: enrol and suspend are served with their methods present,
-    // so the refusal can only come from the missing method in the contract.
+    // The touches pull: enrol and suspend are served with their methods
+    // present, so the refusal can only come from the missing method in the contract.
     assert.deepEqual(at({ ...declaration(), pullTouches: { serves: "yes" } }, methods), ["pullTouches.serves"]);
-    assert.deepEqual(at({ ...declaration(), pullUnsubscribes: { serves: "partially", why: "by time" } }, methods), ["pullUnsubscribes.serves"]);
+    assert.deepEqual(at({ ...declaration(), pullTouches: { serves: "partially", why: "by time" } }, methods), ["pullTouches.serves"]);
+  });
+
+  it("accepts the unsubscribes pull served by an adapter that has the method, and refuses it on one that has not (0051 verb 4)", () => {
+    const served = { ...declaration(), pullUnsubscribes: { serves: "partially", why: "no date of its own" } };
+    assert.deepEqual(at(served, { ...methods, pullUnsubscribes: () => undefined }), []);
+    assert.deepEqual(at(served, methods), ["pullUnsubscribes"]);
   });
 
   it("refuses, given the adapter, a verb declared served whose method is not a function on it (0054)", () => {
@@ -100,7 +106,7 @@ describe("checkDeclaration", () => {
     // @ts-expect-error — a pull has no method in the contract, so it is not served (0054)
     const served: SequencerDeclaration = { ...declaration(), pullTouches: { serves: "yes" } };
     // @ts-expect-error — nor served partially
-    const partial: SequencerDeclaration = { ...declaration(), pullUnsubscribes: { serves: "partially", why: "by time" } };
+    const partial: SequencerDeclaration = { ...declaration(), pullTouches: { serves: "partially", why: "by time" } };
     assert.ok(served && partial);
   });
 
@@ -135,7 +141,7 @@ describe("readDeclaration", () => {
     const declares = { ...declaration(), pullTouches: { serves: "yes" }, pullUnsubscribes: { serves: "yes" } };
     const read = readDeclaration(adapter(declares, { withdraw: undefined }));
     assert.equal(read.suspends, false);
-    for (const reason of [/pullTouches\.serves: the contract has no method/, /pullUnsubscribes\.serves: the contract has no method/, /suspend: declared served, but `withdraw` is not a function/]) {
+    for (const reason of [/pullTouches\.serves: the contract has no method/, /pullUnsubscribes: declared served, but `pullUnsubscribes` is not a function/, /suspend: declared served, but `withdraw` is not a function/]) {
       assert.match(read.refusal ?? "", reason);
     }
   });

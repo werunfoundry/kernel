@@ -96,6 +96,14 @@ before(async () => {
         state.missNextList = false;
         return reply(200, { items: [], next_starting_after: null });
       }
+      if (body?.filter === "FILTER_VAL_UNSUBSCRIBED") {
+        // Instantly's order is not known at scale (README); the fake pages by
+        // insertion, after the id it is given.
+        const all = state.leads.filter((l) => l.campaign === body.campaign && l.status === -2);
+        const from = body.starting_after ? all.findIndex((l) => l.id === body.starting_after) + 1 : 0;
+        const items = all.slice(from, from + Number(body.limit ?? 100));
+        return reply(200, { items, next_starting_after: from + items.length < all.length ? items.at(-1)!.id : null });
+      }
       const emails = ((body?.contacts as string[]) ?? []).map((e) => e.toLowerCase());
       const items = state.leads.filter((l) => l.campaign === body?.campaign && emails.includes(l.email.toLowerCase()));
       return reply(200, { items, next_starting_after: null });
@@ -442,7 +450,7 @@ describe("what it declares (decision 0051)", () => {
       assert.equal(s.gap.known, false, "a gap nobody measured is declared as a number");
       assert.equal(s.notTheLeastDestructive, undefined);
     }
-    assert.deepEqual([a.declares!.pullTouches.serves, a.declares!.pullUnsubscribes.serves], ["no", "no"]);
+    assert.deepEqual([a.declares!.pullTouches.serves, a.declares!.pullUnsubscribes.serves], ["no", "partially"]);
     assert.equal(readDeclaration(a).suspends, true);
     assert.deepEqual(seen, []);
   });
@@ -464,6 +472,66 @@ describe("what it declares (decision 0051)", () => {
     const text = readDeclaration(adapter()).lines.join("\n");
     assert.match(text, /delivers a body as: plain text/);
     assert.match(text, /a way out in the body: Instantly's unsubscribe link, \/unsub\/1\/<lead id>, whose id comes back with the upload, known only after the call/);
+  });
+});
+
+describe("the unsubscribes pull (decision 0051, verb 4)", () => {
+  const unsubscribed = (n: number, campaign = "c1") => {
+    for (let i = 0; i < n; i++) {
+      state.leads.push({ id: `u-${campaign}-${i}`, email: `u${i}@example.com`, campaign, status: -2, timestamp_updated: "2026-10-20T10:00:00.000Z" });
+    }
+  };
+
+  it("reads every unsubscribed lead of every bound campaign, page after page, and writes nothing", async () => {
+    unsubscribed(150);
+    unsubscribed(1, "c2");
+    state.leads.push({ id: "active", email: "ada@example.com", campaign: "c1", status: 1 });
+    state.leads.push({ id: "elsewhere", email: "zed@example.com", campaign: "c9", status: -2 });
+    const r = await adapter("test-key", { "subsequence.welcome": "s1", "campaign.later": "c2", "subsequence.later": "s1" }).pullUnsubscribes!(ctx(false));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.value.complete, true);
+    assert.equal(r.value.items.length, 151);
+    assert.deepEqual(r.value.items[0], {
+      providerEventId: "unsubscribed:u-c1-0",
+      type: "acquisition.unsubscribe",
+      occurredAt: "2026-10-20T10:00:00.000Z",
+      subject: { subject: "person", keys: [{ kind: "email", value: "u0@example.com" }] },
+      attribution: { sequenceKey: "welcome", channel: "email" },
+    });
+    assert.equal(r.value.items.at(-1)!.attribution?.sequenceKey, "later");
+    assert.ok(!r.value.items.some((e) => /active|elsewhere/.test(e.providerEventId)), "a lead that did not unsubscribe, or of a campaign not bound, was read");
+    assert.equal(seen.filter((s) => s.body?.filter === "FILTER_VAL_UNSUBSCRIBED").length, 3);
+    assert.deepEqual(writes(), []);
+  });
+
+  it("dates an unsubscribe with no update time by the read, rather than dropping it", async () => {
+    state.leads.push({ id: "u", email: "u@example.com", campaign: "c1", status: -2 });
+    const before = Date.now();
+    const r = await adapter().pullUnsubscribes!(ctx(true));
+    assert.ok(r.ok && r.value.items.length === 1);
+    assert.ok(Date.parse(r.value.items[0]!.occurredAt) >= before);
+  });
+
+  it("says the read is incomplete when a lead comes back with no address, rather than dropping it unseen", async () => {
+    unsubscribed(1);
+    state.leads.push({ id: "u-x", email: "", campaign: "c1", status: -2 });
+    const r = await adapter().pullUnsubscribes!(ctx(true));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.deepEqual([r.value.items.length, r.value.complete], [1, false]);
+  });
+
+  it("says the read is incomplete when it stops at its page bound", async () => {
+    unsubscribed(150);
+    const r = await factory({ options: { baseUrl, "campaign.welcome": "c1", "subsequence.welcome": "s1", unsubscribePages: 1 }, env: { INSTANTLY_API_KEY: "test-key" } }).pullUnsubscribes!(ctx(true));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.deepEqual([r.value.items.length, r.value.complete], [100, false]);
+  });
+
+  it("fails the whole read when a page fails, rather than returning part of it as all", async () => {
+    unsubscribed(1);
+    state.forceStatus = 500;
+    const r = await adapter().pullUnsubscribes!(ctx(true));
+    assert.equal(r.ok, false);
   });
 });
 

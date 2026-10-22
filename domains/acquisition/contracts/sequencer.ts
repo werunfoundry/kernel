@@ -42,6 +42,8 @@ import type {
 import type { Identity, IdentityKey } from "@werunfoundry/core/identity";
 import type { ValidationIssue } from "@werunfoundry/core/manifest/types";
 
+import type { InboundEvent } from "./inbound.js";
+
 /** The mailbox or profile a touch leaves from. Capacity is per sender and channel. */
 export interface SenderRef {
   /** The provider's identifier for the sender. */
@@ -217,6 +219,14 @@ export interface Withdrawal {
   asOf: string;
 }
 
+/** What the unsubscribes pull read (0051's verb 4). */
+export interface UnsubscribesRead {
+  /** Each an `acquisition.unsubscribe` event, about one person, from one of the adapter's sequences. */
+  items: InboundEvent[];
+  /** Whether every page was read. */
+  complete: boolean;
+}
+
 /** What a suppression reached. */
 export interface Suppression {
   /** The keys the provider now refuses, including those it already refused. */
@@ -350,8 +360,8 @@ export interface SequencerDeclaration {
   /** 0051's verb 2. No method in this contract yet. */
   pullTouches: NotServed;
   suspend: SuspendDeclaration;
-  /** 0051's verb 4. No method in this contract yet. */
-  pullUnsubscribes: NotServed;
+  /** 0051's verb 4: `pullUnsubscribes`. */
+  pullUnsubscribes: Serves;
   /** Decision 0065. Absent: a body that reads the same in either form. */
   deliveredForm?: DeliveredForm;
   /** Decision 0065. Absent: no way out, recorded as such. */
@@ -380,11 +390,11 @@ const VERBS = ["enrol", "pullTouches", "suspend", "pullUnsubscribes"] as const;
  * above says the same for an adapter the compiler sees; this says it for one
  * it never saw, written in plain JavaScript (0005).
  */
-const METHOD: Record<(typeof VERBS)[number], "enrol" | "withdraw" | null> = {
+const METHOD: Record<(typeof VERBS)[number], "enrol" | "withdraw" | "pullUnsubscribes" | null> = {
   enrol: "enrol",
   pullTouches: null,
   suspend: "withdraw",
-  pullUnsubscribes: null,
+  pullUnsubscribes: "pullUnsubscribes",
 };
 const SERVES = new Set(["yes", "partially", "no"]);
 const isText = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
@@ -649,6 +659,24 @@ export interface Sequencer extends Contract {
     },
     ctx: CallContext,
   ): Promise<CallResult<Withdrawal>>;
+
+  /**
+   * 0051's verb 4: every unsubscribe the provider holds for the sequences
+   * this adapter is bound to, as `acquisition.unsubscribe` events (0017's
+   * shape), so that the kernel records them as it records any opt-out.
+   *
+   * Read in full each time, not after a cursor: a provider that cannot
+   * filter its unsubscribes by date gives no point to read after, and a
+   * cursor over another order would miss an old lead that unsubscribes
+   * late. Each event's `providerEventId` makes a second read of it a
+   * replay, stored once. `complete: false` says the read stopped before the
+   * end — a bound, or a page that failed after others — and the kernel says
+   * so rather than take a part for the whole.
+   *
+   * Optional: an adapter that does not serve the verb declares so, and has
+   * no method (0054).
+   */
+  pullUnsubscribes?(ctx: CallContext): Promise<CallResult<UnsubscribesRead>>;
 
   /**
    * Stop this provider reaching a person or a whole account, on every

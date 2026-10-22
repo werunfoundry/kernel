@@ -532,7 +532,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
 
     /* 4. Each person: the checks, the registry, the enrolment ------------ */
 
-    const seenPeople = new Set<string>();
+    // A person is on a list once (`list_member_person_uidx`), so nobody is
+    // met twice in one run.
     for await (const { company, host, people: atCompany } of considered()) {
       /** The company's row, recorded once per run, the first time someone at it is about to be enrolled. */
       let companyRow: { id: string } | { conflict: string } | undefined;
@@ -550,11 +551,6 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           await skip({ reason: "protected", person, company, detail: "an address is on a protected domain" });
           continue;
         }
-        if (seenPeople.has(computed)) {
-          await skip({ reason: "duplicate", person, company, detail: "already met in this run" });
-          continue;
-        }
-        seenPeople.add(computed);
 
         // The objection, through the one reader (0055): an opt-out on record,
         // or a key in the register, which finds an erased objector again. It
@@ -590,9 +586,6 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           await skip({ reason: "suspended", person, company, detail: "suspended from this sequence, by the registry: not enrolled in it again (decision 0051)" });
           continue;
         }
-        // A replay repeats the key the provider was given, whatever the
-        // person's keys have become since.
-        const key = row?.idempotencyKey ?? computed;
 
         const current = await sequencer.status({ person, sequenceKey: request.sequenceKey }, ctx);
         if (!current.ok) {
@@ -732,7 +725,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
                 companyId: companyId.id,
                 sequenceKey: request.sequenceKey,
                 channel: request.channel,
-                idempotencyKey: key,
+                idempotencyKey: computed,
                 provider: sequencer.provider,
                 plan: carried.plan,
                 actorType: request.actor.type,
@@ -752,7 +745,9 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
 
         const done = await sequencer.enrol(
           {
-            idempotencyKey: row?.idempotencyKey ?? key,
+            // A replay repeats the key the provider was given, whatever the
+            // person's keys have become since: the row's.
+            idempotencyKey: row?.idempotencyKey ?? computed,
             sequenceKey: request.sequenceKey,
             channel: request.channel,
             person,

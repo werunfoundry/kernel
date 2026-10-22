@@ -606,6 +606,18 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     assert.deepEqual([x?.state, x?.refusal], ["refused", "invalid: this address cannot be sequenced"]);
   });
 
+  it("puts a refused row back to pending before asking the provider again: a run that dies then leaves it pending", async () => {
+    world.listed[0]!.people = [{ email: "ada@open.example.com", name: "Ada" }];
+    world.crash = "refuse";
+    await run();
+    assert.deepEqual((await registered()).map((x) => x.state), ["refused"]);
+    world.crash = "after";
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.deepEqual(held(), ["ada@open.example.com"], "the provider holds her: the call did land");
+    assert.deepEqual((await registered()).map((x) => [x.state, x.refusal]), [["pending", null]], "the row still reads as the provider's refusal");
+  });
+
   it("keeps every skip with its reason, the four never folded into one", async () => {
     world.enrolled.set("seeded", "bo@open.example.com");
     world.listed[0]!.people = [

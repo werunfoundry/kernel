@@ -65,9 +65,10 @@ limit is read where the promise is.
 
 **What that leaves.** A person enrolled before their account became
 protected, at an account known by the target list's own identifier alone,
-keeps receiving the steps of their sequence. Nothing here stops them; a
-person who knows can stop them at the provider, and attest it with
-`kernel-attest-stop`.
+keeps receiving the steps of their sequence. Nothing here stops them. A
+person who knows can stop them at the provider, and nothing here records
+that they did: `kernel-attest-stop` attests a stop for an erasure that was
+refused (0056), not this one.
 
 ### 4. Sourcing is unchanged
 

@@ -66,21 +66,27 @@ gate that rules after the provider has been reached is no longer a gate.
 
 ### 3. What the enrolment records of the way out
 
-Four cases, each a fact written, none presumed:
+Three states, each a fact written once, none presumed:
 
 - **Written** — the line, the link, and when the rewrite was read back;
 - **Cut** — by the instance, and that it was (0065 §2);
 - **Absent** — the adapter declared none, or said nothing, or the rewrite
-  could not be made, and why. An absence is recorded and the person is
-  enrolled; it is not refused (0065 §2: the way out is not forced, by this path or any
-  other);
-- **Written too late** — the rewrite was read back after the first step
-  had left.
+  could not be made, and why.
 
-**Both times are kept: the rewrite's and the first step's.** The first
-step's comes from the touches pull (0051's verb 2, 0064 §5). Whether a
-person received the way out is then answered from the record after the
-fact, never presumed from a window nobody bounded.
+**An absence is not chosen before enrolling.** When the rewrite fails, the
+person is already enrolled: the upload came first. What is decided is that
+they are not suspended for it. The absence is recorded and the enrolment
+stands (0065 §2: the way out is not forced, by this path or any other).
+
+**Two times, and what they establish.** The enrolment keeps when the
+rewrite was read back. The touches pull keeps when the first step left
+(0051's verb 2, 0064 §5), and it reads that up to six minutes late.
+*Written too late* is not a state: it is what the two times establish,
+when the first step left before the read-back. Recorded as a state, it
+would have to be written onto the enrolment once the pull came back — the
+rewrite section 1 rules out. Whether a person received the way out is
+answered from the two times, after the fact, never presumed from a window
+nobody bounded.
 
 ### 4. The alternative set aside: a way out reserved before composing
 
@@ -100,6 +106,8 @@ reach the same guarantee section 1 keeps with two records.
 - A message rewritten to hold its link.
 - A gate that rules after the provider has been reached.
 - Whether a person received the way out presumed from a window.
+- *Written too late* recorded as a state, and the enrolment's way-out
+  record rewritten to say so.
 - A verb that reserves a way out before composing.
 
 ## Would reverse it

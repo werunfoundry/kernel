@@ -105,9 +105,21 @@ that assumes the least.
 kernel writes its messages in that form, and the message it records
 (0064) is the message delivered.
 
-**Its default is plain text, with the limits below.** Nothing said is not
-"markup survives". The kernel then writes what plain text keeps, and
-nothing a delivery could remove.
+**Its default is a body that reads the same in either form.** Nothing
+said is not "markup survives", and it is not "line breaks survive"
+either.
+- *Two ways to lose a body.* A delivery may remove what it does not keep,
+  as plain text removed the markup above. It may also collapse what it
+  renders as HTML: the provider's documentation says "Use `<br/>` tags for
+  delivered email line breaks", so a plain-text body rendered that way
+  arrives as one block.
+- *What the kernel writes then.* A body whose meaning depends on neither:
+  - no markup;
+  - no line break that carries meaning;
+  - single spaces, none trailing;
+  - links as bare URLs.
+
+  Nothing is lost in either direction.
 
 **For the shipped adapter, plain text:**
 - *No markup.* It is removed on delivery.
@@ -138,8 +150,9 @@ The shipped adapter answers *known only after*: the lead's id comes back
 with the upload. The only window measured is the one above, and it is not
 the one an enrolment has.
 
-**The kernel adds the way out by default.** The kernel puts it in the
-composed body; the author of the message does not have to think of it.
+**The kernel adds the way out itself, unless the instance cuts it.** The
+kernel puts it in the composed body; the author of the message does not
+have to think of it.
 
 **An instance may cut it, and the cut is recorded on the enrolment.** An
 absence is a fact written, not a lapse. The day someone asks whether this
@@ -255,7 +268,8 @@ lead's id held under that one setting.
 - "Reply STOP" in a body before a path carries the reply to the opt-out.
 - A reply interpreted by an adapter or by the kernel.
 - An adapter's silence read as anything but the default that assumes the
-  least: plain text, no way out, a provider that does not class a stop.
+  least: a body that reads the same in either form, no way out, a
+  provider that does not class a stop.
 - A link served by the kernel, while 0017 and 0040 stand.
 - The provider's record of a send taken as what was said.
 - Link tracking known by a person's declaration, or by the provider's

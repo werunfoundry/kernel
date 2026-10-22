@@ -1,5 +1,10 @@
 # 0065 — The kernel writes what is delivered, and every message says how to stop
 
+> Superseded in part by [0066](0066-link-tracking-is-read-when-on-and-is-still-not-a-refusal.md):
+> section 4's "all closed", and its statement that tracking rewrites a
+> body's URLs, are withdrawn; link tracking is still not a refusal, because
+> an absent setting cannot be read as off.
+
 > Built by #123, in part: the three declarations and their defaults, checked
 > and printed; the shipped adapter declares plain text, a way out known
 > after the upload, and a stop it does not class.

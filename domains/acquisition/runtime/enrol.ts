@@ -80,7 +80,7 @@ import { lineWith, readWayOut } from "./way-out.js";
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", sequencer: "sequencer" } as const;
 
-export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable" | "suspended" | "not_drafted" | "refused" | "capped";
+export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable" | "suspended" | "not_drafted" | "refused" | "capped" | "no_key";
 
 export interface EnrolRequest {
   sequenceKey: string;
@@ -653,6 +653,15 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         const computed = idempotencyKey(person, request.sequenceKey, request.channel);
         if (personProtected(person)) {
           await skip({ reason: "protected", person, company, detail: "an address is on a protected domain" });
+          continue;
+        }
+        // A company with no domain and no id on a network, or none at all:
+        // protection answers `clear` because nothing was compared, not
+        // because nothing matched (0044). Skipped here, before a message is
+        // written and on a dry run too — not later, by the company's record
+        // refusing an identity with no key, which only a live run reaches.
+        if ((company.identity?.keys ?? []).length === 0) {
+          await skip({ reason: "no_key", person, company, detail: "recorded at no company with a domain or an id on a network: protection cannot judge the account" });
           continue;
         }
 

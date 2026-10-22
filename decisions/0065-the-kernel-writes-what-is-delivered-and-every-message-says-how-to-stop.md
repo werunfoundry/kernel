@@ -1,5 +1,11 @@
 # 0065 — The kernel writes what is delivered, and every message says how to stop
 
+> Built by #123, in part: the three declarations and their defaults, checked
+> and printed; the shipped adapter declares plain text, a way out known
+> after the upload, and a stop it does not class.
+
+> Built by #124, in part: the unsubscribes pull has its method.
+
 Completes [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md),
 whose kernel writes the whole message without knowing the form the
 provider delivers, and leaves open where the unsubscribe link goes.

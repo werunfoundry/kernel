@@ -25,6 +25,9 @@
 > by the opt-out, read back and recorded. The two pulls are still not
 > built.
 
+> Built by #124, in part: verb 4, the unsubscribes pull, has its method,
+> and the shipped adapter serves it partially. Verb 2 is still not built.
+
 > Completed by [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md):
 > verb 2 gets its method, and an adapter that cannot pull its touches is
 > refused for an unsolicited enrolment, as one that cannot suspend is.

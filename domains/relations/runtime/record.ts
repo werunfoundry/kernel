@@ -220,7 +220,10 @@ export type TouchInput = TouchDirection & {
   sender?: string;
   outcome?: string;
   experimentId?: string;
-  /** The message whose hand-over this confirms (decision 0050). Only the sending path names one. */
+  /**
+   * The message this touch delivered: the step's, by the plan of the
+   * enrolment that carried it (decision 0064), read by the touches pull.
+   */
   messageId?: string;
   actor: { type: ActorKind; id?: string };
   runId?: string;

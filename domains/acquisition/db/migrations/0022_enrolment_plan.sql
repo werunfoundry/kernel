@@ -1,0 +1,1 @@
+ALTER TABLE "acquisition"."enrolment" ADD COLUMN "plan" jsonb;

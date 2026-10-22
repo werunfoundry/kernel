@@ -1,5 +1,19 @@
 # 0064 — One verb reaches a person, and it carries the message
 
+> Built by #128, in part: the steps verb of section 5, its reading held
+> against the templates.
+
+> Built by #131, in part: an enrolment from a list carries the messages
+> (section 2), each written through the gate; a step on another channel
+> stops the run (section 4). `enrol` still names a channel.
+
+> Built by #132, in part: the hand-over is withdrawn (section 1). The
+> enrolment without messages still stands.
+
+> Built by #133, in part: the touches pull of section 5, and the plan each
+> enrolment from a list records. The cap judged ahead (section 3) and the
+> second refusal (section 6) are still not built.
+
 > Completed by [0065](0065-the-kernel-writes-what-is-delivered-and-every-message-says-how-to-stop.md):
 > the kernel writes the form the provider delivers, adds a way out to every
 > body by default, records a cut on the enrolment, and serves no link of

@@ -13,6 +13,11 @@
  * Then every sequencer that declares 0051's verb 4 served has its
  * unsubscribes read, in full: the pull has no cursor (`runtime/unsubscribes`),
  * so `--pages` does not bound it; the adapter's binding does.
+ *
+ * Then every sequencer that declares 0051's verb 2 served has its sends
+ * read after its cursor, each recorded as an outbound touch tied to the
+ * message its enrolment's plan names (`runtime/touches`). Its adapter's
+ * binding bounds it too.
  */
 
 import { existsSync } from "node:fs";
@@ -22,6 +27,7 @@ import { boot } from "@werunfoundry/core/runtime/boot";
 import { connect } from "@werunfoundry/core/runtime/connect";
 
 import { pullInbound } from "../runtime/inbound.js";
+import { pullTouches } from "../runtime/touches.js";
 import { pullUnsubscribes } from "../runtime/unsubscribes.js";
 
 const args = process.argv.slice(2);
@@ -67,9 +73,11 @@ async function main(): Promise<number> {
     const request = { dryRun: !flag("live"), actor: { type: "human" as const }, trigger: "cli" as const };
     let reports;
     let unsubscribes;
+    let sends;
     try {
       reports = await pullInbound(deps, { ...request, maxPages: pages });
       unsubscribes = await pullUnsubscribes(deps, request);
+      sends = await pullTouches(deps, request);
     } catch (error) {
       const cause = (error as Error).cause;
       console.log(`inbound: ${cause instanceof Error ? cause.message : (error as Error).message.split("\n")[0]}`);
@@ -103,7 +111,17 @@ async function main(): Promise<number> {
         console.log(`  opted out, would be stopped at the provider: ${r.stopped.would}`);
       }
     }
-    return [...reports, ...unsubscribes].every((r) => !r.stoppedBy) ? 0 : 1;
+    if (sends.length === 0) console.log("inbound: no sequencer serves the touches pull.");
+    for (const r of sends) {
+      console.log(`run: ${r.runId} — ${r.provider}, sends — ${flag("live") ? "live" : "dry run"}`);
+      if (r.stoppedBy) console.log(`  stopped: ${r.stoppedBy}`);
+      console.log(`  sends read: ${r.read}${r.complete ? "" : " (only part of them)"}`);
+      if (flag("live")) {
+        console.log(`  touches recorded: ${r.recorded}, of them tied to their message: ${r.matched}, already stored: ${r.replayed}, to nobody on record: ${r.unknownPeople}`);
+      }
+      console.log(`  cursor: ${r.cursor ?? "(none yet)"}`);
+    }
+    return [...reports, ...unsubscribes, ...sends].every((r) => !r.stoppedBy) ? 0 : 1;
   } finally {
     await connection.end().catch(() => {});
   }

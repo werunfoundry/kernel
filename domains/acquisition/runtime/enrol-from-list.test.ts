@@ -218,6 +218,12 @@ describe("an enrolment from a list carries the kernel's messages (0064)", { skip
       ].sort((a, b) => a.key.localeCompare(b.key)),
     );
     assert.equal((await one("select state from acquisition.enrolment")).state, "enrolled");
+    // What the enrolment committed to (0064): each step, its delay, its message, solicited.
+    const ids = Object.fromEntries((await rows("select key, id from relations.message")).map((m) => [m.key, m.id]));
+    assert.deepEqual((await one("select plan from acquisition.enrolment")).plan, [
+      { step: 1, afterPreviousMinutes: 0, messageId: ids[messageKey(drafts[0]!)], unsolicited: false },
+      { step: 2, afterPreviousMinutes: 3 * DAY, messageId: ids[messageKey(drafts[1]!)], unsolicited: false },
+    ]);
   });
 
   it("refuses an unsolicited enrolment before any run, until the cap is judged ahead (0064 §3)", async () => {

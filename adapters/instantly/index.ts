@@ -74,12 +74,14 @@ import type {
   Enrolment,
   EnrolmentState,
   EnrolmentStatus,
+  SentStep,
   SequenceStep,
   SequenceSteps,
   Sequencer,
   SequencerDeclaration,
   StepCopy,
   Suppression,
+  TouchesPage,
   UnsubscribesRead,
   Withdrawal,
 } from "@werunfoundry/acquisition/contracts/sequencer";
@@ -113,6 +115,23 @@ interface CampaignSteps {
       variants?: { subject?: string; body?: string; v_disabled?: boolean }[];
     }[];
   }[];
+}
+
+/** One email the provider records, as `GET /api/v2/emails` returns it (README, *Pulling what was sent*). */
+interface Email {
+  id: string;
+  /** The address it went to. */
+  lead?: string;
+  campaign_id?: string;
+  subsequence_id?: string | null;
+  /** The sending account. */
+  eaccount?: string;
+  /** `"<sequence>_<step>_<variant>"`, counted from 0. */
+  step?: string;
+  /** 1 for a send; 2 a reply received (README, the throwaway campaign of 2026-10-22). */
+  ue_type?: number;
+  timestamp_email?: string;
+  timestamp_created?: string;
 }
 
 interface Page<T> {
@@ -217,6 +236,13 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
   // most: the read is in full each time (below), and a bound says when it
   // was not.
   const unsubscribePages = typeof options.unsubscribePages === "number" ? options.unsubscribePages : 50;
+  // How many pages of sends one touches pull reads per bound campaign, at
+  // most; and how far behind its cursor it reads again, in minutes. The
+  // provider's record listed a send some six minutes after it left (README,
+  // *The way out, written after the upload*), with the time it left: a pull
+  // that read only after its cursor would step past it.
+  const touchPages = typeof options.touchPages === "number" ? options.touchPages : 20;
+  const touchesOverlapMinutes = typeof options.touchesOverlapMinutes === "number" ? options.touchesOverlapMinutes : 60;
 
   /** `campaign.<sequenceKey>` in the binding's options. */
   const campaignFor = (sequenceKey: string): string | undefined => {
@@ -242,8 +268,8 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
   const declares: SequencerDeclaration = {
     enrol: { serves: "yes" },
     pullTouches: {
-      serves: "no",
-      why: "not built: Instantly lists sent emails by person and time (README), but this adapter does not read them yet",
+      serves: "partially",
+      why: "only the bound campaigns' sends are read, from a record that lists a send late (README): each pull reads back an overlap, and a send it has not listed yet is not seen",
     },
     suspend:
       sequences.length > 0 && unparked.length === 0
@@ -518,6 +544,55 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         });
       }
       return { ok: true, value: { sequenceKey, steps, asOf } };
+    },
+
+    /**
+     * 0051's verb 2. Every send `GET /api/v2/emails` lists for each bound
+     * campaign (`email_type=sent`), from the cursor less the overlap above.
+     * The cursor is the latest `timestamp_created` read; a send read again
+     * is a replay, by its id. A send of a subsequence — the parking one —
+     * says no step of the sequence. `step` is read from the record's
+     * `"<sequence>_<step>_<variant>"`, counted from 0.
+     */
+    async pullTouches({ after }, ctx): Promise<CallResult<TouchesPage>> {
+      const since = after && !Number.isNaN(Date.parse(after)) ? new Date(Date.parse(after) - touchesOverlapMinutes * 60_000).toISOString() : undefined;
+      const items: SentStep[] = [];
+      let latest = after;
+      let complete = true;
+      for (const sequenceKey of sequences) {
+        const campaign = campaignFor(sequenceKey)!;
+        let next: string | undefined;
+        for (let page = 0; ; page++) {
+          if (page >= touchPages) {
+            complete = false;
+            break;
+          }
+          const query = new URLSearchParams({ campaign_id: campaign, email_type: "sent", limit: "100", ...(since ? { min_timestamp_created: since } : {}), ...(next ? { starting_after: next } : {}) });
+          const read = await call<Page<Email>>("GET", `/api/v2/emails?${query}`, ctx);
+          if (!read.ok) return read;
+          for (const m of read.value.items) {
+            if (m.ue_type !== undefined && m.ue_type !== 1) continue;
+            if (!m.lead || !m.timestamp_email) {
+              complete = false;
+              continue;
+            }
+            const index = m.subsequence_id ? undefined : Number(m.step?.split("_")[1]);
+            items.push({
+              providerEventId: m.id,
+              sequenceKey,
+              ...(index !== undefined && Number.isInteger(index) ? { step: index + 1 } : {}),
+              person: { subject: "person", keys: [{ kind: "email", value: m.lead }] },
+              channel: "email",
+              occurredAt: m.timestamp_email,
+              ...(m.eaccount ? { sender: m.eaccount } : {}),
+            });
+            if (m.timestamp_created && (!latest || m.timestamp_created > latest)) latest = m.timestamp_created;
+          }
+          next = read.value.next_starting_after ?? undefined;
+          if (!next || read.value.items.length === 0) break;
+        }
+      }
+      return { ok: true, value: { items, ...(latest ? { cursor: latest } : {}), complete } };
     },
 
     async pullUnsubscribes(ctx): Promise<CallResult<UnsubscribesRead>> {

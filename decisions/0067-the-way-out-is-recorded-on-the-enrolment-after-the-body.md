@@ -4,6 +4,13 @@
 > the line's wording is set on the sequencer's binding; with none, the
 > enrolment records the absence and the run says it.
 
+> Built by #137: the three states on the enrolment, written once, with
+> the read-back's time and no column for the first step's; the line
+> written after the upload and checked; the closing rule held against the
+> provider's steps. **`written` means written and read back at the
+> provider at that time — the provider's record, never what the person
+> received.**
+
 Supersedes in part [0065](0065-the-kernel-writes-what-is-delivered-and-every-message-says-how-to-stop.md),
 its section 1, in form and not in guarantee: the message delivered is no
 longer one record, it is two. The guarantee stands: the kernel knows what

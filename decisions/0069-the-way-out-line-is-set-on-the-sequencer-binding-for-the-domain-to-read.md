@@ -1,5 +1,10 @@
 # 0069 — The way-out line is set on the sequencer's binding, for the domain to read
 
+> Built by #136, in part: the settings, `wayOut` declared and read, a line
+> in the template. Built by #137: the rest — a line without its link
+> refused at the enrolment, the line written and recorded, and who went
+> without one said aloud.
+
 Completes [0067](0067-the-way-out-is-recorded-on-the-enrolment-after-the-body.md),
 which left undecided where the instance declares the line's wording, and
 what the kernel does with an instance that declares none. Rests on

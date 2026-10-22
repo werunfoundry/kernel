@@ -18,6 +18,10 @@
 
 > Built by #124, in part: the unsubscribes pull has its method.
 
+> Built by #137, in part: a way out known only after the call is written in
+> after the upload and recorded on the enrolment, with a cut and an
+> absence (0067); the shipped adapter offers it once its link is bound.
+
 Completes [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md),
 whose kernel writes the whole message without knowing the form the
 provider delivers, and leaves open where the unsubscribe link goes.

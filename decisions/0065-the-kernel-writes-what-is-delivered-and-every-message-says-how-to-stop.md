@@ -6,6 +6,12 @@
 > a refusal would protect against nothing observed: nothing was rewritten,
 > and the way out is the provider's own link.
 
+> Superseded in part by [0067](0067-the-way-out-is-recorded-on-the-enrolment-after-the-body.md):
+> section 1 in form, not in guarantee — the message delivered is the
+> message's body followed by the way-out line the enrolment records, and
+> nothing else; section 2's way out known only after the call is recorded
+> on the enrolment, written, cut, absent or written too late.
+
 > Built by #123, in part: the three declarations and their defaults, checked
 > and printed; the shipped adapter declares plain text, a way out known
 > after the upload, and a stop it does not class.

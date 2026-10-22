@@ -77,8 +77,10 @@ import type {
   Sequencer,
   SequencerDeclaration,
   Suppression,
+  UnsubscribesRead,
   Withdrawal,
 } from "@werunfoundry/acquisition/contracts/sequencer";
+import type { InboundEvent } from "@werunfoundry/acquisition/contracts/inbound";
 
 /* -------------------------------------------------------------------------- */
 /* What the API returns, as far as this adapter reads it                       */
@@ -194,6 +196,10 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
   // Every request has a deadline, overridable per binding: a provider that
   // stops answering becomes an error, not a run that never ends.
   const timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : 30_000;
+  // How many pages of unsubscribes one pull reads per bound campaign, at
+  // most: the read is in full each time (below), and a bound says when it
+  // was not.
+  const unsubscribePages = typeof options.unsubscribePages === "number" ? options.unsubscribePages : 50;
 
   /** `campaign.<sequenceKey>` in the binding's options. */
   const campaignFor = (sequenceKey: string): string | undefined => {
@@ -243,8 +249,8 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
                 : `no parking subsequence is bound for ${unparked.map((s) => `"${s}"`).join(", ")}: add subsequence.<sequenceKey>`,
           },
     pullUnsubscribes: {
-      serves: "no",
-      why: "not built: Instantly shows an unsubscribe as a lead's state, with no date of its own (README), and this adapter does not read it yet",
+      serves: "partially",
+      why: "Instantly shows an unsubscribe as a lead's state, with no date of its own: an event carries the lead's last update (README); only the bound campaigns' unsubscribes are read",
     },
     // Decision 0065, from the README's send of 2026-10-21 and nothing else.
     deliveredForm: {
@@ -434,6 +440,56 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       if (!back.ok) return back;
       if (!back.value) return fail("unknown", "Instantly reported the lead uploaded, but it does not read back in the campaign");
       return existing(back.value, enrolment, new Date().toISOString());
+    },
+
+    /**
+     * 0051's verb 4. Every lead `leads/list` returns under
+     * `FILTER_VAL_UNSUBSCRIBED`, campaign by bound campaign, in full: the
+     * filter takes no date (README), so there is no point to read after. A
+     * page that fails fails the read, and the kernel's next pull reads it
+     * all again. `occurredAt` is the lead's last update — at the click, as
+     * read live, and moved by any later change to the lead — or, with none,
+     * the time of the read: an opt-out is never dropped for want of a date.
+     */
+    async pullUnsubscribes(ctx): Promise<CallResult<UnsubscribesRead>> {
+      const items: InboundEvent[] = [];
+      let complete = true;
+      for (const sequenceKey of sequences) {
+        const campaign = campaignFor(sequenceKey)!;
+        let after: string | undefined;
+        for (let page = 0; ; page++) {
+          if (page >= unsubscribePages) {
+            complete = false;
+            break;
+          }
+          const read = await call<Page<Lead>>("POST", "/api/v2/leads/list", ctx, {
+            campaign,
+            filter: "FILTER_VAL_UNSUBSCRIBED",
+            limit: 100,
+            ...(after ? { starting_after: after } : {}),
+          });
+          if (!read.ok) return read;
+          for (const lead of read.value.items) {
+            // A lead is an address in Instantly; one read without it cannot be
+            // tied to anyone, and is not dropped silently: the read says it
+            // is incomplete.
+            if (!lead.email) {
+              complete = false;
+              continue;
+            }
+            items.push({
+              providerEventId: `unsubscribed:${lead.id}`,
+              type: "acquisition.unsubscribe",
+              occurredAt: lead.timestamp_updated ?? new Date().toISOString(),
+              subject: { subject: "person", keys: [{ kind: "email", value: lead.email }] },
+              attribution: { sequenceKey, channel: "email" },
+            });
+          }
+          after = read.value.next_starting_after ?? undefined;
+          if (!after || read.value.items.length === 0) break;
+        }
+      }
+      return { ok: true, value: { items, complete } };
     },
 
     async withdraw(request, ctx): Promise<CallResult<Withdrawal>> {

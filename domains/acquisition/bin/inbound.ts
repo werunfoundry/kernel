@@ -9,6 +9,10 @@
  * Pulled, never pushed: when it runs is the instance's business — a schedule,
  * or a person. `--pages` has no default: how far one pull goes is the
  * caller's to say.
+ *
+ * Then every sequencer that declares 0051's verb 4 served has its
+ * unsubscribes read, in full: the pull has no cursor (`runtime/unsubscribes`),
+ * so `--pages` does not bound it; the adapter's binding does.
  */
 
 import { existsSync } from "node:fs";
@@ -18,6 +22,7 @@ import { boot } from "@werunfoundry/core/runtime/boot";
 import { connect } from "@werunfoundry/core/runtime/connect";
 
 import { pullInbound } from "../runtime/inbound.js";
+import { pullUnsubscribes } from "../runtime/unsubscribes.js";
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(`--${name}`);
@@ -58,12 +63,13 @@ async function main(): Promise<number> {
       eventTypes: new Set(booted.domains.flatMap((d) => d.eventTypes ?? [])),
       channels: new Set(booted.domains.flatMap((d) => d.channels ?? [])),
     };
+    const deps = { db: connection.db, registry: booted.registry, identity: booted.identity, declared };
+    const request = { dryRun: !flag("live"), actor: { type: "human" as const }, trigger: "cli" as const };
     let reports;
+    let unsubscribes;
     try {
-      reports = await pullInbound(
-        { db: connection.db, registry: booted.registry, identity: booted.identity, declared },
-        { dryRun: !flag("live"), actor: { type: "human" }, trigger: "cli", maxPages: pages },
-      );
+      reports = await pullInbound(deps, { ...request, maxPages: pages });
+      unsubscribes = await pullUnsubscribes(deps, request);
     } catch (error) {
       const cause = (error as Error).cause;
       console.log(`inbound: ${cause instanceof Error ? cause.message : (error as Error).message.split("\n")[0]}`);
@@ -84,7 +90,20 @@ async function main(): Promise<number> {
       }
       console.log(`  cursor: ${r.cursor ?? "(none yet)"}`);
     }
-    return reports.every((r) => !r.stoppedBy) ? 0 : 1;
+    if (unsubscribes.length === 0) console.log("inbound: no sequencer serves the unsubscribes pull.");
+    for (const r of unsubscribes) {
+      console.log(`run: ${r.runId} — ${r.provider}, unsubscribes — ${flag("live") ? "live" : "dry run"}`);
+      if (r.stoppedBy) console.log(`  stopped: ${r.stoppedBy}`);
+      console.log(`  unsubscribes read: ${r.read}${r.complete ? "" : " (only part of them)"}`);
+      if (flag("live")) {
+        console.log(`  recorded: ${r.recorded}, already stored: ${r.replayed}`);
+        console.log(`  opt-outs: ${r.optOuts}, about nobody recorded: ${r.unknownPeople}`);
+        console.log(`  opted out, stopped at the provider: ${r.stopped.suspended} suspended, ${r.stopped.byAddress} stopped by address only (left pending, 0060), ${r.stopped.notHeld} no longer held there`);
+      } else {
+        console.log(`  opted out, would be stopped at the provider: ${r.stopped.would}`);
+      }
+    }
+    return [...reports, ...unsubscribes].every((r) => !r.stoppedBy) ? 0 : 1;
   } finally {
     await connection.end().catch(() => {});
   }

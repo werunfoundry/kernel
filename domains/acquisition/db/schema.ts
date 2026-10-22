@@ -111,6 +111,10 @@ export const skipReason = acquisition.enum("skip_reason", [
   "refused",
   // The cap, judged ahead over the whole plan (0064 §3), would be passed.
   "capped",
+  // Recorded at no company with a domain or an id on a network (0044):
+  // protection cannot judge the account. Not `protected`, which says
+  // something matched, nor `unreachable`.
+  "no_key",
 ]);
 
 /**

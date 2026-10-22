@@ -1,0 +1,1 @@
+ALTER TYPE "acquisition"."skip_reason" ADD VALUE 'no_key';

@@ -89,7 +89,10 @@ interface Listed {
   domain?: string;
   /** Its id on a network, as `relations` keeps one: `network:value`. */
   externalId?: string;
-  people: { email: string; name: string; externalId?: string }[];
+  /** A company recorded by its name alone: no domain, no id on a network. */
+  name?: string;
+  /** A person with no address is recorded by their id on a network. */
+  people: { email?: string; name: string; externalId?: string }[];
 }
 
 const world = {
@@ -273,9 +276,11 @@ async function seed(listKey = "the-list"): Promise<string> {
   for (const c of world.listed) {
     const companyId = c.domain
       ? await recorded("company", { column: "domain", value: c.domain }, { name: c.domain, domain: c.domain, external_id: c.externalId ?? null })
-      : undefined;
+      : c.name
+        ? await recorded("company", { column: "name", value: c.name }, { name: c.name })
+        : undefined;
     for (const p of c.people) {
-      const personId = await recorded("person", { column: "email", value: p.email }, { email: p.email, full_name: p.name, company_id: companyId ?? null, external_id: p.externalId ?? null });
+      const personId = await recorded("person", p.email ? { column: "email", value: p.email } : { column: "external_id", value: p.externalId! }, { email: p.email ?? null, full_name: p.name, company_id: companyId ?? null, external_id: p.externalId ?? null });
       members.push({ personId });
       if (drafted.has(personId)) continue;
       const proposed = await propose(db, register, { experimentId: campaign.experimentId, personId, step: 1, templateId: campaign.templateId, renderedSubject: `Hello ${p.name}`, renderedBody: `For ${p.name}.` }, { actor: { type: "agent", id: "a drafting agent" } }, { autonomyAfter: 5 });
@@ -672,6 +677,27 @@ describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is
     world.listed = [{ domain: "http://", people: [{ email: "eve@elsewhere.example.net", name: "Eve" }] }];
     const r = await run();
     assert.deepEqual(r.skipped.map((s) => [s.reason, s.detail]), [["unreadable_key", 'its domain is not a host that can be read: "http://"']]);
+  });
+
+  // Nothing here is protected, and the dry run comes first: it records no
+  // company, so the company's record refusing an identity with no key —
+  // which a live run reaches only after the messages are written — cannot
+  // produce the same skip.
+  it("skips a person at a company with no key, or at none, on a dry run and before a message is written (0044)", async () => {
+    world.listed = [
+      { people: [{ name: "Noa", externalId: "net:noa" }] },
+      { name: "Nameless", people: [{ email: "ola@open.example.org", name: "Ola" }] },
+      { domain: "open.example.com", people: [{ name: "Una", externalId: "net:una" }] },
+    ];
+    const why = "recorded at no company with a domain or an id on a network: protection cannot judge the account";
+    const dry = await run({ dryRun: true });
+    assert.deepEqual(dry.skipped.map((s) => [s.reason, s.detail]), [["no_key", why], ["no_key", why]]);
+    assert.equal(dry.enrolled.length, 1, "a dry run reports only the person it can judge");
+    const live = await run();
+    assert.deepEqual(live.skipped.map((s) => [s.reason, s.detail]), [["no_key", why], ["no_key", why]]);
+    assert.equal(live.enrolled.length, 1);
+    const written = await client.query("select p.full_name from relations.message m join relations.person p on p.id = m.person_id order by 1");
+    assert.deepEqual(written.rows.map((x) => x.full_name), ["Una"], "no message is written for someone the run cannot judge");
   });
 });
 

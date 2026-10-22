@@ -15,14 +15,16 @@ whose register only an erasure writes.
 
 ## What was found
 
-The shipped sequencer adapter's README, sections *A whole message in a
-variable* and *A whole message, sent*, on 2026-10-21. One email went to
+The shipped sequencer adapter's README (`adapters/…/README.md`), sections
+*A whole message in a variable* and *A whole message, sent*, on
+2026-10-21. The README names the client and the provider; this decision,
+which may name neither, refers to them there. One email went to
 one address of the operator's and to no one else. Each fact below names
 its source:
 - *the provider's record*: `GET /api/v2/emails`;
 - *the headers*: the MIME headers received, read by the operator;
-- *the client*: the receiving client, one webmail client, read by the
-  operator;
+- *the client*: the receiving client, which the README names, read by
+  the operator;
 - *the run*: the kernel's own test log.
 
 - **Stored as given.** A lead's `custom_variables` came back byte for
@@ -85,16 +87,27 @@ On `main` at `72cf335`:
 
 ## Decided
 
-**Nothing here names a provider.** Every rule below is an adapter's
-declaration and the kernel's answer to it, in 0051's form. A provider
-whose channel has no unsubscribe link — a social network's — is served by
-the same rules, not by an exception.
+**Why the rules are an adapter's declarations, not a provider's case.**
+There is a channel on which no unsubscribe link exists: a social
+network's messages. A kernel that required a way out in every body, or a
+rule written around one provider's link, could not use a sequencer on
+that channel at all. So every rule below is an adapter's declaration and
+the kernel's answer to it, in 0051's form, and a provider with no link
+answers "none" like any other.
+
+**Each declaration has its default, as 0051 has it: nothing said is not
+"yes".** An adapter that does not fill one is held to the answer below
+that assumes the least.
 
 ### 1. The kernel writes the form the provider delivers
 
 **An adapter declares the form its provider delivers a body in.** The
 kernel writes its messages in that form, and the message it records
 (0064) is the message delivered.
+
+**Its default is plain text, with the limits below.** Nothing said is not
+"markup survives". The kernel then writes what plain text keeps, and
+nothing a delivery could remove.
 
 **For the shipped adapter, plain text:**
 - *No markup.* It is removed on delivery.
@@ -115,6 +128,11 @@ when it is known. There are three answers:
   leave.
 - *None.* The adapter says so. That is a declared fact of its provider,
   not a failure.
+
+**Its default is "none".** Nothing said is not "known before". The kernel
+then writes no way out into the body, and the enrolment records that its
+body carried none and why: the adapter said nothing. As with a cut, the
+absence is in the data.
 
 The shipped adapter answers *known only after*: the lead's id comes back
 with the upload. The only window measured is the one above, and it is not
@@ -236,7 +254,8 @@ lead's id held under that one setting.
 - A way out cut without the enrolment saying so.
 - "Reply STOP" in a body before a path carries the reply to the opt-out.
 - A reply interpreted by an adapter or by the kernel.
-- An adapter's silence taken as its provider classing a stop.
+- An adapter's silence read as anything but the default that assumes the
+  least: plain text, no way out, a provider that does not class a stop.
 - A link served by the kernel, while 0017 and 0040 stand.
 - The provider's record of a send taken as what was said.
 - Link tracking known by a person's declaration, or by the provider's

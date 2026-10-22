@@ -251,6 +251,62 @@ real email to the addresses it is given, from a connected account. It
 documents the body as HTML: "Use `<br/>` tags for delivered email line
 breaks". That is the documentation's word, not something observed.
 
+## A whole message, sent
+
+The same message was then sent once, on 2026-10-21, to one address of the
+operator's and to no one else. Each fact below names its source:
+- *the provider's record*: what `GET /api/v2/emails` returns for the send,
+  read by the kernel's test;
+- *the headers*: the MIME headers of the message received, read by the
+  operator;
+- *the client*: the message as Gmail displayed it, read by the operator.
+
+**How it was sent.**
+- *The campaign.* A campaign was created for the test with one sending
+  account and one step. The step's subject was `{{engine_subject_1}}` and
+  its body `{{engine_body_1}}`, and nothing else; both read back as given.
+- *Its settings.* Open and link tracking were off and the unsubscribe
+  header on, as set at creation. `link_tracking` was not returned on
+  read-back. That the links were not rewritten is the client's evidence,
+  below.
+- *The lead.* One lead carried the values measured above, read back byte
+  for byte.
+- *The send.* The campaign was activated at 22:29:48 UTC. The one email
+  left at 22:31:29, and the campaign was paused at 22:31:35. The lead and
+  the campaign were then deleted and read 404. The provider's record of the
+  email is still listed.
+
+**The provider's record differs from what was given, in three ways and no
+others.** Every `\n` is recorded as `<br>`. The non-breaking space is
+recorded as a plain space. The emoji is missing. Undoing those three gives
+back what was given, byte for byte. The subject is recorded as given.
+
+**What was delivered differs from that record** (the headers; the client):
+- *The format.* The body arrived as `text/plain`, with no HTML part.
+- *What was kept.* The line breaks, the non-breaking space, the emoji and
+  the punctuation arrived intact.
+- *What was not.* The markup was removed. The double space and the
+  trailing space did not survive.
+
+So the provider's record of a send is not what was sent.
+
+**Links.** The URLs were clickable because Gmail turns text into links, not
+because the provider made them links: the body was `text/plain` (the
+client). A bare domain, `example.org`, became a link too (the client).
+
+**Unsubscribing.**
+- *The headers* carried `List-Unsubscribe`, `List-Unsubscribe-Post:
+  List-Unsubscribe=One-Click`, and SPF, DKIM and DMARC passing.
+- *The client* displayed no unsubscribe affordance. This is the second
+  observation of it, after October's. October's was on a send in volume.
+  This one is a single message, which a client does not class as bulk: it
+  counts only for what it confirms.
+- *The link's id.* The id in the header's unsubscribe URL,
+  `https://<tracking domain>/unsub/1/<id>`, is the lead's own id. It is the
+  id `leads/list` returned for the lead, and the `lead_id` of the
+  provider's record (the kernel's test). The id is known once the upload
+  answers, before the first send.
+
 ## Not observed
 
 - `suppress`, the workspace blocklist, against a live workspace: the write
@@ -272,11 +328,11 @@ breaks". That is the documentation's word, not something observed.
   upload that landed: the run stops with the registry row left pending, and
   the next run confirms it from `status`. `status` now reports the key the
   lead carries, but the reconciliation does not compare it yet (0060).
-- Whether a step renders a whole message passed in a variable as it was
-  given: its line breaks, its markup, its links. Storage is measured above,
-  and comes back unchanged. Rendering takes a send, which was not made: the
-  API offers no preview without one. The documentation reads a body as HTML,
-  so a bare line break may not survive delivery. 0064 can fall on this.
+- The rendering with link tracking on. Every send above was made with it
+  off. With it on, the provider rewrites the URLs in the body, and what
+  that does to a message the kernel wrote was not seen.
+- Whether a client other than Gmail shows the unsubscribe affordance, or
+  Gmail shows it for a send it classes as bulk from this provider.
 - Whether an unsubscribe reaches the same address in another campaign.
 - Whether resetting the interest status, or removing a lead from a
   subsequence (`POST /api/v2/leads/subsequence/remove`), resumes the lead.

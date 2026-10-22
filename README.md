@@ -43,12 +43,12 @@ scripts/              checks that make the doctrine enforceable
 | Binding resolver | written; a contract bound once, per channel (0015), or in sequence by the keys each source finds (0030) |
 | Run recorder | written |
 | Boot | written; resolves every name from the instance (0007) |
-| End to end | in CI, a generated instance migrates, verifies, and from the packs on plain Node runs the enrolment path — dry, live and replayed (0019) — the inbound pull, the API, the sourcing path dry and live, an enrolment from what it kept, a person's acts (0047), the sending path with a stub hand-over (0050) and an erasure (0049) |
-| Sourcing path | written (0031): company pass by protection and the CRM before any spend — lazy, only as far as the run needs, resuming after what earlier live runs examined (0043) — people, completion in sequence, person pass on the completed identity, every address at the targeted company (0045); run in CI on a generated instance, and on a real instance (0043–0045); `kernel-enrol --from-run` enrols what a sourcing run kept (0032) |
+| End to end | in CI, a generated instance migrates, verifies, and from the packs on plain Node runs the inbound pull, the API, the sourcing path dry and live, a person's acts (0047), the enrolment from the list they constitute, carrying its approved messages — dry, live and replayed (0019, 0064) — and an erasure (0049) |
+| Sourcing path | written (0031): company pass by protection and the CRM before any spend — lazy, only as far as the run needs, resuming after what earlier live runs examined (0043) — people, completion in sequence, person pass on the completed identity, every address at the targeted company (0045); run in CI on a generated instance, and on a real instance (0043–0045); what a run kept reaches a person through a list, drafts and their approval (0064) |
 | A person's acts | commands at a terminal, refused without one (0047): `kernel-stage`, `kernel-relationship`, `kernel-list`, `kernel-decide`, beside `kernel-acknowledge`, `kernel-erase` and `kernel-attest-stop` |
 | HTTP API | written (0040): `kernel-api`, one token per instance; health, a run, listing and proposing drafts, an erasure's plan. It refuses `actorType: human`, so no act reserved to a person is on it |
 | Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not. Before any of it, each enrolment a provider may hold is suspended there, or the erasure is refused (0056); where retrying cannot help, a person attests the stop with `kernel-attest-stop`. An objector's keys survive as fingerprints in `relations.suppression`, written by the erasure alone (0052, 0062) under versions `kernel-fingerprint` generates (0058); the one reader (0055) reads them wherever the objection is read: sourcing, enrolment, drafting, queueing and the message gate. The API's plan shows the rules only |
-| Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent; the hand-over is withdrawn |
+| Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent. The hand-over is withdrawn, and so is the enrolment without messages: `--list` is the only form |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
 | Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
@@ -79,16 +79,17 @@ Next:
 messages, each written through the gate first (0064). Unsolicited, it needs
 a cap, judged ahead over each person's whole plan against what already
 reaches them, and a sequencer that pulls what it sent; the touches pull
-records each step as a touch. The enrolment without messages still stays,
-though 0064 rules it out, until it is removed: its sends pass no gate, and
-the pull records them as unsolicited touches no message names (0050,
-defects 1 and 2).
+records each step as a touch. The enrolment without messages is removed:
+nothing reaches a person past the message gate (0050, defects 1 and 2).
 
-**Withdrawing someone whose account becomes protected later.** The protected
-set is read whole and fresh before anyone is enrolled (0019). `suppress`
-exists on every sequencer (0014), but nothing yet calls it when an account
-becomes protected after enrolment. The registry (0026) is what makes it
-answerable: it records the company each person was enrolled through.
+**Withdrawing someone whose account becomes protected later.** Every
+enrolment run, and `kernel-stop-protected` on the instance's schedule,
+suspends the enrolments running at an account protection now excludes
+(0057), found by the company the registry recorded (0026). It cannot find
+one at an account the protected set knows by the target list's own
+identifier alone: the registry records no such identifier. It names those
+accounts each time, and an enrolment there keeps running until a person
+stops it at the provider (0068).
 
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
@@ -150,7 +151,11 @@ either enough (0033), and are counted by customer. A customer with no key on
 any of its rows is protected by nothing: it stops every run, naming itself,
 until a person acknowledges it with `kernel-acknowledge` — and every run then
 says it is uncovered (0034). Giving it a key upstream is the fix; the
-acknowledgement only makes the hole visible and owned.
+acknowledgement only makes the hole visible and owned. The same holds, for
+the enrolment, of an account known by the target list's own identifier
+alone: no company on record carries it, so it stops every enrolment until a
+person names it with `kernel-acknowledge --account`, one account at a time
+(0068).
 
 #### The objects phase 3 was going to build — what exists, and what is not wired
 

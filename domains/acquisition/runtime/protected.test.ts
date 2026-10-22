@@ -24,7 +24,7 @@ import type { Database } from "@werunfoundry/core/runtime/run";
 
 import type { Sequencer, SequencerDeclaration } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetList } from "../contracts/target-list.js";
-import { ageAt, stopProtectedRun } from "./protected.js";
+import { ageAt, describeStop, stopProtectedRun } from "./protected.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_protected_${process.pid}`;
@@ -230,6 +230,23 @@ describe("stopping what runs at a newly protected account (0057)", { skip: base 
     assert.match(r.act!.stops[0]!.why, /an address is on a protected domain/);
     // The open company is not the account: only the protected domain is listed.
     assert.deepEqual(world.suppressed, [["acct.example.org"]]);
+  });
+
+  // 0068: the registry records no company by the target list's own
+  // identifier, so an account known by it alone is matched against nothing
+  // here. Not a refusal — the act still stops what it can — and named.
+  it("names the protected accounts known by the target list's own identifier alone, and still stops what it can reach", async () => {
+    const id = await enrolled("cy@cy-consulting.example.net", "acct.example.org", "enrolled", "key-cy");
+    world.leads.set("cy@cy-consulting.example.net", { key: "key-cy", parked: false });
+    world.protected.push({ externalId: "acct-7", name: "Seven", reason: "open_opportunity" });
+    const r = await act();
+    assert.equal(r.status, "succeeded", r.stoppedBy);
+    assert.equal((await row(id)).state, "suspended");
+    assert.deepEqual(r.act!.unreached, [{ externalId: "acct-7", name: "Seven" }]);
+    assert.ok(
+      describeStop(r.act!, false).some((l) => /not reached: 1 protected account known by the target list's own identifier alone.*keeps running \(decision 0068\): acct-7 \(Seven\)/.test(l)),
+      describeStop(r.act!, false).join("\n"),
+    );
   });
 
   it("records the promise held as of the protected set it read, by a run that found nobody to stop", async () => {

@@ -1,10 +1,17 @@
 /**
- * acquisition/runtime — acknowledging an uncovered customer (decision 0034).
+ * acquisition/runtime — acknowledging what protection cannot reach, by name.
  *
- * A protected customer with no key on any of its rows is protected by
- * nothing, and stops every run that reads protection. A person may
- * acknowledge it: say, in words, why it may stay uncovered. Runs then go on,
- * and say which acknowledged customers they could not protect.
+ * - **An uncovered customer** (decision 0034): a protected customer with no
+ *   key on any of its rows is protected by nothing, and stops every run that
+ *   reads protection.
+ * - **An unmatched account** (decision 0068): a protected account known by
+ *   the source's own identifier alone can be matched against no company on
+ *   record, and stops every enrolment.
+ *
+ * A person may acknowledge either: name it, and say in words why it may
+ * stay so. Runs then go on, and say which acknowledged ones they could not
+ * protect. There is no acknowledgement of all of them, or of any to come: a
+ * new one stops the run again until it is named.
  *
  * Two kinds of function here, and the split is the rule:
  *
@@ -16,7 +23,7 @@
  *   itself would be a run deciding its own protection.
  */
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
 import type { Database } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
@@ -28,12 +35,25 @@ export async function readAcknowledged(db: Database): Promise<Set<string>> {
   const rows = await db
     .select({ customerId: protectionAcknowledgement.customerId })
     .from(protectionAcknowledgement)
-    .where(isNull(protectionAcknowledgement.withdrawnAt));
-  return new Set(rows.map((r) => r.customerId));
+    .where(and(isNull(protectionAcknowledgement.withdrawnAt), isNotNull(protectionAcknowledgement.customerId)));
+  return new Set(rows.map((r) => r.customerId!));
 }
 
+/** The accounts standing acknowledged as unmatched (0068). Reads only. */
+export async function readAcknowledgedAccounts(db: Database): Promise<Set<string>> {
+  const rows = await db
+    .select({ accountId: protectionAcknowledgement.accountId })
+    .from(protectionAcknowledgement)
+    .where(and(isNull(protectionAcknowledgement.withdrawnAt), isNotNull(protectionAcknowledgement.accountId)));
+  return new Set(rows.map((r) => r.accountId!));
+}
+
+/** A customer, uncovered (0034), or an account, unmatched (0068): what an acknowledgement names. */
+export type Named = { customerId: string } | { accountId: string };
+
 export interface Acknowledgement {
-  customerId: string;
+  customerId: string | null;
+  accountId: string | null;
   note: string;
   acknowledgedBy: string;
   acknowledgedAt: Date;
@@ -44,6 +64,7 @@ export async function listAcknowledged(db: Database): Promise<Acknowledgement[]>
   const rows = await db
     .select({
       customerId: protectionAcknowledgement.customerId,
+      accountId: protectionAcknowledgement.accountId,
       note: protectionAcknowledgement.note,
       acknowledgedBy: protectionAcknowledgement.actorId,
       acknowledgedAt: protectionAcknowledgement.acknowledgedAt,
@@ -54,27 +75,24 @@ export async function listAcknowledged(db: Database): Promise<Acknowledgement[]>
 }
 
 const required = (value: string, what: string) => {
-  if (value.trim() === "") throw new Error(`${what} is required: an acknowledgement says who, which customer and why`);
+  if (value.trim() === "") throw new Error(`${what} is required: an acknowledgement says who, what it names and why`);
   return value.trim();
 };
 
 /**
- * A person acknowledges a customer as uncovered. Recorded as its own run,
- * with the person as actor. Acknowledging a customer that stands
- * acknowledged changes nothing, and says so.
+ * A person acknowledges a customer as uncovered (0034), or an account as
+ * unmatched (0068). Recorded as its own run, with the person as actor.
+ * Acknowledging what stands acknowledged changes nothing, and says so.
  */
-export async function acknowledgeUncovered(
-  db: Database,
-  input: { customerId: string; note: string; by: string },
-): Promise<{ runId: string; acknowledged: boolean }> {
-  const customerId = required(input.customerId, "the customer");
+export async function acknowledge(db: Database, input: Named & { note: string; by: string }): Promise<{ runId: string; acknowledged: boolean }> {
+  const name = "customerId" in input ? { customerId: required(input.customerId, "the customer") } : { accountId: required(input.accountId, "the account") };
   const note = required(input.note, "the reason");
   const by = required(input.by, "who acknowledges");
   const open = await openRun(db, { processKey: "acquisition.protection.acknowledge", trigger: "cli", actor: { type: "human", id: by }, dryRun: false });
   try {
     const written = await db
       .insert(protectionAcknowledgement)
-      .values({ customerId, note, actorType: "human", actorId: by, runId: open.id })
+      .values({ ...name, note, actorType: "human", actorId: by, runId: open.id })
       .onConflictDoNothing()
       .returning({ id: protectionAcknowledgement.id });
     await open.finish({ status: "succeeded" });
@@ -85,19 +103,19 @@ export async function acknowledgeUncovered(
   }
 }
 
-/** A person withdraws an acknowledgement: the customer stops runs again. */
-export async function withdrawAcknowledgement(
-  db: Database,
-  input: { customerId: string; by: string },
-): Promise<{ runId: string; withdrawn: boolean }> {
-  const customerId = required(input.customerId, "the customer");
+/** A person withdraws an acknowledgement: what it named stops runs again. */
+export async function withdraw(db: Database, input: Named & { by: string }): Promise<{ runId: string; withdrawn: boolean }> {
+  const named =
+    "customerId" in input
+      ? eq(protectionAcknowledgement.customerId, required(input.customerId, "the customer"))
+      : eq(protectionAcknowledgement.accountId, required(input.accountId, "the account"));
   const by = required(input.by, "who withdraws");
   const open = await openRun(db, { processKey: "acquisition.protection.withdraw", trigger: "cli", actor: { type: "human", id: by }, dryRun: false });
   try {
     const changed = await db
       .update(protectionAcknowledgement)
       .set({ withdrawnAt: new Date(), withdrawnBy: by, withdrawnRunId: open.id })
-      .where(and(eq(protectionAcknowledgement.customerId, customerId), isNull(protectionAcknowledgement.withdrawnAt)))
+      .where(and(named, isNull(protectionAcknowledgement.withdrawnAt)))
       .returning({ id: protectionAcknowledgement.id });
     await open.finish({ status: "succeeded" });
     return { runId: open.id, withdrawn: changed.length > 0 };
@@ -106,3 +124,9 @@ export async function withdrawAcknowledgement(
     throw error;
   }
 }
+
+/** A customer acknowledged as uncovered (0034). */
+export const acknowledgeUncovered = (db: Database, input: { customerId: string; note: string; by: string }) => acknowledge(db, input);
+
+/** A customer's acknowledgement withdrawn: it stops runs again. */
+export const withdrawAcknowledgement = (db: Database, input: { customerId: string; by: string }) => withdraw(db, input);

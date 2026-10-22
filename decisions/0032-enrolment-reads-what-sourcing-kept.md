@@ -1,5 +1,9 @@
 # 0032 — Enrolment reads what sourcing kept, and the operator stands between
 
+> Superseded by [0068](0068-an-account-no-company-on-record-can-match-stops-the-enrolment-until-named.md): an
+> enrolment no longer reads a sourcing run; what a run kept reaches a person
+> through a list, which a person constitutes.
+
 Completes [0031](0031-the-sourcing-path-and-the-crm-as-exclusion.md), which
 recorded the people a sourcing run kept for a later enrolment to read.
 

@@ -14,7 +14,7 @@ import { Client } from "pg";
 
 import type { Database } from "@werunfoundry/core/runtime/run";
 
-import { acknowledgeUncovered, readAcknowledged, withdrawAcknowledgement } from "./acknowledge.js";
+import { acknowledge, acknowledgeUncovered, readAcknowledged, readAcknowledgedAccounts, withdraw, withdrawAcknowledgement } from "./acknowledge.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_acknowledge_${process.pid}`;
@@ -92,6 +92,31 @@ describe("acknowledging an uncovered customer", { skip: base ? false : "TEST_DAT
   });
 });
 
+describe("acknowledging an unmatched account (0068)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  it("names the account, one at a time, apart from the customers", async () => {
+    const r = await acknowledge(db, { accountId: "acct-7", note: "known upstream by its id alone; reviewed", by: "an operator" });
+    assert.equal(r.acknowledged, true);
+    assert.deepEqual([...(await readAcknowledgedAccounts(db))], ["acct-7"]);
+    assert.deepEqual([...(await readAcknowledged(db))], [], "an account was read as an acknowledged customer");
+    assert.equal((await acknowledge(db, { accountId: "acct-7", note: "twice", by: "an operator" })).acknowledged, false);
+  });
+
+  it("is withdrawn by its name, and the account stops runs again", async () => {
+    await acknowledge(db, { accountId: "acct-7", note: "for now", by: "an operator" });
+    await acknowledge(db, { accountId: "acct-8", note: "for now", by: "an operator" });
+    assert.equal((await withdraw(db, { accountId: "acct-7", by: "an operator" })).withdrawn, true);
+    assert.deepEqual([...(await readAcknowledgedAccounts(db))], ["acct-8"]);
+  });
+
+  it("is refused by the schema when it names both a customer and an account, or neither", async () => {
+    const { rows } = await client.query("insert into core.run (process_key, trigger, actor_type) values ('x', 'cli', 'human') returning id");
+    const insert = (customer: string | null, account: string | null) =>
+      client.query("insert into acquisition.protection_acknowledgement (customer_id, account_id, note, actor_type, actor_id, run_id) values ($1, $2, 'why', 'human', 'an operator', $3)", [customer, account, rows[0].id]);
+    await assert.rejects(insert("cust-z", "acct-7"), /protection_acknowledgement_names_one_check/);
+    await assert.rejects(insert(null, null), /protection_acknowledgement_names_one_check/);
+  });
+});
+
 /* -------------------------------------------------------------------------- */
 /* No run writes an acknowledgement                                            */
 /* -------------------------------------------------------------------------- */
@@ -99,14 +124,14 @@ describe("acknowledging an uncovered customer", { skip: base ? false : "TEST_DAT
 describe("the runs", () => {
   const read = (path: string) => readFileSync(join(import.meta.dirname, path), "utf8");
   // Every file a run is made of, that reads protection.
-  const runs = ["./enrol.ts", "./source.ts", "./protection.ts", "../bin/enrol.ts", "../bin/source.ts"];
+  const runs = ["./enrol.ts", "./source.ts", "./protection.ts", "./protected.ts", "../bin/enrol.ts", "../bin/source.ts", "../bin/stop-protected.ts"];
 
   it("read the acknowledged set and never write it", () => {
     for (const path of runs) {
       const text = read(path);
       assert.ok(!/acknowledgeUncovered|withdrawAcknowledgement|protectionAcknowledgement/.test(text), `${path} reaches the acknowledgement's writers or its table`);
       const imports = [...text.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"\.\/acknowledge\.js"/g)].flatMap((m) => m[1]!.split(",").map((x) => x.trim()));
-      assert.ok(imports.every((name) => name === "readAcknowledged"), `${path} imports ${imports.join(", ")} from the acknowledgement module`);
+      assert.ok(imports.every((name) => name === "readAcknowledged" || name === "readAcknowledgedAccounts"), `${path} imports ${imports.join(", ")} from the acknowledgement module`);
     }
   });
 });

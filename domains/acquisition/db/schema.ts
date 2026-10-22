@@ -627,10 +627,17 @@ export const sourcingResult = acquisition.table(
 );
 
 /**
- * Customers a person has acknowledged as uncovered (decision 0034): the
- * protected set holds them, and none of their rows carries a key, so nothing
- * protects them. A run that finds an uncovered customer stops unless it is
- * acknowledged here; one that finds acknowledged ones goes on and says so.
+ * What a person has acknowledged protection cannot reach, each named:
+ *
+ * - **a customer, uncovered** (decision 0034): the protected set holds it,
+ *   and none of its rows carries a key, so nothing protects it;
+ * - **an account, unmatched** (decision 0068): the protected set knows it by
+ *   the source's own identifier alone, which no company on record carries,
+ *   so an enrolment can match nothing against it.
+ *
+ * A run that finds either stops unless it is acknowledged here, by its name;
+ * one that finds acknowledged ones goes on and says so. Nothing here
+ * acknowledges what it does not name: a new one stops the run again.
  *
  * Written only by `kernel-acknowledge`, by a person, each acknowledgement
  * and each withdrawal in its own recorded run. A run reads it and never
@@ -642,9 +649,11 @@ export const protectionAcknowledgement = acquisition.table(
   {
     id: uuid("id").defaultRandom().primaryKey(),
 
-    /** The customer as the protected set names it. Never matched against a candidate. */
-    customerId: text("customer_id").notNull(),
-    /** Why the customer may stay uncovered, in the person's words. */
+    /** The customer as the protected set names it, for an uncovered one. Never matched against a candidate. */
+    customerId: text("customer_id"),
+    /** The account's identifier in the source, for an unmatched one (0068). Never matched against anything. */
+    accountId: text("account_id"),
+    /** Why it may stay uncovered or unmatched, in the person's words. */
     note: text("note").notNull(),
 
     /** Doctrine 5. A person, always: the check below refuses anything else. */
@@ -668,6 +677,10 @@ export const protectionAcknowledgement = acquisition.table(
      * before protection.
      */
     uniqueIndex("protection_acknowledgement_standing_uidx").on(t.customerId).where(sql`${t.withdrawnAt} is null`),
+    /** The same, per account (0068): acknowledging an account twice keeps one; serves `readAcknowledgedAccounts()`. */
+    uniqueIndex("protection_acknowledgement_account_standing_uidx").on(t.accountId).where(sql`${t.withdrawnAt} is null`),
+    /** One name per acknowledgement: a customer or an account, never both, never neither. */
+    check("protection_acknowledgement_names_one_check", sql`(${t.customerId} is null) <> (${t.accountId} is null)`),
 
     check("protection_acknowledgement_human_check", sql`${t.actorType} = 'human'`),
     check(

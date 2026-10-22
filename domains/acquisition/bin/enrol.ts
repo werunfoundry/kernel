@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * kernel-enrol — the enrolment path (decision 0019), run from an instance's
- * root, usually as `pnpm enrol -- --sequence welcome --channel email --max-age 60`.
+ * kernel-enrol — the enrolment path (decisions 0019, 0064), run from an
+ * instance's root, usually as `pnpm enrol -- --sequence welcome --channel
+ * email --max-age 60 --list <key> --experiment <id>`.
  *
  * A dry run unless `--live` is given: the safe mode is the one you get
  * without asking. `--max-age` (minutes) is required, because there is no
@@ -10,13 +11,10 @@
  *   --sequence <key>    the sequence, as the instance's bindings name it
  *   --channel <name>    a channel a bound sequencer takes
  *   --max-age <min>     how old the protected set may be
- *   --sender <id>       a sender whose capacity bounds the run; repeatable
- *   --limit <n>         how many candidate companies to read
- *   --from-run <id>     enrol the people this live sourcing run kept
- *                       (`kernel-source --live`), instead of finding people
  *   --list <key>        enrol the people of this sealed list, carrying the
- *                       messages the kernel wrote (decision 0064); with:
+ *                       messages the kernel wrote (decision 0064)
  *   --experiment <id>   the experiment whose approved drafts they carry
+ *   --sender <id>       a sender whose capacity bounds the run; repeatable
  *   --solicited         the person asked for it; without it the enrolment is
  *                       unsolicited, and needs a cap, judged ahead over the
  *                       whole plan (decision 0064 §3):
@@ -25,19 +23,10 @@
  *   --reactive-within <min>  for a draft the reactive lane approved
  *   --live              actually enrol
  *
- * **The enrolment without messages stays, though 0064 rules it out.** Its
- * forms — from the target list, or `--from-run` — hand a person to a
- * sequence whose copy the provider holds. 0064 replaces them with `--list`,
- * whose enrolment carries the kernel's messages. They are removed with the
- * cap judged ahead over the whole plan (0064 §3), in the change that lifts
- * `--list`'s refusal of an unsolicited enrolment, and not before: until
- * then they are the only unsolicited enrolment there is.
- *
- * With `--from-run`, nobody that run did not keep is considered, and
- * protection, the opt-out and the registry are checked again here: what the
- * sourcing run decided is not trusted past the moment it was decided. The
- * two commands stay two on purpose — between them, a person reads the
- * sourcing report.
+ * There is no enrolment without messages (0064 §1): a sourcing run reaches
+ * a person through a list (`kernel-list`), drafts, and a person's approval.
+ * Protection, the opt-out and the registry are checked again here: what was
+ * decided upstream is not trusted past the moment it was decided.
  *
  * Before anyone is enrolled, every enrolment already running at an account
  * protection now excludes is stopped (decision 0057); a run that cannot stop
@@ -82,8 +71,10 @@ async function main(): Promise<number> {
     console.log("enrol: --sequence, --channel and --max-age (minutes) are required.");
     return 1;
   }
-  if (value("list") && !value("experiment")) {
-    console.log("enrol: --list takes --experiment <id>: the experiment whose approved drafts the enrolment carries (decision 0064).");
+  const listKey = value("list");
+  const experimentId = value("experiment");
+  if (!listKey || !experimentId) {
+    console.log("enrol: --list <key> and --experiment <id> are required: an enrolment carries the messages written for a list's people, from the experiment's approved drafts (decision 0064).");
     return 1;
   }
 
@@ -144,7 +135,6 @@ async function main(): Promise<number> {
         return 1;
       }
     }
-    const limit = Number(value("limit"));
     let report;
     try {
       report = await enrol(
@@ -156,19 +146,13 @@ async function main(): Promise<number> {
         dryRun: !flag("live"),
         trigger: "cli",
         actor: { type: "human" },
-        ...(limit > 0 ? { query: { limit } } : {}),
-        ...(value("from-run") ? { fromSourcingRun: value("from-run")! } : {}),
-        ...(value("list")
-          ? {
-              fromList: {
-                listKey: value("list")!,
-                experimentId: value("experiment") ?? "",
-                unsolicited: !flag("solicited"),
-                ...(value("cap-max") !== undefined || value("cap-days") !== undefined ? { cap: { max: Number(value("cap-max")), withinDays: Number(value("cap-days")) } } : {}),
-                ...(Number(value("reactive-within")) > 0 ? { reactiveWithinMinutes: Number(value("reactive-within")) } : {}),
-              },
-            }
-          : {}),
+        fromList: {
+          listKey,
+          experimentId,
+          unsolicited: !flag("solicited"),
+          ...(value("cap-max") !== undefined || value("cap-days") !== undefined ? { cap: { max: Number(value("cap-max")), withinDays: Number(value("cap-days")) } } : {}),
+          ...(Number(value("reactive-within")) > 0 ? { reactiveWithinMinutes: Number(value("reactive-within")) } : {}),
+        },
         ...(values("sender").length ? { senders: values("sender").map((externalId) => ({ externalId })) } : {}),
       },
       );
@@ -185,7 +169,7 @@ async function main(): Promise<number> {
       return 1;
     }
 
-    // An address when there is one: a sourced person's first key is often a profile id.
+    // An address when there is one: a person's first key may be a profile id.
     const shown = (p: { keys: { kind: string; value: string }[] }) => p.keys.find((k) => k.kind === "email")?.value ?? p.keys[0]?.value;
     const keyOf = (s: { person?: { keys: { kind: string; value: string }[] }; company: { domain?: string; name?: string } }) =>
       (s.person ? shown(s.person) : undefined) ?? s.company.domain ?? s.company.name ?? "?";
@@ -204,6 +188,11 @@ async function main(): Promise<number> {
         for (const u of p.uncovered) console.log(`      - ${u.customerId}${u.name ? ` (${u.name})` : ""}: ${u.rows} row${u.rows === 1 ? "" : "s"}, no key`);
       }
     }
+    // Known by the target list's own identifier alone, and acknowledged (0068).
+    if (report.unmatched && report.unmatched.length > 0) {
+      console.log(`    ! matched by no company on record, acknowledged as unmatched: ${report.unmatched.length}`);
+      for (const u of report.unmatched) console.log(`      - ${u.externalId}${u.name ? ` (${u.name})` : ""}`);
+    }
     // What the run's start did to enrolments already running at protected
     // accounts (0057) — and what that is not.
     if (report.protectedStop) {
@@ -214,9 +203,7 @@ async function main(): Promise<number> {
     console.log(
       `  capacity: ${report.capacity.checked ? `budget ${report.capacity.budget}` : `not checked — ${report.capacity.why}`}`,
     );
-    if (report.cap) {
-      console.log(`  cap: ${report.cap.judged ? `${report.cap.max} unsolicited touches in any ${report.cap.withinDays} days, judged ahead over each person's plan (decision 0064 §3)` : `not capped — ${report.cap.why}`}`);
-    }
+    console.log(`  cap: ${report.cap.judged ? `${report.cap.max} unsolicited touches in any ${report.cap.withinDays} days, judged ahead over each person's plan (decision 0064 §3)` : `not capped — ${report.cap.why}`}`);
     console.log(`  ${report.dryRun ? "would enrol" : "enrolled"}: ${report.enrolled.length}`);
     for (const e of report.enrolled) console.log(`    + ${shown(e.person)} (${e.state})`);
     if (report.reconciled.length > 0) {

@@ -10,6 +10,12 @@
  * Each protection test asserts on what the sequencer *holds*, not only on the
  * report. A report can say "protected" while the enrolment went through; the
  * sequencer's state cannot.
+ *
+ * Every enrolment is from a sealed list and carries its messages (0064 §1):
+ * `seed` records the list's companies and people, seals the list, and gives
+ * each person an approved draft for the sequence's one step. What carrying
+ * the messages adds — the gate, the steps, the cap — is pinned in
+ * `enrol-from-list.test.ts`; this file pins everything else a run does.
  */
 
 import { strict as assert } from "node:assert";
@@ -20,19 +26,21 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
-import type { CallContext, CallResult, Contract } from "@werunfoundry/core/contracts/types";
+import type { CallResult, Contract } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 import { identityVocabulary } from "@werunfoundry/core/identity";
 import { loadDomain } from "@werunfoundry/core/manifest/load";
+import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import { fingerprinter, fingerprintOf, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
-import type { PeopleSource } from "@werunfoundry/relations/contracts/people-source";
+import { constituteList } from "@werunfoundry/relations/runtime/list";
 
 import type { CapacityLimit, Sequencer, SequencerDeclaration } from "../contracts/sequencer.js";
-import type { ProtectedAccount, TargetCompany, TargetList } from "../contracts/target-list.js";
+import type { ProtectedAccount, TargetList } from "../contracts/target-list.js";
 import type { EnrolRequest } from "./enrol.js";
-import { acknowledgeUncovered, withdrawAcknowledgement } from "./acknowledge.js";
+import { acknowledge, acknowledgeUncovered, withdraw, withdrawAcknowledgement } from "./acknowledge.js";
+import { approve, propose } from "./draft.js";
 import { CannotSuspend, enrol, ErasedWithoutRegister } from "./enrol.js";
 
 const base = process.env.TEST_DATABASE_URL;
@@ -76,11 +84,20 @@ after(async () => {
 const NOW = new Date("2026-06-01T12:00:00Z");
 const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
 
+/** A company on the list, as `relations` records it, with its people. */
+interface Listed {
+  domain?: string;
+  /** Its id on a network, as `relations` keeps one: `network:value`. */
+  externalId?: string;
+  people: { email: string; name: string; externalId?: string }[];
+}
+
 const world = {
-  candidates: [] as TargetCompany[],
+  /** The list's people, company by company. `seed` records them. */
+  listed: [] as Listed[],
+  /** Companies on the list as companies, naming nobody. */
+  listedCompanies: [] as string[],
   protected: [] as ProtectedAccount[],
-  /** `also`: further addresses the people source attests, after the first. */
-  people: new Map<string, { email: string; name: string; also?: string[] }[]>(),
   protectedAsOf: minutesAgo(5),
   /** When set, the named read fails. */
   failing: new Set<string>(),
@@ -96,8 +113,6 @@ const world = {
   foreign: new Map<string, string | undefined>(),
   enrolCalls: 0,
   statusCalls: 0,
-  /** Every company the people source was asked about, as it was asked. */
-  lookedUp: [] as Identity[],
   /** The idempotency key of every enrol call, in order. */
   keysSent: [] as string[],
   /**
@@ -121,7 +136,7 @@ const targetList: TargetList = {
     return ok({ route, asOf: route === "protected" ? world.protectedAsOf : minutesAgo(1) });
   },
   async candidates() {
-    return world.failing.has("candidates") ? down("candidates") : ok({ items: world.candidates });
+    throw new Error("an enrolment takes its people from a list, never from the target list's candidates");
   },
   async protectedAccounts(query) {
     const start = Number(query.cursor ?? 0);
@@ -129,22 +144,6 @@ const targetList: TargetList = {
     const items = world.protected.slice(start, start + world.pageSize);
     const next = start + world.pageSize;
     return ok({ items, ...(next < world.protected.length ? { nextCursor: String(next) } : {}) });
-  },
-};
-
-const people: PeopleSource = {
-  provider: "memory-people",
-  async peopleAt({ company }) {
-    world.lookedUp.push(company);
-    const domain = company.keys.find((k) => k.kind === "domain")?.value ?? "";
-    const people = world.people.get(domain) ?? [];
-    return ok({
-      asOf: minutesAgo(60),
-      items: people.map((p) => ({
-        identity: { subject: "person", keys: [p.email, ...(p.also ?? [])].map((value) => ({ kind: "email", value })) },
-        display: { fullName: p.name },
-      })),
-    });
   },
 };
 
@@ -161,6 +160,7 @@ const canSuspend = (): SequencerDeclaration => ({
     gap: { known: false, why: "never measured" },
   },
   pullUnsubscribes: { serves: "no", why: "not in this test" },
+  readSteps: { serves: "yes" },
 });
 let declared: SequencerDeclaration | undefined = canSuspend();
 
@@ -169,6 +169,10 @@ const sequencer: Sequencer = {
   channels: ["email"],
   get declares() {
     return declared;
+  },
+  // One step, which renders the subject and the body the kernel wrote.
+  async readSteps(sequenceKey) {
+    return ok({ sequenceKey, steps: [{ step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, variants: 1 }], asOf: NOW.toISOString() });
   },
   async enrol(e, ctx) {
     world.enrolCalls++;
@@ -218,7 +222,7 @@ const sequencer: Sequencer = {
 };
 
 const registry: Registry = {
-  get: (c) => ({ target_list: targetList, people_source: people } as Record<string, Contract>)[c],
+  get: (c) => ({ target_list: targetList } as Record<string, Contract>)[c],
   require: () => {
     throw new Error("not used");
   },
@@ -234,10 +238,62 @@ if (!relationsDomain) throw new Error("relations/domain.yaml does not load");
 const identity = identityVocabulary([relationsDomain], ["net_a"]);
 /** The register's secret, under one version (0055). */
 const SECRET = generateSecret();
+const register = fingerprinter("T1", { T1: SECRET }, [], identity);
 
-const request = (over: Partial<EnrolRequest> = {}): EnrolRequest => ({
+/* The list, recorded and sealed, and a draft approved for each person ------- */
+
+const one = async (sql: string, params: unknown[] = []) => (await client.query(sql, params)).rows[0];
+const human = { actor: { type: "human" as const, id: "an operator" } };
+
+/** The campaign the list's drafts belong to, made once per test. */
+let campaign: { experimentId: string; templateId: string } | undefined;
+/** The people who already have an approved draft in this test. */
+let drafted = new Set<string>();
+
+/** A row of `relations`, found by its unique key or recorded. */
+async function recorded(table: "company" | "person", key: { column: string; value: string }, values: Record<string, unknown>): Promise<string> {
+  const found = await one(`select id from relations.${table} where lower(${key.column}) = lower($1)`, [key.value]);
+  if (found) return found.id as string;
+  const columns = Object.keys(values);
+  return (await one(`insert into relations.${table} (${columns.join(", ")}) values (${columns.map((_, i) => `$${i + 1}`).join(", ")}) returning id`, Object.values(values))).id as string;
+}
+
+/**
+ * Records `world.listed` and seals it as `listKey`, each person with an
+ * approved draft. Returns the experiment. Once per list: a list constituted
+ * again under its key keeps its first members (`constituteList`).
+ */
+async function seed(listKey = "the-list"): Promise<string> {
+  campaign ??= await (async () => {
+    const experimentId = (await one("insert into core.experiment (slug, type, hypothesis_ref, lane, status) values ('exp-enrol', 'campaign', 'https://example.com/h', 'reviewed', 'running') returning id")).id as string;
+    const templateId = (await one("insert into acquisition.template (experiment_id, variant, step, channel, subject, body) values ($1, 'a', 1, 'email', 'Hello', 'One.') returning id", [experimentId])).id as string;
+    return { experimentId, templateId };
+  })();
+  const members: ({ personId: string } | { companyId: string })[] = [];
+  for (const c of world.listed) {
+    const companyId = c.domain
+      ? await recorded("company", { column: "domain", value: c.domain }, { name: c.domain, domain: c.domain, external_id: c.externalId ?? null })
+      : undefined;
+    for (const p of c.people) {
+      const personId = await recorded("person", { column: "email", value: p.email }, { email: p.email, full_name: p.name, company_id: companyId ?? null, external_id: p.externalId ?? null });
+      members.push({ personId });
+      if (drafted.has(personId)) continue;
+      const proposed = await propose(db, register, { experimentId: campaign.experimentId, personId, step: 1, templateId: campaign.templateId, renderedSubject: `Hello ${p.name}`, renderedBody: `For ${p.name}.` }, { actor: { type: "agent", id: "a drafting agent" } }, { autonomyAfter: 5 });
+      assert.ok(proposed.ok, JSON.stringify(proposed));
+      assert.ok((await approve(db, proposed.draft.id, { by: "an operator" }, human)).ok);
+      drafted.add(personId);
+    }
+  }
+  for (const domain of world.listedCompanies) members.push({ companyId: await recorded("company", { column: "domain", value: domain }, { name: domain, domain }) });
+  const listRun = (await one("insert into core.run (process_key, trigger, actor_type, actor_id, dry_run) values ('acquisition.list.constitute', 'cli', 'human', 'an operator', false) returning id")).id as string;
+  await constituteList(db, { key: listKey, query: { from: "hand" }, members, actor: human.actor, runId: listRun });
+  return campaign.experimentId;
+}
+
+const request = (experimentId: string, over: Partial<EnrolRequest> = {}): EnrolRequest => ({
   sequenceKey: "welcome",
   channel: "email",
+  fromList: { listKey: "the-list", experimentId, unsolicited: false },
   protectedMaxAgeMinutes: 60,
   dryRun: false,
   trigger: "cli",
@@ -245,7 +301,12 @@ const request = (over: Partial<EnrolRequest> = {}): EnrolRequest => ({
   ...over,
 });
 
-const run = (over: Partial<EnrolRequest> = {}, fingerprints = fingerprinter("T1", { T1: SECRET }, [], identity)) => enrol({ db, registry, identity, fingerprints, now: () => NOW }, request(over));
+/** A run from the list, seeded first; `list` names another list, seeded from `world.listed` as it then stands. */
+const run = async (over: Partial<EnrolRequest> = {}, opts: { fingerprints?: Fingerprinter; list?: string } = {}) => {
+  const experimentId = await seed(opts.list);
+  const r = request(experimentId, over);
+  return enrol({ db, registry, identity, fingerprints: opts.fingerprints ?? register, now: () => NOW }, opts.list ? { ...r, fromList: { ...r.fromList, listKey: opts.list } } : r);
+};
 
 const row = async (id: string) =>
   (await client.query("select status, dry_run, error from core.run where id = $1", [id])).rows[0] as {
@@ -258,23 +319,23 @@ const held = () => [...world.enrolled.values()].sort();
 
 beforeEach(async () => {
   if (client) {
-    await client.query("truncate acquisition.enrolment_skip, acquisition.enrolment, acquisition.sourcing_result, acquisition.protection_acknowledgement, relations.person, relations.company cascade");
+    await client.query(
+      "truncate acquisition.enrolment_skip, acquisition.enrolment, acquisition.draft, acquisition.template, acquisition.protection_acknowledgement, relations.message, relations.list, relations.person, relations.company, core.experiment cascade",
+    );
   }
+  campaign = undefined;
+  drafted = new Set();
   world.statusCalls = 0;
-  world.lookedUp = [];
   world.keysSent = [];
   world.crash = undefined;
-  world.candidates = [
-    { domain: "open.example.com", attributes: {} },
-    { domain: "customer.example.org", externalId: "acct-7", attributes: {} },
-  ];
-  world.protected = [{ domain: "customer.example.org", reason: "customer" }];
-  world.people = new Map([
-    ["open.example.com", [{ email: "ada@open.example.com", name: "Ada" }, { email: "bo@open.example.com", name: "Bo" }]],
+  world.listed = [
+    { domain: "open.example.com", people: [{ email: "ada@open.example.com", name: "Ada" }, { email: "bo@open.example.com", name: "Bo" }] },
     // Cy's address is on another domain: only the account's own protection
     // can stop Cy, which is what the first test is about.
-    ["customer.example.org", [{ email: "cy@cy-consulting.example.net", name: "Cy" }]],
-  ]);
+    { domain: "customer.example.org", people: [{ email: "cy@cy-consulting.example.net", name: "Cy" }] },
+  ];
+  world.listedCompanies = [];
+  world.protected = [{ domain: "customer.example.org", reason: "customer" }];
   world.protectedAsOf = minutesAgo(5);
   world.failing = new Set();
   world.pageSize = 100;
@@ -299,18 +360,10 @@ describe("the enrolment path", { skip: base ? false : "TEST_DATABASE_URL is not 
   });
 
   it("protects a person whose address is on a protected domain, even listed under another company", async () => {
-    world.people.set("open.example.com", [{ email: "dee@customer.example.org", name: "Dee" }, { email: "ada@open.example.com", name: "Ada" }]);
+    world.listed[0]!.people = [{ email: "dee@customer.example.org", name: "Dee" }, { email: "ada@open.example.com", name: "Ada" }];
     const r = await run();
     assert.deepEqual(held(), ["ada@open.example.com"]);
     assert.ok(r.skipped.some((s) => s.reason === "protected" && s.person && emailOf(s.person) === "dee@customer.example.org"));
-  });
-
-  it("protects an account matched by the source's own identifier when its domain differs", async () => {
-    world.protected = [{ externalId: "acct-7", reason: "open_opportunity" }];
-    world.candidates = [{ domain: "renamed.example.org", externalId: "acct-7", attributes: {} }];
-    world.people.set("renamed.example.org", [{ email: "eve@renamed.example.org", name: "Eve" }]);
-    await run();
-    assert.deepEqual(held(), []);
   });
 
   describe("when protection cannot answer, nobody is enrolled and the run says why", () => {
@@ -357,11 +410,11 @@ describe("the enrolment path", { skip: base ? false : "TEST_DATABASE_URL is not 
 
   it("keeps the reasons apart: protected, capacity and duplicate are never the same skip", async () => {
     world.enrolled.set("seeded", "bo@open.example.com"); // already in the sequence
-    world.people.set("open.example.com", [
+    world.listed[0]!.people = [
       { email: "bo@open.example.com", name: "Bo" },
       { email: "ada@open.example.com", name: "Ada" },
       { email: "fay@open.example.com", name: "Fay" },
-    ]);
+    ];
     world.remaining = 1;
     const r = await run({ senders: [{ externalId: "sender@example.com" }] });
     const reasons = Object.fromEntries(r.skipped.map((s) => [s.person ? emailOf(s.person) : s.company.domain, s.reason]));
@@ -463,12 +516,11 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     assert.deepEqual(rows.map((x) => x.idempotency_key).sort(), [...world.keysSent].sort());
   });
 
-  it("writes no registry row, no person and no company in a dry run, and still keeps its skips", async () => {
+  it("writes no registry row and no message in a dry run, and still keeps its skips", async () => {
     const r = await run({ dryRun: true });
     assert.equal(r.enrolled.length, 2);
     assert.deepEqual(await registered(), []);
-    assert.equal((await client.query("select count(*)::int as n from relations.person")).rows[0].n, 0);
-    assert.equal((await client.query("select count(*)::int as n from relations.company")).rows[0].n, 0);
+    assert.equal((await client.query("select count(*)::int as n from relations.message")).rows[0].n, 0);
     assert.deepEqual((await skips(r.runId)).map((s) => s.reason), ["protected"]);
   });
 
@@ -485,7 +537,7 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
   });
 
   it("is written before the provider is called: a run that dies after the provider acted leaves it pending", async () => {
-    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.listed[0]!.people = [{ email: "ada@open.example.com", name: "Ada" }];
     world.crash = "after";
     const r = await run();
     assert.equal(r.status, "failed");
@@ -494,7 +546,7 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
   });
 
   it("reconciles that run on the next one: confirmed, not enrolled a second time", async () => {
-    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.listed[0]!.people = [{ email: "ada@open.example.com", name: "Ada" }];
     world.crash = "after";
     await run();
     const calls = world.enrolCalls;
@@ -507,7 +559,7 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
   });
 
   it("does not confirm a pending row on a lead found by its address under no key of its own: it replays the key (0060)", async () => {
-    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.listed[0]!.people = [{ email: "ada@open.example.com", name: "Ada" }];
     world.crash = "before";
     await run();
     const [pending] = await registered();
@@ -522,7 +574,7 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
   });
 
   it("makes the enrolment on the next run when the provider never got it, with the key on record", async () => {
-    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.listed[0]!.people = [{ email: "ada@open.example.com", name: "Ada" }];
     world.crash = "before";
     await run();
     const [pending] = await registered();
@@ -534,27 +586,19 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
   });
 
   it("keeps the key on record even when the person's keys have grown since", async () => {
-    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.listed[0]!.people = [{ email: "ada@open.example.com", name: "Ada" }];
     world.crash = "before";
     await run();
     const [pending] = await registered();
-    // The same person, now known by a second key: the computed key changes, the recorded one does not.
-    const withHandle = people.peopleAt;
-    people.peopleAt = async (q, ctx) => {
-      const r = await withHandle(q, ctx);
-      if (!r.ok) return r;
-      return ok({ ...r.value, items: r.value.items.map((i) => ({ ...i, identity: { ...i.identity, keys: [...i.identity.keys, { kind: "social_profile_handle", value: "ada", network: "net_a" }] } })) });
-    };
-    try {
-      await run();
-    } finally {
-      people.peopleAt = withHandle;
-    }
+    // The same person, now recorded with a second key: the computed key changes, the recorded one does not.
+    await client.query("update relations.person set external_id = 'net_a:ada' where email = 'ada@open.example.com'");
+    await run();
+    assert.equal(world.keysSent.length, 2);
     assert.equal(world.keysSent[1], pending!.idempotency_key);
   });
 
   it("records a refusal as refused, and skips the person as unreachable", async () => {
-    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
+    world.listed[0]!.people = [{ email: "ada@open.example.com", name: "Ada" }];
     world.crash = "refuse";
     const r = await run();
     assert.deepEqual(r.skipped.filter((s) => s.person).map((s) => [s.reason, s.detail]), [["unreachable", "this address cannot be sequenced"]]);
@@ -562,15 +606,27 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     assert.deepEqual([x?.state, x?.refusal], ["refused", "invalid: this address cannot be sequenced"]);
   });
 
+  it("puts a refused row back to pending before asking the provider again: a run that dies then leaves it pending", async () => {
+    world.listed[0]!.people = [{ email: "ada@open.example.com", name: "Ada" }];
+    world.crash = "refuse";
+    await run();
+    assert.deepEqual((await registered()).map((x) => x.state), ["refused"]);
+    world.crash = "after";
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.deepEqual(held(), ["ada@open.example.com"], "the provider holds her: the call did land");
+    assert.deepEqual((await registered()).map((x) => [x.state, x.refusal]), [["pending", null]], "the row still reads as the provider's refusal");
+  });
+
   it("keeps every skip with its reason, the four never folded into one", async () => {
     world.enrolled.set("seeded", "bo@open.example.com");
-    world.people.set("open.example.com", [
+    world.listed[0]!.people = [
       { email: "bo@open.example.com", name: "Bo" },
       { email: "ada@open.example.com", name: "Ada" },
       { email: "fay@open.example.com", name: "Fay" },
       { email: "dee@customer.example.org", name: "Dee" },
-    ]);
-    world.candidates.push({ name: "No domain", attributes: {} });
+    ];
+    world.listedCompanies = ["nobody.example.com"];
     world.remaining = 1;
     const r = await run({ senders: [{ externalId: "sender@example.com" }] });
     const kept = await skips(r.runId);
@@ -578,32 +634,10 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
     assert.deepEqual(byReason("protected"), ["an address is on a protected domain", "the account is protected"]);
     assert.deepEqual(byReason("duplicate"), ["already in the sequence (active)"]);
     assert.deepEqual(byReason("capacity"), ["no capacity left on the given senders"]);
-    assert.deepEqual(byReason("unreachable"), ["no domain to find its people by"]);
+    assert.deepEqual(byReason("unreachable"), ["a company on a list names nobody to write to"]);
     assert.equal(kept.length, r.skipped.length, "a reported skip was not kept, or the other way round");
   });
 
-  // A dry run, so that the registry's read is the only thing that can refuse:
-  // live, `recordPerson` would refuse too, and its own tests are in relations.
-  it("refuses to merge: a person whose keys name two recorded people is skipped, not enrolled — read before any write", async () => {
-    await client.query(
-      "insert into relations.person (email, external_id) values ('ada@open.example.com', null), (null, 'net_a:42')",
-    );
-    world.people.set("open.example.com", [{ email: "ada@open.example.com", name: "Ada" }]);
-    const withId = people.peopleAt;
-    people.peopleAt = async (q, ctx) => {
-      const r = await withId(q, ctx);
-      if (!r.ok) return r;
-      return ok({ ...r.value, items: r.value.items.map((i) => ({ ...i, identity: { ...i.identity, keys: [...i.identity.keys, { kind: "social_profile_id", value: "42", network: "net_a" }] } })) });
-    };
-    try {
-      const r = await run({ dryRun: true });
-      assert.deepEqual(r.enrolled, []);
-      assert.match(r.skipped.find((s) => s.person)?.detail ?? "", /registry cannot tell who this is: the person.s keys name two recorded people/);
-      assert.equal(world.enrolCalls, 0);
-    } finally {
-      people.peopleAt = withId;
-    }
-  });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -611,9 +645,8 @@ describe("the registry", { skip: base ? false : "TEST_DATABASE_URL is not set" }
 /* -------------------------------------------------------------------------- */
 
 describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
-  it("protects a candidate whose domain is a URL when the protected set writes it bare", async () => {
-    world.candidates = [{ domain: "http://WWW.Customer.Example.org/about", attributes: {} }];
-    world.people.set("customer.example.org", [{ email: "cy@cy-consulting.example.net", name: "Cy" }]);
+  it("protects a company whose domain is a URL when the protected set writes it bare", async () => {
+    world.listed = [{ domain: "http://WWW.Customer.Example.org/about", people: [{ email: "cy@cy-consulting.example.net", name: "Cy" }] }];
     const r = await run();
     assert.deepEqual(held(), []);
     assert.deepEqual(r.skipped.map((s) => s.reason), ["protected"]);
@@ -621,15 +654,9 @@ describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is
 
   it("protects a person on a protected domain the protected set writes as a URL", async () => {
     world.protected = [{ domain: "https://customer.example.org/", reason: "customer" }];
-    world.people.set("open.example.com", [{ email: "dee@Customer.Example.org", name: "Dee" }, { email: "ada@open.example.com", name: "Ada" }]);
+    world.listed = [{ domain: "open.example.com", people: [{ email: "dee@Customer.Example.org", name: "Dee" }, { email: "ada@open.example.com", name: "Ada" }] }];
     await run();
     assert.deepEqual(held(), ["ada@open.example.com"]);
-  });
-
-  it("looks a URL-spelled candidate's people up by its host", async () => {
-    world.candidates = [{ domain: "https://open.example.com/", attributes: {} }];
-    await run();
-    assert.deepEqual(held(), ["ada@open.example.com", "bo@open.example.com"]);
   });
 
   it("stops on a protected account whose domain names no host: it would match nothing", async () => {
@@ -641,49 +668,10 @@ describe("domains spelled as URLs", { skip: base ? false : "TEST_DATABASE_URL is
     assert.equal(world.enrolCalls, 0);
   });
 
-  it("excludes a candidate whose domain names no host, as an unreadable key (0044)", async () => {
-    world.candidates = [{ domain: "http://", attributes: {} }];
+  it("excludes a company whose domain names no host, as an unreadable key (0044)", async () => {
+    world.listed = [{ domain: "http://", people: [{ email: "eve@elsewhere.example.net", name: "Eve" }] }];
     const r = await run();
     assert.deepEqual(r.skipped.map((s) => [s.reason, s.detail]), [["unreadable_key", 'its domain is not a host that can be read: "http://"']]);
-  });
-});
-
-/* -------------------------------------------------------------------------- */
-/* Enrichment is asked with the company's keys (decision 0029)                 */
-/* -------------------------------------------------------------------------- */
-
-describe("what the people source is asked", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
-  const keys = () => world.lookedUp.map((c) => c.keys.map((k) => `${k.kind}${k.network ? `@${k.network}` : ""}=${k.value}`));
-
-  it("the company's id on a network, when the target list attests one, beside its domain", async () => {
-    world.candidates = [
-      {
-        domain: "open.example.com",
-        identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, { kind: "social_company_id", value: "4242", network: "net_a" }] },
-        attributes: {},
-      },
-    ];
-    await run({ dryRun: true });
-    assert.deepEqual(keys(), [["domain=open.example.com", "social_company_id@net_a=4242"]]);
-  });
-
-  it("the domain alone, when that is all the target list knows", async () => {
-    world.candidates = [{ domain: "open.example.com", attributes: {} }];
-    await run({ dryRun: true });
-    assert.deepEqual(keys(), [["domain=open.example.com"]]);
-  });
-
-  it("nothing, when the target list's keys are not valid: the company is unreachable", async () => {
-    world.candidates = [
-      {
-        domain: "open.example.com",
-        identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, { kind: "social_company_id", value: "4242", network: "undeclared" }] },
-        attributes: {},
-      },
-    ];
-    const r = await run({ dryRun: true });
-    assert.deepEqual(world.lookedUp, []);
-    assert.match(r.skipped.find((s) => s.reason === "unreachable")?.detail ?? "", /keys for it are not valid/);
   });
 });
 
@@ -695,33 +683,44 @@ describe("what the people source is asked", { skip: base ? false : "TEST_DATABAS
 const forgetRegister = () => client.query("set session_replication_role = replica; truncate relations.suppression; set session_replication_role = origin");
 
 describe("the opt-out", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
-  // P1 and P1c (0013: an identity is a set of keys). Bo opted out under one
-  // address; the people source attests two. Only the order differs between
-  // the two probes: P1c, with the opted-out address first, is what shows
-  // that P1 can fail for the order alone.
-  const bo = (keys: string[]) => world.people.set("open.example.com", [{ email: keys[0]!, name: "Bo", also: keys.slice(1) }]);
-  const optedOut = () => client.query("insert into relations.person (email, opted_out_at) values ('bo@open.example.com', now())");
+  // P1 and P1c (0013: an identity is a set of keys). Bo is recorded by an
+  // address and a profile id, the address first, and objected under one of
+  // them after his draft was approved. Only the key differs between the two
+  // probes: P1c, under the first, is what shows that P1 can fail for the
+  // order alone.
+  const objectedUnder = async (key: { kind: string; value: string; network?: string }) => {
+    world.listed = [{ domain: "open.example.com", people: [{ email: "bo@open.example.com", name: "Bo", externalId: "net_a:77" }] }];
+    await seed();
+    await client.query("insert into relations.suppression (fingerprint, chain, written_at) values ($1, '{T1}', now())", [fingerprintOf(SECRET, key, identity)]);
+  };
 
-  it("P1 — skips a person who opted out under an address that is not the identity's first", async () => {
-    await optedOut();
-    bo(["bo.work@open.example.com", "bo@open.example.com"]);
-    const r = await run();
-    assert.deepEqual(held(), [], "a person who opted out was enrolled");
-    assert.deepEqual(r.skipped.filter((s) => s.person?.keys.some((k) => k.value.startsWith("bo"))).map((s) => s.reason), ["opted_out"]);
+  it("P1 — skips a person who objected under a key that is not the identity's first", async () => {
+    await objectedUnder({ kind: "social_profile_id", network: "net_a", value: "77" });
+    try {
+      const r = await run();
+      assert.deepEqual(held(), [], "a person who objected was enrolled");
+      assert.deepEqual(r.skipped.map((s) => s.reason), ["opted_out"]);
+    } finally {
+      await forgetRegister();
+    }
   });
 
-  it("P1c — skips them with the opted-out address first, the order P1 only changes", async () => {
-    await optedOut();
-    bo(["bo@open.example.com", "bo.work@open.example.com"]);
-    const r = await run();
-    assert.deepEqual(held(), []);
-    assert.deepEqual(r.skipped.filter((s) => s.person?.keys.some((k) => k.value.startsWith("bo"))).map((s) => s.reason), ["opted_out"]);
+  it("P1c — skips them under the first key, the order P1 only changes", async () => {
+    await objectedUnder({ kind: "email", value: "bo@open.example.com" });
+    try {
+      const r = await run();
+      assert.deepEqual(held(), []);
+      assert.deepEqual(r.skipped.map((s) => s.reason), ["opted_out"]);
+    } finally {
+      await forgetRegister();
+    }
   });
 
-  // Ada is at an open company, unprotected, never enrolled: only her opt-out
-  // can stop her.
+  // Ada is at an open company, unprotected, never enrolled: only her opt-out,
+  // recorded after her draft was approved, can stop her.
   it("skips a person who opted out, and the sequencer never holds them", async () => {
-    await client.query("insert into relations.person (email, opted_out_at) values ('ada@open.example.com', now())");
+    await seed();
+    await client.query("update relations.person set opted_out_at = now() where email = 'ada@open.example.com'");
     const r = await run();
     assert.deepEqual(held(), ["bo@open.example.com"]);
     assert.deepEqual(r.skipped.filter((s) => s.reason === "opted_out").map((s) => emailOf(s.person!)), ["ada@open.example.com"]);
@@ -729,9 +728,10 @@ describe("the opt-out", { skip: base ? false : "TEST_DATABASE_URL is not set" },
     assert.equal(kept.length, 1, "the opt-out skip was not kept with the run");
   });
 
-  // Ada objected and was erased: nothing of her is on record, and the
-  // register holds her address (0052). The one reader finds her (0055).
-  it("skips a person the register holds an objection for, though nobody is on record", async () => {
+  // Ada objected, after her draft was approved, and the register holds her
+  // address (0052): the one reader finds her (0055), whatever her row says.
+  it("skips a person the register holds an objection for", async () => {
+    await seed();
     await client.query("insert into relations.suppression (fingerprint, chain, written_at) values ($1, '{T1}', now())", [fingerprintOf(SECRET, { kind: "email", value: "ada@open.example.com" }, identity)]);
     try {
       const r = await run();
@@ -743,100 +743,9 @@ describe("the opt-out", { skip: base ? false : "TEST_DATABASE_URL is not set" },
   });
 
   it("stops the run, enrolling nobody, while the register cannot be read: a version's secret is missing (0063)", async () => {
-    const r = await run({}, fingerprinter("T1", { T1: SECRET }, ["T0"], identity));
+    const r = await run({}, { fingerprints: fingerprinter("T1", { T1: SECRET }, ["T0"], identity) });
     assert.match(r.stoppedBy ?? "", /the objection cannot be read: the register cannot be read: no secret is held for version T0/);
     assert.deepEqual(held(), []);
-  });
-});
-
-/* -------------------------------------------------------------------------- */
-/* Enrolling the people a sourcing run kept (0031)                             */
-/* -------------------------------------------------------------------------- */
-
-describe("enrolling from a sourcing run", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
-  /**
-   * A sourcing run on record, as `source` writes one: the run, the person
-   * recorded, and the kept row carrying the completed identity.
-   */
-  async function sourced(
-    kept: { email: string; id: string; domain: string; outcome?: string }[],
-    run: { processKey?: string; dryRun?: boolean; status?: string } = {},
-  ): Promise<string> {
-    const { rows } = await client.query(
-      "insert into core.run (process_key, trigger, status, actor_type, dry_run, finished_at) values ($1, 'cli', $2, 'human', $3, now()) returning id",
-      [run.processKey ?? "acquisition.source", run.status ?? "succeeded", run.dryRun ?? false],
-    );
-    const runId = rows[0].id as string;
-    for (const k of kept) {
-      const person = { subject: "person", keys: [{ kind: "social_profile_id", network: "net_a", value: k.id }, { kind: "email", value: k.email }] };
-      const recorded = run.dryRun
-        ? undefined
-        : (await client.query("insert into relations.person (email, external_id, full_name) values ($1, $2, 'Someone') returning id", [k.email, `net_a:${k.id}`])).rows[0].id;
-      await client.query(
-        "insert into acquisition.sourcing_result (run_id, pass, outcome, detail, person, company, person_id, subject) values ($1, 'person', $6, 'as the run decided', $2, $3, $4, $5)",
-        [runId, person, { domain: k.domain }, recorded ?? null, `person:${k.id}`, k.outcome ?? "kept"],
-      );
-    }
-    return runId;
-  }
-
-  it("enrols exactly the people the run kept, with the keys it attested, and sources nobody", async () => {
-    // Bo is recorded, but the run excluded him: a row with a person is not a
-    // kept one.
-    const id = await sourced([
-      { email: "ada@open.example.com", id: "101", domain: "open.example.com" },
-      { email: "bo@open.example.com", id: "102", domain: "open.example.com", outcome: "known_to_crm" },
-    ]);
-    const r = await run({ fromSourcingRun: id });
-    assert.equal(r.status, "succeeded", r.stoppedBy);
-    // Bo is at the same open company, and the target list would give him: the
-    // run did not keep him, so he is not considered.
-    assert.deepEqual(held(), ["ada@open.example.com"]);
-    assert.deepEqual(world.lookedUp, [], "the people source was asked again");
-    assert.deepEqual(r.enrolled[0]?.person.keys.map((k) => k.kind).sort(), ["email", "social_profile_id"]);
-  });
-
-  it("reads protection again: a company protected since the sourcing run is skipped", async () => {
-    // Cy's address is elsewhere: only the company's protection, read again
-    // by this run, can stop Cy.
-    const id = await sourced([{ email: "cy@cy-consulting.example.net", id: "103", domain: "customer.example.org" }]);
-    const r = await run({ fromSourcingRun: id });
-    assert.deepEqual(held(), []);
-    assert.deepEqual(r.skipped.map((s) => s.reason), ["protected"]);
-  });
-
-  it("reads the opt-out again: a person who opted out since the sourcing run is skipped", async () => {
-    const id = await sourced([{ email: "ada@open.example.com", id: "101", domain: "open.example.com" }]);
-    await client.query("update relations.person set opted_out_at = now() where email = 'ada@open.example.com'");
-    const r = await run({ fromSourcingRun: id });
-    assert.deepEqual(held(), []);
-    assert.deepEqual(r.skipped.map((s) => s.reason), ["opted_out"]);
-  });
-
-  it("consumed twice, enrols nobody the second time: the registry catches it (0026)", async () => {
-    const id = await sourced([
-      { email: "ada@open.example.com", id: "101", domain: "open.example.com" },
-      { email: "bo@open.example.com", id: "102", domain: "open.example.com" },
-    ]);
-    const first = await run({ fromSourcingRun: id });
-    assert.equal(first.enrolled.length, 2);
-    const calls = world.enrolCalls;
-    const second = await run({ fromSourcingRun: id });
-    assert.equal(second.enrolled.length, 0);
-    assert.equal(world.enrolCalls, calls, "the sequencer was asked to enrol someone again");
-    assert.deepEqual(second.skipped.map((s) => s.detail), ["already enrolled in this sequence, by the registry", "already enrolled in this sequence, by the registry"]);
-    const rows = (await client.query("select count(*)::int as n from acquisition.enrolment")).rows[0].n;
-    assert.equal(rows, 2);
-  });
-
-  it("refuses a run it cannot enrol from, before opening one of its own", async () => {
-    const runs = async () => (await client.query("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).rows[0].n as number;
-    const before = await runs();
-    await assert.rejects(run({ fromSourcingRun: await sourced([], { dryRun: true }) }), /was a dry run: it kept nobody on record/);
-    await assert.rejects(run({ fromSourcingRun: await sourced([], { status: "failed" }) }), /ended as failed; only a finished sourcing run/);
-    await assert.rejects(run({ fromSourcingRun: await sourced([], { processKey: "instance.verify" }) }), /is a run of instance.verify, not a sourcing run/);
-    await assert.rejects(run({ fromSourcingRun: "00000000-0000-4000-8000-000000000000" }), /no run 00000000-0000-4000-8000-000000000000 is on record/);
-    assert.equal(await runs(), before, "an enrolment run was opened for a sourcing run that cannot be enrolled from");
   });
 });
 
@@ -849,7 +758,7 @@ describe("protection by company id", { skip: base ? false : "TEST_DATABASE_URL i
 
   // The candidate's domain is open: only its company id is protected.
   it("skips a company protected by its company id alone, and the sequencer never holds its people", async () => {
-    world.candidates = [{ domain: "open.example.com", identity: { subject: "company", keys: [{ kind: "domain", value: "open.example.com" }, ...id("4242").keys] }, attributes: {} }];
+    world.listed = [{ domain: "open.example.com", externalId: "net_a:4242", people: [{ email: "ada@open.example.com", name: "Ada" }] }];
     world.protected = [{ domain: "client.example.net", identity: { subject: "company", keys: [{ kind: "domain", value: "client.example.net" }, ...id("4242").keys] }, reason: "customer" }];
     const r = await run();
     assert.deepEqual(held(), []);
@@ -858,13 +767,15 @@ describe("protection by company id", { skip: base ? false : "TEST_DATABASE_URL i
 
   it("passes two runs in a row whose protected set names another company id for the same domain, writing nothing from it", async () => {
     world.protected = [{ domain: "customer.example.org", identity: { subject: "company", keys: [{ kind: "domain", value: "customer.example.org" }, ...id("1001").keys] }, reason: "customer" }];
+    const counted = async () => (await client.query("select (select count(*) from relations.company)::int as companies, (select count(*) from relations.person)::int as people")).rows[0];
+    await seed();
+    const before = await counted();
     const first = await run({ dryRun: true });
     world.protected = [{ domain: "customer.example.org", identity: { subject: "company", keys: [{ kind: "domain", value: "customer.example.org" }, ...id("2002").keys] }, reason: "customer" }];
     const second = await run({ dryRun: true });
     assert.deepEqual([first.status, second.status], ["succeeded", "succeeded"], `${first.stoppedBy} / ${second.stoppedBy}`);
     assert.deepEqual(second.skipped.map((s) => [s.reason, s.company.domain]), [["protected", "customer.example.org"]]);
-    const written = (await client.query("select (select count(*) from relations.company)::int as companies, (select count(*) from relations.person)::int as people")).rows[0];
-    assert.deepEqual(written, { companies: 0, people: 0 }, "reading the protected set wrote to relations");
+    assert.deepEqual(await counted(), before, "reading the protected set wrote to relations");
   });
 
   it("reports distinct accounts, not rows", async () => {
@@ -909,6 +820,48 @@ describe("an uncovered customer", { skip: base ? false : "TEST_DATABASE_URL is n
 });
 
 /* -------------------------------------------------------------------------- */
+/* An account known by the target list's own identifier alone (0068)          */
+/* -------------------------------------------------------------------------- */
+
+describe("an account known by the target list's own identifier alone (0068)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  // The only row beside the default protected domain: whatever stops the run
+  // is this account, never the rest of the fixture.
+  const seven: ProtectedAccount = { externalId: "acct-7", name: "Seven", reason: "open_opportunity" };
+
+  it("stops the run, enrolling nobody and naming the account, once the stop of what runs has reached what it could", async () => {
+    world.protected.push(seven);
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.match(r.stoppedBy ?? "", /^protection unavailable: 1 protected account is known by the target list's own identifier alone.*\(decision 0068\): acct-7 \(Seven\)$/);
+    assert.equal(world.enrolCalls, 0, "an enrolment was attempted");
+    assert.deepEqual(held(), []);
+    assert.ok(r.protectedStop, "the run stopped before stopping what already runs");
+    assert.deepEqual(r.protectedStop.unreached, [{ externalId: "acct-7", name: "Seven" }]);
+    assert.equal((await row(r.runId)).status, "failed");
+  });
+
+  it("goes on once a person names it, says so, and stops again for each account not named", async () => {
+    world.protected.push(seven);
+    await acknowledge(db, { accountId: "acct-7", note: "known upstream by its id alone; reviewed", by: "an operator" });
+    const named = await run({ dryRun: true });
+    assert.equal(named.status, "succeeded", named.stoppedBy);
+    assert.deepEqual(named.unmatched, [{ externalId: "acct-7", name: "Seven" }]);
+    assert.equal(named.enrolled.length, 2);
+
+    // A new one, in the same form: not covered by the first acknowledgement.
+    world.protected.push({ externalId: "acct-8", reason: "customer" });
+    const another = await run({ dryRun: true });
+    assert.equal(another.status, "failed");
+    assert.match(another.stoppedBy ?? "", /\(decision 0068\): acct-8$/);
+
+    await withdraw(db, { accountId: "acct-7", by: "an operator" });
+    world.protected.pop();
+    const withdrawn = await run({ dryRun: true });
+    assert.match(withdrawn.stoppedBy ?? "", /\(decision 0068\): acct-7 \(Seven\)$/);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* What the sequencer declares, and the state it leads to (decision 0051)      */
 /* -------------------------------------------------------------------------- */
 
@@ -920,7 +873,7 @@ describe("a sequencer that cannot suspend (0051)", { skip: base ? false : "TEST_
     const before = await runs();
     await assert.rejects(run({ dryRun }), (e: Error) => e instanceof CannotSuspend && pattern.test(e.message));
     assert.equal(await runs(), before, "a run was opened for an enrolment that could not happen");
-    assert.deepEqual([world.enrolCalls, world.statusCalls, world.lookedUp.length, held().length], [0, 0, 0, 0]);
+    assert.deepEqual([world.enrolCalls, world.statusCalls, held().length], [0, 0, 0]);
   }
 
   it("is refused when it declares nothing — nothing said is not \"can suspend\"", async () => {
@@ -975,7 +928,7 @@ describe("once an erasure has run, without 0052's register", { skip: base ? fals
       const before = await runs();
       await assert.rejects(run(), (e: Error) => e instanceof ErasedWithoutRegister && /an erasure has run on this instance/.test(e.message));
       assert.equal(await runs(), before, "a run was opened for an enrolment that could not happen");
-      assert.deepEqual([world.enrolCalls, world.lookedUp.length, held().length], [0, 0, 0]);
+      assert.deepEqual([world.enrolCalls, held().length], [0, 0]);
     });
   });
 
@@ -1013,9 +966,9 @@ describe("the memory sequencer, held to its declaration (0054)", { skip: base ? 
 });
 
 describe("the suspended state (0051)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
-  /** A person enrolled in `welcome`, as the registry holds one. */
+  /** A person enrolled in `welcome`, as the registry holds one: the list's, once it is seeded. */
   async function enrolledRow(email: string, state = "enrolled"): Promise<string> {
-    const person = (await client.query("insert into relations.person (email) values ($1) returning id", [email])).rows[0].id;
+    const person = await recorded("person", { column: "email", value: email }, { email });
     return (
       await client.query(
         "insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type) values ($1, 'welcome', 'email', 'k-' || $2, $3, 'memory-sequencer', 'system') returning id",
@@ -1082,6 +1035,7 @@ describe("the suspended state (0051)", { skip: base ? false : "TEST_DATABASE_URL
   });
 
   it("is never enrolled again by a run, and the provider is not even asked", async () => {
+    await seed();
     const id = await enrolledRow("ada@open.example.com");
     await suspend(id, await aRun());
     const r = await run();
@@ -1118,8 +1072,9 @@ describe("the run's start stops what already runs at a newly protected account (
   it("enrols nobody while an enrolment at a protected account cannot be stopped", async () => {
     // At the protected account, on a channel no sequencer here takes: the act
     // is refused, and nothing else about this run would stop it.
-    const [{ id: companyId }] = (await client.query("insert into relations.company (name, domain) values ('customer', 'customer.example.org') returning id")).rows;
-    const [{ id: personId }] = (await client.query("insert into relations.person (email, company_id) values ('cy@cy-consulting.example.net', $1) returning id", [companyId])).rows;
+    await seed();
+    const { id: companyId } = await one("select id from relations.company where domain = 'customer.example.org'");
+    const { id: personId } = await one("select id from relations.person where email = 'cy@cy-consulting.example.net'");
     await client.query(
       "insert into acquisition.enrolment (person_id, company_id, sequence_key, channel, idempotency_key, state, provider, actor_type) values ($1, $2, 'welcome', 'social_message', 'key-cy', 'enrolled', 'memory-sequencer', 'system')",
       [personId, companyId],
@@ -1133,13 +1088,13 @@ describe("the run's start stops what already runs at a newly protected account (
     assert.equal((await client.query("select 1 from acquisition.protection_held where run_id = $1", [r.runId])).rows.length, 0);
   });
 
-  it("does not count what it judges among the candidates the run excluded (0044)", async () => {
+  it("does not count what it judges among the companies the run excluded (0044)", async () => {
     await run();
-    // open.example.com becomes protected and is no longer a candidate: the
-    // run excluded no candidate by it, whatever its start stopped.
+    // open.example.com becomes protected and is on no list this run reads:
+    // the run excluded nobody by it, whatever its start stopped.
     world.protected.push({ domain: "open.example.com", reason: "customer" });
-    world.candidates = [{ domain: "elsewhere.example.com", attributes: {} }];
-    const r = await run();
+    world.listed = [{ domain: "elsewhere.example.com", people: [{ email: "gus@elsewhere.example.com", name: "Gus" }] }];
+    const r = await run({}, { list: "elsewhere" });
     assert.equal(r.status, "succeeded", r.stoppedBy);
     assert.equal(r.protectedStop?.stops.length, 2);
     assert.deepEqual(r.protectionHits, []);

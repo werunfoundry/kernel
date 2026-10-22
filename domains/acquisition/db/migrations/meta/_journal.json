@@ -169,6 +169,13 @@
       "when": 1792681095605,
       "tag": "0023_skip_capped",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792686490841,
+      "tag": "0024_acknowledge_an_account",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,10 @@
 >
 > Completed by [0046](0046-the-addressing-domain-is-acquisition.md): the domain
 > called `gtm` here is `acquisition`; read `gtm.x` as `acquisition.x`.
+>
+> Superseded in part by [0068](0068-an-account-no-company-on-record-can-match-stops-the-enrolment-until-named.md):
+> steps 3 and 4 — the enrolment reads no candidates and finds no people; it
+> takes them from a sealed list.
 
 Completes [0004](0004-protection-is-its-own-route.md), which decided that
 protection is its own route and is re-checked at enrolment, and

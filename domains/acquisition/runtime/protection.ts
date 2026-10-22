@@ -34,6 +34,15 @@
  * acknowledged that customer as uncovered — then the run goes on, and says
  * which acknowledged customers it could not protect. The acknowledged set is
  * read by the caller and handed in; this function never writes it.
+ *
+ * **An account known by the source's own identifier alone is matched only
+ * against a candidate** (decision 0068). That identifier is the target
+ * list's, and a company recorded in `relations` does not carry it: a path
+ * that judges recorded companies — the enrolment, which takes its people from
+ * a list, and the stop of what already runs (0057) — can match such an
+ * account against nothing. They are listed here, for those paths to refuse
+ * or to name; sourcing, which judges the target list's own candidates,
+ * matches them.
  */
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
@@ -65,6 +74,12 @@ export interface Protection {
    * are protected by nothing, and the run went on because a person said so.
    */
   uncovered: { customerId: string; name?: string; rows: number }[];
+  /**
+   * Accounts whose only key is the source's own identifier (0068): matched
+   * against a candidate, never against a company on record. Distinct by that
+   * identifier.
+   */
+  bySourceIdOnly: { externalId: string; name?: string }[];
   /**
    * Whether a candidate company is protected, unreadable, or clear (decision
    * 0044). Protected by its domain or one of its ancestors, or by a company
@@ -167,6 +182,9 @@ export async function readProtection(
     for (const k of keys.slice(1)) parent.set(find(k), find(keys[0]!));
   };
   let rows = 0;
+  const bySourceIdOnly = new Map<string, { externalId: string; name?: string }>();
+  /** Source ids some row also carries a domain or a company id beside: matched through those. */
+  const idsWithAnotherKey = new Set<string>();
   /** Per customer: whether a row carries a key, how many rows, a name to say. */
   const customers = new Map<string, { keyed: boolean; rows: number; unkeyed: number; name?: string }>();
   let cursor: string | undefined;
@@ -199,6 +217,10 @@ export async function readProtection(
         return stop("a protected account has neither a domain, a company id nor an identifier, and names no customer, so nothing could be matched against it");
       }
       if (!keyed) continue;
+      if (account.externalId && (host || networked.length > 0)) idsWithAnotherKey.add(account.externalId);
+      else if (account.externalId && !bySourceIdOnly.has(account.externalId)) {
+        bySourceIdOnly.set(account.externalId, { externalId: account.externalId, ...(account.name ? { name: account.name } : {}) });
+      }
       if (host) domains.add(host);
       if (account.externalId) ids.add(account.externalId);
       for (const k of networked) companyIds.add(k);
@@ -256,6 +278,7 @@ export async function readProtection(
       surface: { domains: domains.size, companyIds: companyIds.size },
       unkeyedRowsOfCoveredCustomers: [...customers.values()].filter((c) => c.keyed).reduce((n, c) => n + c.unkeyed, 0),
       uncovered,
+      bySourceIdOnly: [...bySourceIdOnly.values()].filter((a) => !idsWithAnotherKey.has(a.externalId)).sort((a, b) => a.externalId.localeCompare(b.externalId)),
       verdict,
       standing: (c) => judge(c, false),
       company: (c) => verdict(c) !== "clear",

@@ -81,12 +81,20 @@ from invented data, so before anything is configured:
 cp .env.example .env          # set DATABASE_URL (and DIRECT_URL, for migrations)
 pnpm migrate                  # installs core, relations, acquisition — in that order
 pnpm verify                   # boots, opens a dry run, probes every adapter
-pnpm enrol -- --sequence welcome --channel email --max-age 60
+pnpm source -- --max-age 60 --max-people 10 --want email
 ```
 
-`pnpm enrol` is a dry run until you add `--live`. It reads the protected
-accounts first, whole and fresh, and enrols nobody if it cannot (0019). In the
-sandbox, one of the three invented companies is protected: watch it skipped.
+`pnpm source` is a dry run until you add `--live`. It reads the protected
+accounts first, whole and fresh, and sources nobody if it cannot (0031). In
+the sandbox, one of the three invented companies is protected: watch it
+excluded before anything is spent.
+
+Nobody is reached from there directly. A person constitutes a list from what
+a live sourcing run kept (`kernel-list`, at a terminal), drafts are proposed
+for it and approved, and `pnpm enrol -- --list <key> --experiment <id>`
+enrols the list's people, each carrying the messages approved for them
+(0064). It reads protection and the opt-out again, and is a dry run until
+`--live`.
 
 Then make it yours, in order, because each step tells you what the next one
 needs:

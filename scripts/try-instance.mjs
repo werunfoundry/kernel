@@ -408,8 +408,31 @@ try {
       crossed.length === 1 && crossed[0].subject === "A subject" && crossed[0].body === "A first line." && crossed[0].unsolicited === false && crossed[0].state === "enrolled",
       `the database does not hold one message and its enrolment: ${JSON.stringify(crossed)}`,
     );
-    const handed = Object.values(JSON.parse(readFileSync(state, "utf8")).enrolments["follow-up"] ?? {}).map((e) => e.variables);
-    expect(JSON.stringify(handed) === JSON.stringify([{ engine_body_1: "A first line.", engine_subject_1: "A subject" }]), `the sandbox was handed ${JSON.stringify(handed)}`);
+    // The way out (0067, 0069): the template's line, the sandbox's link in
+    // it, written after the upload and read back — the provider's record,
+    // not a message anyone received.
+    const [held] = Object.values(JSON.parse(readFileSync(state, "utf8")).enrolments["follow-up"] ?? {});
+    const line = `If you would rather not hear from me again, this link stops it: https://sandbox.invalid/stop/${held?.key}`;
+    expect(
+      JSON.stringify(held?.variables) === JSON.stringify({ engine_body_1: "A first line.", engine_subject_1: "A subject", engine_way_out: line }),
+      `the sandbox holds ${JSON.stringify(held?.variables)}`,
+    );
+    const wayOut = (await client.query("select way_out, way_out_line, way_out_read_back_at is not null as read_back from acquisition.enrolment where sequence_key = 'follow-up'")).rows[0];
+    expect(wayOut?.way_out === "written" && wayOut?.way_out_line === line && wayOut?.read_back === true, `the enrolment records its way out as ${JSON.stringify(wayOut)}`);
+    expect(/way out: 1 written and read back at the provider, 0 cut/.test(carried.stdout), "kernel-enrol did not say the way out it wrote");
+    expect(/way out: 1 would be written/.test(dry.stdout), "the dry run did not say the way out it would write");
+
+    // The sandbox refuses the way out of a sequence its state file lists:
+    // the person is enrolled, recorded without one, and the run says so.
+    step("the enrolment whose way out cannot be written: enrolled, recorded absent, said aloud");
+    const refusing = JSON.parse(readFileSync(state, "utf8"));
+    writeFileSync(state, JSON.stringify({ ...refusing, wayOutRefused: ["refusing"] }));
+    const without = await bin("kernel-enrol", ["--sequence", "refusing", ...carryArgs.slice(2), "--solicited", "--live"]);
+    show(without);
+    expect(without.status === 0 && enrolled(without.stdout) === 1, `kernel-enrol --sequence refusing: ${without.stdout.trim().split("\n").pop()}`);
+    expect(/! 1 person enrolled without a way out: the line could not be written after the upload: unavailable: the sandbox refuses the way out of "refusing"/.test(without.stdout), "the run did not say aloud who went without a way out");
+    const absent = (await client.query("select state, way_out, way_out_why from acquisition.enrolment where sequence_key = 'refusing'")).rows[0];
+    expect(absent?.state === "enrolled" && absent?.way_out === "absent" && /the sandbox refuses/.test(absent?.way_out_why ?? ""), `the enrolment records ${JSON.stringify(absent)}`);
 
     // The one act that cannot be undone, on what the runs above really wrote:
     // Ada sourced, kept, listed and enrolled (0040, 0049).

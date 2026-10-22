@@ -55,6 +55,8 @@ const state = {
   /** The campaign's `sequences`, as its read returns them. */
   sequences: undefined as unknown,
   /** The provider's record of emails, as `GET /api/v2/emails` lists them, newest first. */
+  /** When set, a lead's PATCH answers 200 with the lead and changes nothing — what a status PATCH did live (README). */
+  patchDoesNothing: false,
   /** When set, the record ignores `email_type`, as a provider may: the adapter then sees the replies too. */
   ignoreEmailType: false,
   emails: [] as { id: string; lead: string; campaign_id: string; step: string; ue_type: number; timestamp_email: string; timestamp_created: string; eaccount?: string; subsequence_id?: string | null }[],
@@ -145,6 +147,14 @@ before(async () => {
       if (!state.moveDoesNothing) lead.subsequence_id = String(body?.subsequence_id);
       return reply(200, { ...lead });
     }
+    // `custom_variables` replaces the lead's variables whole: the worst a
+    // provider could do with them, unmeasured at this one (README).
+    if (req.method === "PATCH" && p.startsWith("/api/v2/leads/")) {
+      const lead = state.leads.find((l) => l.id === p.split("/").pop());
+      if (!lead) return reply(404, { message: "not found" });
+      if (!state.patchDoesNothing) lead.payload = { ...(body?.custom_variables as Record<string, unknown>) };
+      return reply(200, { ...lead });
+    }
     if (req.method === "GET" && p.startsWith("/api/v2/leads/")) {
       const lead = state.leads.find((l) => l.id === p.split("/").pop());
       return lead ? reply(200, { ...lead, status_summary: { lastStep: { stepID: "0_0_0" } } }) : reply(404, { message: "not found" });
@@ -195,6 +205,7 @@ beforeEach(() => {
   state.ignoreEmailType = false;
   state.moveDoesNothing = false;
   state.addDoesNothing = false;
+  state.patchDoesNothing = false;
   state.blockDoesNothing = false;
   state.sentToday = 15;
   state.accounts["sender@example.com"] = { daily_limit: 40, status: 1 };
@@ -202,7 +213,7 @@ beforeEach(() => {
 });
 
 /** `null` for no key at all — `undefined` would take the default. */
-const adapter = (token: string | null = "test-key", options: Record<string, string> = { "subsequence.welcome": "s1" }): Sequencer =>
+const adapter = (token: string | null = "test-key", options: Record<string, string> = { "subsequence.welcome": "s1", unsubscribeLink: "https://track.example.com/unsub/1/{lead}" }): Sequencer =>
   factory({ options: { baseUrl, "campaign.welcome": "c1", ...options }, env: token === null ? {} : { INSTANTLY_API_KEY: token } });
 
 const ctx = (dryRun: boolean): CallContext => ({ runId: "run-1", actor: { type: "system" }, dryRun });
@@ -494,6 +505,16 @@ describe("what it declares (decision 0051)", () => {
     assert.match(text, /delivers a body as: plain text/);
     assert.match(text, /a way out in the body: Instantly's unsubscribe link, \/unsub\/1\/<lead id>, whose id comes back with the upload, known only after the call/);
   });
+
+  // Its host is the workspace's tracking domain, which only a delivered
+  // message shows: bound, never guessed.
+  it("offers no way out, and says why, when no unsubscribe link is bound, or one without the lead's place", () => {
+    for (const unsubscribeLink of [undefined, "https://track.example.com/unsub/1/"]) {
+      const d = adapter("test-key", { "subsequence.welcome": "s1", ...(unsubscribeLink ? { unsubscribeLink } : {}) }).declares!;
+      assert.equal(d.wayOut?.offered, "none");
+      if (d.wayOut?.offered === "none") assert.match(d.wayOut.why, /no unsubscribe link is bound: add the option unsubscribeLink/);
+    }
+  });
 });
 
 describe("the unsubscribes pull (decision 0051, verb 4)", () => {
@@ -572,12 +593,29 @@ describe("reading a sequence's steps (decision 0064)", () => {
     const r = await adapter().readSteps!("welcome", ctx(false));
     assert.ok(r.ok, JSON.stringify(r));
     assert.deepEqual(r.value.steps, [
-      { step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, variants: 1 },
-      { step: 2, channel: "email", afterPreviousMinutes: 2 * 24 * 60, subject: null, body: { variable: "engine_body_2" }, variants: 1 },
-      { step: 3, channel: "email", afterPreviousMinutes: 90, subject: { written: "text of its own" }, body: { written: "text of its own" }, variants: 2 },
+      { step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, wayOut: null, variants: 1 },
+      { step: 2, channel: "email", afterPreviousMinutes: 2 * 24 * 60, subject: null, body: { variable: "engine_body_2" }, wayOut: null, variants: 1 },
+      { step: 3, channel: "email", afterPreviousMinutes: 90, subject: { written: "text of its own" }, body: { written: "text of its own" }, wayOut: null, variants: 2 },
     ]);
     assert.equal(r.value.sequenceKey, "welcome");
     assert.deepEqual(writes(), []);
+  });
+
+  it("reads a body followed by a second variable as the message and the way-out line, and anything else after it as copy (0067)", async () => {
+    state.sequences = [
+      {
+        steps: [
+          { type: "email", delay: 1, variants: [v("{{s}}", "{{engine_body_1}}\n\n{{engine_way_out}}")] },
+          { type: "email", delay: 1, variants: [v("", "{{engine_body_2}} Best, the team")] },
+        ],
+      },
+    ];
+    const r = await adapter().readSteps!("welcome", ctx(true));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.deepEqual(r.value.steps.map((x) => [x.body, x.wayOut]), [
+      [{ variable: "engine_body_1" }, { variable: "engine_way_out" }],
+      [{ variable: "engine_body_2" }, { written: "text of its own" }],
+    ]);
   });
 
   it("reads a delay with no unit in days, as the API's schema has it", async () => {
@@ -602,6 +640,46 @@ describe("reading a sequence's steps (decision 0064)", () => {
     const r = await adapter().readSteps!("unmapped", ctx(true));
     assert.ok(!r.ok && r.error.code === "invalid");
     assert.deepEqual(seen, []);
+  });
+});
+
+describe("the way-out line, written after the upload (decisions 0065, 0067)", () => {
+  const ada: Identity = { subject: "person", keys: [{ kind: "email", value: "ada@example.com" }] };
+  const line = (link: string) => `To stop: ${link}`;
+  const enrolled = async () => {
+    const r = await adapter().enrol({ idempotencyKey: "k-ada", sequenceKey: "welcome", channel: "email", person: ada, variables: { engine_body_1: "Hello Ada.", engine_way_out: "" } }, ctx(false));
+    assert.ok(r.ok, JSON.stringify(r));
+    seen = [];
+  };
+
+  it("writes the line with the lead's link, every variable written back, and reads them all back", async () => {
+    await enrolled();
+    const r = await adapter().writeWayOut!({ idempotencyKey: "k-ada", sequenceKey: "welcome", person: ada, variable: "engine_way_out", line }, ctx(false));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.value.link, "https://track.example.com/unsub/1/lead-1");
+    assert.equal(r.value.readBack, "To stop: https://track.example.com/unsub/1/lead-1");
+    const patch = seen.find((x) => x.method === "PATCH");
+    assert.equal(patch?.path, "/api/v2/leads/lead-1");
+    // The bodies survive a provider that replaces the variables whole.
+    assert.equal((patch?.body?.custom_variables as Record<string, string>).engine_body_1, "Hello Ada.");
+    assert.equal(state.leads[0]!.payload?.engine_body_1, "Hello Ada.");
+    assert.ok(seen.findIndex((x) => x.method === "GET" && x.path === "/api/v2/leads/lead-1") > seen.findIndex((x) => x.method === "PATCH"), "the lead was not read back after the write");
+  });
+
+  it("is an error, not a success, when the provider answers the write and the read-back does not hold it", async () => {
+    await enrolled();
+    state.patchDoesNothing = true;
+    const r = await adapter().writeWayOut!({ idempotencyKey: "k-ada", sequenceKey: "welcome", person: ada, variable: "engine_way_out", line }, ctx(false));
+    assert.ok(!r.ok && /does not hold what was written: engine_way_out/.test(r.error.message), JSON.stringify(r));
+  });
+
+  it("writes nothing to a lead that does not carry this enrolment's key, and nothing in a dry run", async () => {
+    await enrolled();
+    const other = await adapter().writeWayOut!({ idempotencyKey: "k-other", sequenceKey: "welcome", person: ada, variable: "engine_way_out", line }, ctx(false));
+    assert.ok(!other.ok && other.error.code === "conflict", JSON.stringify(other));
+    const dry = await adapter().writeWayOut!({ idempotencyKey: "k-ada", sequenceKey: "welcome", person: ada, variable: "engine_way_out", line }, ctx(true));
+    assert.ok(dry.ok && dry.simulated, JSON.stringify(dry));
+    assert.deepEqual(writes(), []);
   });
 });
 
@@ -832,6 +910,7 @@ const ALLOWED = [
   "POST /api/v2/leads/add",
   "POST /api/v2/leads/subsequence/move",
   "GET /api/v2/leads/{}",
+  "PATCH /api/v2/leads/{}",
   "GET /api/v2/subsequences/{}",
   "GET /api/v2/block-lists-entries",
   "POST /api/v2/block-lists-entries",

@@ -76,6 +76,14 @@ const world = {
   held: new Map<string, string>(),
   /** The next enrolment call fails as a provider that is down does, leaving the registry row pending. */
   failNext: false,
+  /** The next enrolment call lands, then answers as a timeout does: the provider holds the person, the run stops. */
+  failAfterNext: false,
+  /** The sequencer binding's settings, as boot hands them (0069). */
+  settings: {} as Record<string, Record<string, unknown>>,
+  /** The variables the provider holds per enrolment key, as the way-out write reads and writes them. */
+  leads: new Map<string, Record<string, string>>(),
+  /** How the next way-out write answers: written and read back, refused, read back as another line, or with no link. */
+  wayOutAnswer: "ok" as "ok" | "fails" | "misread" | "nolink",
 };
 const ok = <T>(value: T): CallResult<T> => ({ ok: true, value });
 const emailOf = (p: Identity) => p.keys.find((k) => k.kind === "email")?.value ?? "";
@@ -120,8 +128,24 @@ const sequencer: Sequencer = {
       return { ok: false, error: { code: "rate_limited", message: "the provider is busy", retryable: true } };
     }
     world.enrolments.push(e);
-    if (!ctx.dryRun) world.held.set(e.idempotencyKey, emailOf(e.person));
+    if (!ctx.dryRun) {
+      world.held.set(e.idempotencyKey, emailOf(e.person));
+      world.leads.set(e.idempotencyKey, { ...e.variables });
+    }
+    if (world.failAfterNext) {
+      world.failAfterNext = false;
+      return { ok: false, error: { code: "rate_limited", message: "the provider timed out", retryable: true } };
+    }
     return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { state: "active", idempotencyKey: e.idempotencyKey, asOf: new Date().toISOString() } };
+  },
+  // Held to the contract: every variable written back, and read back whole.
+  async writeWayOut({ idempotencyKey, variable, line }) {
+    const lead = world.leads.get(idempotencyKey);
+    if (!lead) return { ok: false, error: { code: "not_found", message: "no such lead", retryable: false } };
+    if (world.wayOutAnswer === "fails") return { ok: false, error: { code: "unavailable", message: "the provider is down", retryable: true } };
+    const link = world.wayOutAnswer === "nolink" ? " " : `https://stop.example.com/${idempotencyKey.slice(0, 8)}`;
+    lead[variable] = world.wayOutAnswer === "misread" ? "something else" : line(link);
+    return ok({ link, readBack: lead[variable]!, readBackAt: new Date().toISOString() });
   },
   async withdraw({ idempotencyKey }) {
     world.held.delete(idempotencyKey);
@@ -143,6 +167,7 @@ const registry = {
   get: (c: string) => (c === "target_list" ? targetList : undefined),
   forChannel: (c: string, ch: string) => (c === "sequencer" && ch === "email" ? sequencer : undefined),
   all: (c: string) => (c === "sequencer" ? [sequencer] : []),
+  list: () => [{ contract: "sequencer", adapter: sequencer, channels: ["email"], settings: world.settings }],
 } as unknown as Registry;
 
 /* Fixtures ------------------------------------------------------------------ */
@@ -157,12 +182,16 @@ beforeEach(async () => {
   world.protected = [];
   world.enrolments = [];
   world.failNext = false;
+  world.failAfterNext = false;
   world.held.clear();
+  world.settings = {};
+  world.leads.clear();
+  world.wayOutAnswer = "ok";
   declares = reads;
   // Two steps, the second three days after the first, each rendering its own variables.
   world.steps = [
-    { step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, variants: 1 },
-    { step: 2, channel: "email", afterPreviousMinutes: 3 * DAY, subject: null, body: { variable: "engine_body_2" }, variants: 1 },
+    { step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, wayOut: null, variants: 1 },
+    { step: 2, channel: "email", afterPreviousMinutes: 3 * DAY, subject: null, body: { variable: "engine_body_2" }, wayOut: null, variants: 1 },
   ];
 });
 
@@ -505,5 +534,165 @@ describe("the cap, judged ahead over the whole plan (0064 §3)", { skip: base ? 
     await client.query("update acquisition.enrolment set state = 'suspended', suspension_asked_at = now(), suspension_method = 'a test', suspension_costs = '{}'::jsonb, suspension_read_back = '{}'::jsonb where sequence_key = 'other'");
     const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
     assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+});
+
+describe("the way out after the body (decisions 0067, 0069)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const LINE = "To stop hearing from us: {link}";
+  /** The adapter offers its link after the call, the binding sets a line, and every step renders the way-out variable. */
+  const offering = () => {
+    declares = { ...reads, wayOut: { offered: "known_after", what: "a stop link", window: { known: false, why: "not in this test" } } };
+    world.settings = { acquisition: { wayOut: { line: LINE } } };
+    world.steps = world.steps.map((s) => ({ ...s, wayOut: { variable: "engine_way_out" } }));
+  };
+  const recorded = async () => one("select state, way_out, way_out_line, way_out_link, way_out_read_back_at, way_out_why from acquisition.enrolment");
+  const campaign = async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    return experimentId;
+  };
+
+  it("writes the line after the upload, records it as written and read back at a time, and hands the variable empty with the upload", async () => {
+    offering();
+    const r = await run(request(await campaign()));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+    assert.equal(world.enrolments[0]!.variables!.engine_way_out, "");
+    const row = await recorded();
+    assert.equal(row.way_out, "written");
+    assert.match(row.way_out_link, /^https:\/\/stop\.example\.com\//);
+    assert.equal(row.way_out_line, `To stop hearing from us: ${row.way_out_link}`);
+    assert.ok(row.way_out_read_back_at instanceof Date);
+    assert.equal(row.way_out_why, null);
+    assert.deepEqual(r.wayOut, { written: 1, cut: 0, absent: [] });
+  });
+
+  it("refuses, before any run, a line that names no link: a way out promised and not given", async () => {
+    const experimentId = await campaign();
+    offering();
+    world.settings = { acquisition: { wayOut: { line: "To stop hearing from us, click here." } } };
+    await assert.rejects(run(request(experimentId, {}, { dryRun: true })), /sets its way out in a form the kernel cannot use — wayOut\.line names \{link\} nowhere.*\(decision 0069\): nobody is enrolled/);
+    assert.equal((await one("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).n, 0);
+  });
+
+  it("stops, reaching nobody, when a step would not carry the declared line", async () => {
+    const experimentId = await campaign();
+    offering();
+    world.steps[1] = { ...world.steps[1]!, wayOut: null };
+    const r = await run(request(experimentId));
+    assert.match(r.stoppedBy ?? "", /step 2: it renders nothing after its body, and the instance declares a way-out line/);
+    assert.deepEqual(world.enrolments, []);
+  });
+
+  it("leaves the person enrolled, not suspended, and records the way out absent and why, when the write fails", async () => {
+    const experimentId = await campaign();
+    offering();
+    world.wayOutAnswer = "fails";
+    const r = await run(request(experimentId));
+    assert.equal(r.enrolled.length, 1);
+    const row = await recorded();
+    assert.deepEqual([row.state, row.way_out, row.way_out_line], ["enrolled", "absent", null]);
+    assert.match(row.way_out_why, /the line could not be written after the upload: unavailable: the provider is down/);
+    assert.deepEqual(r.wayOut.absent, [{ why: row.way_out_why, people: 1 }]);
+  });
+
+  it("records absent, never written, when the provider's record reads back another line, or the adapter gives no link", async () => {
+    const experimentId = await campaign();
+    offering();
+    world.wayOutAnswer = "misread";
+    await run(request(experimentId));
+    assert.deepEqual([(await recorded()).way_out, (await recorded()).way_out_why], ["absent", "the provider's record read back another line than the one written"]);
+    await client.query("truncate acquisition.enrolment cascade");
+    world.held.clear();
+    world.wayOutAnswer = "nolink";
+    await run(request(experimentId));
+    assert.deepEqual([(await recorded()).way_out, (await recorded()).way_out_why], ["absent", "the adapter returned no link to write"]);
+  });
+
+  it("enrols with no line declared, records why, and says it", async () => {
+    const experimentId = await campaign();
+    offering();
+    world.settings = {};
+    world.steps = world.steps.map((s) => ({ ...s, wayOut: null }));
+    const r = await run(request(experimentId));
+    assert.equal(r.enrolled.length, 1);
+    assert.deepEqual([(await recorded()).way_out, (await recorded()).way_out_why], ["absent", "no line declared: the sequencer binding sets no wayOut (decision 0069)"]);
+    assert.deepEqual(r.wayOut.absent, [{ why: "no line declared: the sequencer binding sets no wayOut (decision 0069)", people: 1 }]);
+  });
+
+  it("records a cut as the instance's, and writes nothing", async () => {
+    const experimentId = await campaign();
+    offering();
+    world.settings = { acquisition: { wayOut: "cut" } };
+    const r = await run(request(experimentId));
+    assert.deepEqual([(await recorded()).way_out, r.wayOut.cut], ["cut", 1]);
+    assert.match((await recorded()).way_out_why, /cut by the instance/);
+    assert.equal(world.enrolments[0]!.variables!.engine_way_out, "", "the variable the steps render goes empty");
+  });
+
+  it("records absent with the adapter's reason when its provider offers no way out", async () => {
+    const experimentId = await campaign();
+    world.settings = { acquisition: { wayOut: { line: LINE } } };
+    declares = { ...reads, wayOut: { offered: "none", why: "this channel has no unsubscribe link" } };
+    await run(request(experimentId));
+    assert.equal((await recorded()).way_out_why, "the provider offers no way out in a body: this channel has no unsubscribe link");
+  });
+
+  it("in a dry run, writes nothing and says what it would record", async () => {
+    const experimentId = await campaign();
+    offering();
+    const r = await run(request(experimentId, {}, { dryRun: true }));
+    assert.deepEqual(r.wayOut, { written: 1, cut: 0, absent: [] });
+    assert.equal(world.leads.size, 0);
+    assert.equal((await one("select count(*)::int as n from acquisition.enrolment")).n, 0);
+  });
+
+  it("writes the way out of an enrolment a stopped run made, when the next run confirms it", async () => {
+    const experimentId = await campaign();
+    offering();
+    // The provider made it, and the run stopped before recording: pending, and held under its key.
+    world.failAfterNext = true;
+    const stopped = await run(request(experimentId));
+    assert.match(stopped.stoppedBy ?? "", /enrolment interrupted/);
+    assert.deepEqual([(await recorded()).state, (await recorded()).way_out], ["pending", null]);
+    const r = await run(request(experimentId));
+    assert.equal(r.reconciled.length, 1);
+    assert.equal((await recorded()).way_out, "written");
+  });
+});
+
+describe("the way out's record, held by the database (0067)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const aRow = async (state = "enrolled") => {
+    const person = await aPerson(`p${Math.random().toString(36).slice(2, 8)}@example.com`, "example.com");
+    return (await one("insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type) values ($1, 'welcome', 'email', gen_random_uuid()::text, $2, 'memory-sequencer', 'system') returning id", [person, state])).id as string;
+  };
+  const set = (id: string, columns: string) => client.query(`update acquisition.enrolment set ${columns} where id = $1`, [id]);
+
+  it("refuses a record that is partial, or that carries the columns of another state, in both directions", async () => {
+    const id = await aRow();
+    await assert.rejects(set(id, "way_out = 'written', way_out_line = 'x', way_out_read_back_at = now()"), /enrolment_way_out_recorded/);
+    await assert.rejects(set(id, "way_out = 'written', way_out_line = 'x', way_out_link = 'y', way_out_read_back_at = now(), way_out_why = 'z'"), /enrolment_way_out_recorded/);
+    await assert.rejects(set(id, "way_out = 'absent', way_out_why = 'z', way_out_line = 'x'"), /enrolment_way_out_recorded/);
+    await assert.rejects(set(id, "way_out = 'cut'"), /enrolment_way_out_recorded/);
+    // No state, and part of a record: the case a one-way constraint lets through.
+    await assert.rejects(set(id, "way_out_line = 'x'"), /enrolment_way_out_recorded/);
+    await assert.rejects(set(id, "way_out_why = 'z'"), /enrolment_way_out_recorded/);
+  });
+
+  it("refuses a record on an enrolment that was not made", async () => {
+    const id = await aRow("pending");
+    await assert.rejects(set(id, "way_out = 'absent', way_out_why = 'z'"), /enrolment_way_out_recorded/);
+  });
+
+  it("writes it once, and refuses to rewrite it, but for erasure's text on the line and the link", async () => {
+    const id = await aRow();
+    await set(id, "way_out = 'written', way_out_line = 'To stop: L', way_out_link = 'L', way_out_read_back_at = now()");
+    await assert.rejects(set(id, "way_out_line = 'To stop: M', way_out_link = 'M'"), /recorded once and never rewritten/);
+    await assert.rejects(set(id, "way_out = 'absent', way_out_line = null, way_out_link = null, way_out_read_back_at = null, way_out_why = 'later'"), /recorded once and never rewritten/);
+    await assert.rejects(set(id, "way_out_line = 'erased (decision 0053)', way_out_link = 'erased (decision 0053)'"), /recorded once and never rewritten/);
+    // As erasure does it: the person's keys gone first, then the row let go of them.
+    await client.query("update relations.person set email = null, external_id = null where id = (select person_id from acquisition.enrolment where id = $1)", [id]);
+    await set(id, "person_id = null, way_out_line = 'erased (decision 0053)', way_out_link = 'erased (decision 0053)'");
+    assert.equal((await one("select way_out_line from acquisition.enrolment where id = $1", [id])).way_out_line, "erased (decision 0053)");
   });
 });

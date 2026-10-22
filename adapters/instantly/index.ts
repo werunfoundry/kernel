@@ -83,6 +83,7 @@ import type {
   Suppression,
   TouchesPage,
   UnsubscribesRead,
+  WayOutWritten,
   Withdrawal,
 } from "@werunfoundry/acquisition/contracts/sequencer";
 import type { InboundEvent } from "@werunfoundry/acquisition/contracts/inbound";
@@ -243,6 +244,11 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
   // that read only after its cursor would step past it.
   const touchPages = typeof options.touchPages === "number" ? options.touchPages : 20;
   const touchesOverlapMinutes = typeof options.touchesOverlapMinutes === "number" ? options.touchesOverlapMinutes : 60;
+  // The unsubscribe link, with `{lead}` where the lead's id goes. Its host is
+  // the workspace's own tracking domain, seen only in a delivered message's
+  // header (README, *The way out, written after the upload*): bound by the
+  // instance, never guessed. Without it, no way out is offered.
+  const unsubscribeLink = typeof options.unsubscribeLink === "string" && /^https:\/\/[^/{}]+\/.*\{lead\}/.test(options.unsubscribeLink) ? options.unsubscribeLink : undefined;
 
   /** `campaign.<sequenceKey>` in the binding's options. */
   const campaignFor = (sequenceKey: string): string | undefined => {
@@ -302,14 +308,19 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       basis: "one step whose body was a lead's custom variable, sent once and read at the receiving client: text/plain, no HTML part (README, A whole message, sent)",
       measuredOn: "2026-10-21",
     },
-    wayOut: {
-      offered: "known_after",
-      what: "Instantly's unsubscribe link, /unsub/1/<lead id>, whose id comes back with the upload",
-      window: {
-        known: false,
-        why: "two observations, not a bound: a lead added to a running campaign left 156, then 382 seconds after the upload answered (2026-10-22, one lead each, one idle account; README)",
-      },
-    },
+    wayOut: unsubscribeLink
+      ? {
+          offered: "known_after",
+          what: "Instantly's unsubscribe link, /unsub/1/<lead id>, whose id comes back with the upload",
+          window: {
+            known: false,
+            why: "two observations, not a bound: a lead added to a running campaign left 156, then 382 seconds after the upload answered (2026-10-22, one lead each, one idle account; README)",
+          },
+        }
+      : {
+          offered: "none",
+          why: "no unsubscribe link is bound: add the option unsubscribeLink, https://<the workspace's tracking domain>/unsub/1/{lead}, as a delivered message's header shows it",
+        },
     classesStop: {
       classes: "no",
       why: "measured on 2026-10-22: a reply asking to stop was recorded as a reply, the lead set not interested and the campaign stopped; the lead was not unsubscribed and nothing was blocklisted (README, The throwaway campaign of 2026-10-22)",
@@ -317,7 +328,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
   };
 
   async function call<T>(
-    method: "GET" | "POST" | "DELETE",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     ctx: CallContext,
     body?: unknown,
@@ -521,6 +532,17 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         const m = /^\s*\{\{\s*([A-Za-z0-9_]+)\s*\}\}\s*$/.exec(text);
         return m ? { variable: m[1]! } : { written: text.trim() === "" ? "empty" : "text of its own" };
       };
+      // A body is one variable, or two separated by blank space only: the
+      // message, then the way-out line and nothing after it (0067). A body
+      // of two variables has not been sent at this provider yet (README).
+      const bodyOf = (text: string): { body: StepCopy; wayOut: StepCopy | null } => {
+        const two = /^\s*\{\{\s*([A-Za-z0-9_]+)\s*\}\}\s+\{\{\s*([A-Za-z0-9_]+)\s*\}\}\s*$/.exec(text);
+        if (two) return { body: { variable: two[1]! }, wayOut: { variable: two[2]! } };
+        const one = copy(text);
+        if ("variable" in one) return { body: one, wayOut: null };
+        const lead = /^\s*\{\{\s*([A-Za-z0-9_]+)\s*\}\}/.exec(text);
+        return lead ? { body: { variable: lead[1]! }, wayOut: { written: "text of its own" } } : { body: one, wayOut: null };
+      };
       const steps: SequenceStep[] = [];
       for (const [i, step] of raw.entries()) {
         let afterPreviousMinutes = 0;
@@ -539,7 +561,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
           channel: step.type ?? "unknown",
           afterPreviousMinutes,
           subject: first?.subject ? copy(first.subject) : null,
-          body: copy(first?.body ?? ""),
+          ...bodyOf(first?.body ?? ""),
           variants: variants.length,
         });
       }
@@ -634,6 +656,45 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
         }
       }
       return { ok: true, value: { items, complete } };
+    },
+
+    /**
+     * Decisions 0065 and 0067: the way-out line, written once the lead is
+     * made. The lead is found by address and must carry this enrolment's
+     * key (0060); its link is the bound `unsubscribeLink` with the lead's id.
+     * `PATCH /api/v2/leads/{id}` is sent with every variable the lead holds,
+     * the line among them: whether the provider merges `custom_variables` or
+     * replaces them whole was not measured, and either way the bodies stay.
+     * Then the lead is read again, and every variable must read back as
+     * written: the PATCH's answer is not taken as the proof — the same route
+     * answered 200 to a status it never applied (README). What reads back is
+     * the provider's record, not the message a person receives.
+     */
+    async writeWayOut(request, ctx): Promise<CallResult<WayOutWritten>> {
+      if (!unsubscribeLink) return fail("invalid", "no unsubscribe link is bound: add the option unsubscribeLink");
+      const campaign = campaignFor(request.sequenceKey);
+      if (!campaign) return unmapped(request.sequenceKey);
+      const email = emailOf(request.person);
+      if (!email) return noEmail();
+      const found = await findLead(email, campaign, ctx);
+      if (!found.ok) return found;
+      if (!found.value) return fail("not_found", "the lead is not in the campaign");
+      if (keyOf(found.value).idempotencyKey !== request.idempotencyKey) return fail("conflict", "the lead in the campaign does not carry this enrolment's key");
+      const lead = found.value;
+      const link = unsubscribeLink.replace("{lead}", encodeURIComponent(lead.id));
+      const held: Record<string, string> = {};
+      for (const [k, v] of Object.entries(lead.payload ?? {})) if (typeof v === "string") held[k] = v;
+      const written = { ...held, [request.variable]: request.line(link) };
+      if (ctx.dryRun) return { ok: true, simulated: true, value: { link, readBack: written[request.variable]!, readBackAt: new Date().toISOString() } };
+      const patched = await call<Lead>("PATCH", `/api/v2/leads/${encodeURIComponent(lead.id)}`, ctx, { custom_variables: written });
+      if (!patched.ok) return patched;
+      const back = await call<Lead>("GET", `/api/v2/leads/${encodeURIComponent(lead.id)}`, ctx);
+      if (!back.ok) return back;
+      const readBackAt = new Date().toISOString();
+      const payload = back.value.payload ?? {};
+      const differs = Object.keys(written).filter((k) => payload[k] !== written[k]);
+      if (differs.length > 0) return fail("unknown", `the lead, read back, does not hold what was written: ${differs.join(", ")}`);
+      return { ok: true, value: { link, readBack: String(payload[request.variable]), readBackAt } };
     },
 
     async withdraw(request, ctx): Promise<CallResult<Withdrawal>> {

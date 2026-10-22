@@ -45,7 +45,7 @@
 
 import { createHash } from "node:crypto";
 
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
@@ -75,6 +75,7 @@ import type { Cap } from "./cap.js";
 import { judgeAhead, planTimes } from "./cap.js";
 import type { PlannedStep, StepRender } from "./steps.js";
 import { compareSteps } from "./steps.js";
+import { lineWith, readWayOut } from "./way-out.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", sequencer: "sequencer" } as const;
@@ -174,6 +175,14 @@ export interface EnrolReport {
   capacity: { checked: true; budget: number } | { checked: false; why: string };
   /** The cap judged ahead over each person's plan (0064), or why the enrolment is not capped — said whenever it is not. */
   cap: { judged: true; max: number; withinDays: number } | { judged: false; why: string };
+  /**
+   * The way out after each body (decisions 0067, 0069): how many enrolments
+   * carry a line written and read back, how many were cut by the instance,
+   * and, for each reason, how many went without one — said aloud, never left
+   * to a column. On a dry run, what would be. `written` is the provider's
+   * record read back, not the message a person received.
+   */
+  wayOut: { written: number; cut: number; absent: { why: string; people: number }[] };
   /**
    * Whether the run row was closed with this outcome. False means the
    * database refused the last write: the row still reads "running", and this
@@ -337,6 +346,26 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       throw new Error(`the sequencer "${sequencer.provider}" does not pull what it sent (${why}), so an unsolicited enrolment through it cannot be capped (decision 0064 §6): nobody is enrolled`);
     }
   }
+  // 0067, 0069: the way out after the body, from the sequencer's binding. A
+  // line without its link would promise a way out and give none: refused
+  // here, before a run, dry too — the core reads no setting's value.
+  const binding = deps.registry.list().find((r) => r.contract === CONTRACTS.sequencer && r.adapter === (sequencer as unknown));
+  const setting = readWayOut(binding?.settings);
+  if ("malformed" in setting) {
+    throw new Error(`the sequencer's binding sets its way out in a form the kernel cannot use — ${setting.malformed} (decision 0069): nobody is enrolled`);
+  }
+  const offered = declared.delivery!.wayOut;
+  /** What each enrolment of this run gets after its body: a line to write, or a fact to record. */
+  const wayOutPlan: { write: string } | { record: "cut" | "absent"; why: string } =
+    "cut" in setting
+      ? { record: "cut", why: "cut by the instance: its sequencer binding sets wayOut to cut (decisions 0065, 0069)" }
+      : "undeclared" in setting
+        ? { record: "absent", why: "no line declared: the sequencer binding sets no wayOut (decision 0069)" }
+        : offered.offered === "none"
+          ? { record: "absent", why: declared.delivery!.wayOutDeclared ? `the provider offers no way out in a body: ${offered.why}` : "the adapter does not say it offers a way out in a body (decision 0065)" }
+          : offered.offered === "known_before"
+            ? { record: "absent", why: "the adapter knows its way out before the call, which the kernel does not write yet (decision 0065)" }
+            : { write: setting.line };
   // 0064 §5: the provider's steps are held against the templates.
   if (typeof sequencer.readSteps !== "function" || (sequencer.declares?.readSteps?.serves ?? "no") === "no") {
     throw new Error(`the sequencer "${sequencer.provider}" does not read a sequence's steps, and an enrolment that carries messages is held against them (decision 0064 §5): nobody is enrolled`);
@@ -364,6 +393,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     reconciled: [],
     skipped: [],
     capacity: { checked: false, why: "no sender was given" },
+    wayOut: { written: 0, cut: 0, absent: [] },
     cap: request.fromList.unsolicited
       ? { judged: true, max: request.fromList.cap!.max, withinDays: request.fromList.cap!.withinDays }
       : { judged: false, why: "solicited: the person asked for it, on the reactive lane (decision 0042), and a solicited enrolment is not capped (decision 0064 §6)" },
@@ -397,7 +427,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
   const registryRow = async (personId: string) =>
     (
       await deps.db
-        .select({ id: enrolment.id, state: enrolment.state, idempotencyKey: enrolment.idempotencyKey })
+        .select({ id: enrolment.id, state: enrolment.state, idempotencyKey: enrolment.idempotencyKey, wayOut: enrolment.wayOut })
         .from(enrolment)
         .where(and(eq(enrolment.personId, personId), eq(enrolment.sequenceKey, request.sequenceKey)))
     )[0];
@@ -440,6 +470,53 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         updatedAt: now(),
       })
       .where(eq(enrolment.id, id));
+
+  /** Counted, so that the run says it: written, cut, or absent and why (0069). */
+  const tally = (state: "written" | "cut" | "absent", why?: string) => {
+    if (state !== "absent") {
+      report.wayOut[state]++;
+      return;
+    }
+    const seen = report.wayOut.absent.find((a) => a.why === why);
+    if (seen) seen.people++;
+    else report.wayOut.absent.push({ why: why!, people: 1 });
+  };
+
+  /**
+   * The way out after the body, once the enrolment is made (0067 §3): the
+   * line written into the variable the steps render, read back, and checked
+   * to be the kernel's line with the adapter's link in it — or the cut, or
+   * the absence and why. Written once: a row that already records one is
+   * left as it is. A failed write leaves the person enrolled, recorded
+   * without a way out, and not suspended: the upload came first.
+   */
+  const recordWayOut = async (rowId: string, person: Identity, key: string, variable: string | undefined) => {
+    let fact: { wayOut: "written"; wayOutLine: string; wayOutLink: string; wayOutReadBackAt: Date } | { wayOut: "cut" | "absent"; wayOutWhy: string };
+    if ("record" in wayOutPlan) {
+      fact = { wayOut: wayOutPlan.record, wayOutWhy: wayOutPlan.why };
+    } else {
+      const line = (link: string) => lineWith(wayOutPlan.write, link);
+      const wrote = await sequencer.writeWayOut!({ idempotencyKey: key, sequenceKey: request.sequenceKey, person, variable: variable!, line }, ctx);
+      const why = !wrote.ok
+        ? `the line could not be written after the upload: ${wrote.error.code}: ${wrote.error.message}`
+        : wrote.value.link.trim() === ""
+          ? "the adapter returned no link to write"
+          : wrote.value.readBack !== line(wrote.value.link)
+            ? "the provider's record read back another line than the one written"
+            : Number.isNaN(Date.parse(wrote.value.readBackAt))
+              ? `the read-back says it was made at "${wrote.value.readBackAt}", which is not a time`
+              : undefined;
+      fact =
+        why || !wrote.ok
+          ? { wayOut: "absent", wayOutWhy: (why ?? "").slice(0, 500) }
+          : { wayOut: "written", wayOutLine: line(wrote.value.link), wayOutLink: wrote.value.link, wayOutReadBackAt: new Date(wrote.value.readBackAt) };
+    }
+    await deps.db
+      .update(enrolment)
+      .set(fact)
+      .where(and(eq(enrolment.id, rowId), isNull(enrolment.wayOut)));
+    tally(fact.wayOut, "wayOutWhy" in fact ? fact.wayOutWhy : undefined);
+  };
 
   /** Read once protection is: what each protected entry excluded (0044). */
   let hitsOf: Protection["hits"] | undefined;
@@ -518,6 +595,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     const renders = new Map<string, StepRender[]>();
     /** Each step's delay after the one before, as the provider will run it. */
     const delays = new Map<number, number>();
+    /** The variable every step renders after its body, when one does (0067). */
+    let wayOutVariable: string | undefined;
     const steps = await sequencer.readSteps!(request.sequenceKey, ctx);
     if (!steps.ok) throw new Stop(`the steps of "${request.sequenceKey}" cannot be read: ${steps.error.code}: ${steps.error.message}`);
     const elsewhere = [...new Set(steps.value.steps.map((s) => s.channel).filter((c) => c !== request.channel))];
@@ -526,9 +605,10 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     }
     for (const s of steps.value.steps) delays.set(s.step, s.afterPreviousMinutes);
     for (const [variant, plan] of fromList.plans) {
-      const agreed = compareSteps(steps.value, plan);
+      const agreed = compareSteps(steps.value, plan, "write" in wayOutPlan);
       if (!agreed.agrees) throw new Stop(`the provider's steps of "${request.sequenceKey}" and the templates of variant "${variant}" disagree, so the plan would not be the one run (decision 0064 §5): ${agreed.disagreements.join("; ")}`);
       renders.set(variant, agreed.renders);
+      wayOutVariable = agreed.wayOut;
     }
 
     /* 3. Who to consider: the list's people, company by company -------- */
@@ -625,7 +705,12 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         // enrolment, or a conflict — never confirmed on a status alone.
         const replaying = row?.state === "pending" && current.value.state !== "unknown";
         if (replaying && current.value.idempotencyKey === row!.idempotencyKey) {
-          if (!request.dryRun) await settleRow(row!.id, { state: "enrolled", enrolledAt: now() });
+          if (!request.dryRun) {
+            await settleRow(row!.id, { state: "enrolled", enrolledAt: now() });
+            // The run that made it stopped before its way out was recorded:
+            // written now, later than it could have been — the times say how.
+            if (row!.wayOut === null) await recordWayOut(row!.id, person, row!.idempotencyKey, wayOutVariable);
+          }
           report.reconciled.push({ person, company, state: current.value.state });
           continue;
         }
@@ -776,7 +861,9 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
             channel: request.channel,
             person,
             ...(one.display?.fullName ? { display: { fullName: one.display.fullName } } : {}),
-            variables: carried.variables,
+            // The way-out variable goes empty with the upload; the line is
+            // written into it once the provider has returned its link (0067).
+            variables: { ...carried.variables, ...(wayOutVariable ? { [wayOutVariable]: "" } : {}) },
             attribution: { runId: open.id, experimentSlug: fromList.experimentSlug, variant: carried.variant },
           },
           ctx,
@@ -793,7 +880,12 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           // the next run asks the provider whether it landed.
           throw new Stop(`enrolment interrupted: ${e.code}: ${e.message}`);
         }
-        if (row && !request.dryRun) await settleRow(row.id, { state: "enrolled", enrolledAt: now() });
+        if (row && !request.dryRun) {
+          await settleRow(row.id, { state: "enrolled", enrolledAt: now() });
+          if (row.wayOut === null) await recordWayOut(row.id, person, row.idempotencyKey, wayOutVariable);
+        }
+        // A dry run says what it would record, and writes nothing.
+        if (request.dryRun) tally("record" in wayOutPlan ? wayOutPlan.record : "written", "record" in wayOutPlan ? wayOutPlan.why : undefined);
         // Confirmed by the provider recognising the key: reconciled, not a new enrolment.
         if (replaying) {
           report.reconciled.push({ person, company, state: done.value.state });

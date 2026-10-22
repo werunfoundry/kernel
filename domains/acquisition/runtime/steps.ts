@@ -19,7 +19,13 @@
  *   nobody here wrote (0064, *Rules out*). A step renders a subject exactly
  *   when its template has one;
  * - **a variable of its own** for each subject and body: two steps rendering
- *   one variable would send one message twice.
+ *   one variable would send one message twice;
+ * - **after the body, the way-out line and nothing else** (0067's closing
+ *   rule): one variable of the kernel's, the same for every step, since the
+ *   line is the enrolment's. When the instance declares a line, every step
+ *   renders it, or the line would not be sent. When it declares none, or
+ *   cuts it, a step may still render the variable, which the kernel leaves
+ *   empty.
  *
  * Reads nothing and writes nothing: the caller reads the steps and the
  * templates, and refuses on what this returns.
@@ -44,11 +50,13 @@ export interface StepRender {
   body: string;
 }
 
-export type StepsAgreement = { agrees: true; renders: StepRender[] } | { agrees: false; disagreements: string[] };
+/** `wayOut`: the variable every step renders after its body, when one does. */
+export type StepsAgreement = { agrees: true; renders: StepRender[]; wayOut?: string } | { agrees: false; disagreements: string[] };
 
 const DAY_MINUTES = 24 * 60;
 
-export function compareSteps(read: SequenceSteps, plan: readonly PlannedStep[]): StepsAgreement {
+/** `line`: whether the instance declares a way-out line every step must carry after its body (0067, 0069). */
+export function compareSteps(read: SequenceSteps, plan: readonly PlannedStep[], line = false): StepsAgreement {
   const disagreements: string[] = [];
   const steps = [...read.steps].sort((a, b) => a.step - b.step);
   const planned = [...plan].sort((a, b) => a.step - b.step);
@@ -62,6 +70,7 @@ export function compareSteps(read: SequenceSteps, plan: readonly PlannedStep[]):
     else used.set(name, at);
   };
   const renders: StepRender[] = [];
+  let wayOut: string | undefined;
   for (let i = 0; i < Math.min(steps.length, planned.length); i++) {
     const p = steps[i]!;
     const t = planned[i]!;
@@ -89,7 +98,20 @@ export function compareSteps(read: SequenceSteps, plan: readonly PlannedStep[]):
       if (!t.subject) disagreements.push(`${at}: the provider renders a subject, and the template writes none`);
       variable(`${at}'s subject`, p.subject.variable);
     }
+    if (p.wayOut === null) {
+      if (line) disagreements.push(`${at}: it renders nothing after its body, and the instance declares a way-out line, which would not be sent (decision 0067)`);
+    } else if ("written" in p.wayOut) {
+      disagreements.push(`${at}: after its body comes copy written at the provider (${p.wayOut.written}), and nothing but the way-out line may (decision 0067)`);
+    } else if (wayOut !== undefined && p.wayOut.variable !== wayOut) {
+      disagreements.push(`${at}: it renders "${p.wayOut.variable}" after its body, and an earlier step "${wayOut}": the way-out line is one per enrolment`);
+    } else {
+      wayOut = p.wayOut.variable;
+    }
     if ("variable" in p.body) renders.push({ step: t.step, body: p.body.variable, ...(p.subject && "variable" in p.subject ? { subject: p.subject.variable } : {}) });
   }
-  return disagreements.length > 0 ? { agrees: false, disagreements } : { agrees: true, renders };
+  // One variable, two things: the way-out line would be sent as a message.
+  if (wayOut !== undefined && used.has(wayOut)) {
+    disagreements.push(`"${wayOut}" is rendered after a body, and ${used.get(wayOut)} renders it as a message: the way-out line would be sent as one`);
+  }
+  return disagreements.length > 0 ? { agrees: false, disagreements } : { agrees: true, renders, ...(wayOut !== undefined ? { wayOut } : {}) };
 }

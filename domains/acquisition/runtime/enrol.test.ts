@@ -172,7 +172,7 @@ const sequencer: Sequencer = {
   },
   // One step, which renders the subject and the body the kernel wrote.
   async readSteps(sequenceKey) {
-    return ok({ sequenceKey, steps: [{ step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, variants: 1 }], asOf: NOW.toISOString() });
+    return ok({ sequenceKey, steps: [{ step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, wayOut: null, variants: 1 }], asOf: NOW.toISOString() });
   },
   async enrol(e, ctx) {
     world.enrolCalls++;

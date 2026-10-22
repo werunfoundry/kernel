@@ -176,6 +176,13 @@
       "when": 1792686490841,
       "tag": "0024_acknowledge_an_account",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792703514233,
+      "tag": "0025_way_out_on_the_enrolment",
+      "breakpoints": true
     }
   ]
 }

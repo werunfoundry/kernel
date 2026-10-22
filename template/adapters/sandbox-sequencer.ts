@@ -7,7 +7,7 @@
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 import { hostOf } from "@werunfoundry/core/identity";
-import type { EnrolmentStatus, SequenceStep, Sequencer, Withdrawal } from "@werunfoundry/acquisition/contracts/sequencer";
+import type { EnrolmentStatus, SequenceStep, Sequencer, WayOutWritten, Withdrawal } from "@werunfoundry/acquisition/contracts/sequencer";
 
 import { loadState, saveState, stateFile } from "./sandbox-store.ts";
 
@@ -47,6 +47,13 @@ export const sequencerOn = (store: SandboxStore = { load: loadState, save: saveS
       },
       pullUnsubscribes: { serves: "no", why: "nobody can unsubscribe from the sandbox" },
       readSteps: { serves: "yes" },
+      // Decision 0065: a link of its own, known once the enrolment is made,
+      // as the shipped email adapter's is. It goes nowhere: `.invalid`.
+      wayOut: {
+        offered: "known_after",
+        what: "the sandbox's stop link, https://sandbox.invalid/stop/<enrolment key>",
+        window: { known: true, seconds: 0, basis: "by construction: the sandbox sends nothing", measuredOn: "2026-10-22" },
+      },
     },
 
     async probe(): Promise<CallResult<void>> {
@@ -58,8 +65,9 @@ export const sequencerOn = (store: SandboxStore = { load: loadState, save: saveS
      * Decision 0064's steps verb. A sequence's steps are the binding's
      * option `steps.<sequenceKey>`: the days each waits after the one
      * before, comma-separated, the first 0 — one step when absent. Each
-     * renders `engine_body_<n>`, and the first `engine_subject_<n>` too:
-     * the later ones go as replies in the thread.
+     * renders `engine_body_<n>`, then `engine_way_out` after it and nothing
+     * else (0067), and the first `engine_subject_<n>` too: the later ones go
+     * as replies in the thread.
      */
     async readSteps(sequenceKey) {
       const option = options[`steps.${sequenceKey}`];
@@ -71,6 +79,7 @@ export const sequencerOn = (store: SandboxStore = { load: loadState, save: saveS
         afterPreviousMinutes: d * 24 * 60,
         subject: i === 0 ? { variable: `engine_subject_${i + 1}` } : null,
         body: { variable: `engine_body_${i + 1}` },
+        wayOut: { variable: "engine_way_out" },
         variants: 1,
       }));
       return { ok: true, value: { sequenceKey, steps, asOf: new Date().toISOString() } };
@@ -98,6 +107,37 @@ export const sequencerOn = (store: SandboxStore = { load: loadState, save: saveS
       const saved = saveState(path, state.value);
       if (!saved.ok) return saved;
       return { ok: true, value: { state: "active", sequenceKey: e.sequenceKey, channel: "email", asOf } };
+    },
+
+    /**
+     * Decision 0067: the way-out line, written into the enrolment's
+     * variables once it is made, with every variable it holds written back,
+     * then read back from the state file loaded again. Refused for a sequence
+     * the state file lists under `wayOutRefused`, so that a run can be seen
+     * enrolling someone without one.
+     */
+    async writeWayOut({ person, sequenceKey, idempotencyKey, variable, line }, ctx): Promise<CallResult<WayOutWritten>> {
+      const email = emailOf(person);
+      if (!email) return invalid("the sandbox reaches a person by email; this identity has none");
+      const state = loadState(path);
+      if (!state.ok) return state;
+      const held = state.value.enrolments[sequenceKey]?.[email];
+      if (!held || held.key !== idempotencyKey) return { ok: false, error: { code: "not_found", message: "no enrolment under this key in this sequence", retryable: false } };
+      if (state.value.wayOutRefused?.includes(sequenceKey)) {
+        return { ok: false, error: { code: "unavailable", message: `the sandbox refuses the way out of "${sequenceKey}" (wayOutRefused in its state file)`, retryable: false } };
+      }
+      const link = `https://sandbox.invalid/stop/${idempotencyKey}`;
+      const before = { ...held.variables };
+      if (ctx.dryRun) return { ok: true, simulated: true, value: { link, readBack: line(link), readBackAt: new Date().toISOString() } };
+      held.variables = { ...before, [variable]: line(link) };
+      const saved = saveState(path, state.value);
+      if (!saved.ok) return saved;
+      const after = loadState(path);
+      if (!after.ok) return after;
+      const read = after.value.enrolments[sequenceKey]?.[email]?.variables ?? {};
+      const lost = Object.keys(before).filter((k) => k !== variable && read[k] !== before[k]);
+      if (lost.length > 0) return { ok: false, error: { code: "unknown", message: `the state file, read back, changed ${lost.join(", ")}`, retryable: false } };
+      return { ok: true, value: { link, readBack: read[variable] ?? "", readBackAt: new Date().toISOString() } };
     },
 
     async withdraw({ person, sequenceKey }, ctx): Promise<CallResult<Withdrawal>> {

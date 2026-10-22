@@ -234,13 +234,21 @@ describe("0065's declarations", () => {
     assert.match(text, /a reply asking to stop: not classed by the provider — not declared, so held not to be/);
   });
 
+  it("refuses a way out known after the call without the method that writes it (0054)", () => {
+    const d = declaration({ wayOut: { offered: "known_after", what: "a link", window: { known: false, why: "never measured" } } });
+    const read = readDeclaration(adapter(d));
+    assert.equal(read.suspends, false);
+    assert.match(read.refusal ?? "", /wayOut: declared known after the call, but `writeWayOut` is not a function on the adapter \(decision 0054\)/);
+    assert.equal(readDeclaration(adapter(d, { writeWayOut: async () => ({ ok: true }) })).suspends, true);
+  });
+
   it("print what is declared, with what it was measured from", () => {
     const d = declaration({
       deliveredForm: { form: "plain_text", ...measuredOn },
       wayOut: { offered: "known_after", what: "the provider's unsubscribe link", window: { known: false, why: "never measured" } },
       classesStop: { classes: "no", why: "not proved" },
     });
-    const text = readDeclaration(adapter(d)).lines.join("\n");
+    const text = readDeclaration(adapter(d, { writeWayOut: async () => ({ ok: true }) })).lines.join("\n");
     assert.match(text, /delivers a body as: plain text \(one send, read at the client, measured 2026-10-21\)/);
     assert.match(text, /a way out in the body: the provider's unsubscribe link, known only after the call/);
     assert.match(text, /window before a first step can leave: unknown — never measured/);

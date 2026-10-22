@@ -48,8 +48,11 @@ What it declares (0051): enrolment served; suspension served by parking,
 costing the person `provider_status_stays_active` and the sequence
 `shared_state_changes`, with its gap **unknown**: in the test above,
 suspensions made 18 minutes or more before a due step held, and nothing
-closer was tried. Pulling the touches and the unsubscribes: not served,
-not built yet. A binding with a sequence that has no parking subsequence
+closer was tried. Pulling the touches: not served, not built yet. Pulling
+the unsubscribes: served partially, only the bound campaigns', each dated
+by the lead's last update (*Unsubscribes*, below). A reply asking to stop:
+not classed as an unsubscribe, as measured on 2026-10-22 (*The throwaway
+campaign of 2026-10-22*). A binding with a sequence that has no parking subsequence
 declares that it cannot suspend, and `kernel-enrol` refuses it.
 
 Before 0051, `withdraw` deleted the lead and reported success on the status
@@ -312,20 +315,80 @@ client). A bare domain, `example.org`, became a link too (the client).
   provider's record (the kernel's test). The id is known once the upload
   answers, before the first send.
 
-## What the next throwaway campaign measures, at once
+## The throwaway campaign of 2026-10-22
 
-One campaign, created for it and never left running, with one lead on an
-address of the operator's. Each of these was left open by a run above,
-and one send can settle them together:
-- a reply asking to stop, sent from the operator's address, and what the
-  provider does with it: the lead's status, its interest status, its
-  unsubscribe state, and whether the sequence goes on;
-- reading the workspace blocklist, and the lead's interest status,
-  through the API;
-- the rendering with link tracking on;
-- whether `leads/add` accepts a lead id the caller chooses;
-- the time from a lead added to a campaign already running to its first
-  send: the window decision 0065 asks the adapter to declare.
+One campaign, created for it, with one sending account, one step and one
+lead on an address of the operator's, and no one else. Each fact below
+names its source:
+- *the provider's record*: what the API returned, read by the kernel's test;
+- *the message*: the message received, its headers and its body, read
+  from the operator's mailbox;
+- *the run*: the test's own log.
+
+**The campaign.** Link tracking on, open tracking off, the unsubscribe
+header on, stop on reply on; the step's subject and body were
+`{{engine_subject_1}}` and `{{engine_body_1}}`, as on 2026-10-21.
+- *Link tracking is read back when it is on* (the provider's record):
+  `link_tracking: true` on the campaign's read. It was not returned on
+  2026-10-21, when it was off.
+- *A campaign activates empty* (the provider's record): `activate` answered
+  200, and the campaign read status 1, with no lead in it.
+
+**The lead.**
+- *A lead id the caller chooses is not kept* (the provider's record). The
+  upload carried an `id`; `leads/add` answered 200 with one lead created
+  under an id of its own.
+- *The window.* The lead was added to the running campaign at 12:17:51.970
+  UTC, when the upload answered (the run). The provider dates the send
+  12:20:28 (the provider's record, to the second), and the step 12:20:29.509.
+  That is **156 seconds** from the upload answering to the send: one
+  observation, one lead, one idle sending account, not a bound. The
+  campaign was paused at 12:20:32.
+
+**Link tracking on, on a plain-text body** (the message):
+- the body arrived as `text/plain`, with no HTML part;
+- the URL and the bare domain arrived as written: neither was rewritten;
+- the headers carried `List-Unsubscribe` with `/unsub/1/<lead id>`,
+  `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, SPF, DKIM and DMARC
+  passing, and an `X-Mail-Abuse-Inquiries` header.
+
+What tracking does to an HTML body was not seen: the provider delivered
+none.
+
+**A reply asking to stop.** The operator replied `STOP` in the thread at
+12:33:26 UTC — from the operator's primary address, not from the address
+the lead was uploaded under. Read within seconds, and again each minute
+for fifteen minutes, with no change (the provider's record):
+- the reply is recorded (`ue_type` 2), and attributed to the lead:
+  `email_reply_count` 1;
+- the lead's interest status is -1, *not interested*, set by the
+  provider at 12:33:41, and its status 3, completed;
+- the campaign stopped, status 3, as `stop_on_reply` asks;
+- the lead is **not unsubscribed** (its status is not -2), and neither
+  address is on the workspace blocklist.
+
+So the provider does not class a reply asking to stop as an unsubscribe;
+it reads it as a reply, and as "not interested". The unsubscribes pull
+does not read it. The reservation: the reply came from another address
+than the lead's, in the same thread. That the provider matched it to the
+lead by the thread is what was seen; a reply from the lead's own address
+was not tried.
+
+**The workspace blocklist is readable with the read key** (the provider's
+record): `GET /api/v2/block-lists-entries` answered 200, with no entry for
+either address, before and after the reply.
+
+**Afterwards.** The lead and the campaign were deleted and read 404. The
+provider's record of the two emails, the send and the reply, is still
+listed.
+
+## What a later throwaway campaign would measure
+
+- What link tracking does to an HTML body: the provider delivered none.
+- A reply asking to stop sent from the lead's own address, rather than
+  from another address in the same thread.
+- The window again, on a busy account and more than once, before it is
+  declared as a bound.
 
 ## Not observed
 
@@ -348,9 +411,8 @@ and one send can settle them together:
   upload that landed: the run stops with the registry row left pending, and
   the next run confirms it from `status`. `status` now reports the key the
   lead carries, but the reconciliation does not compare it yet (0060).
-- The rendering with link tracking on. Every send above was made with it
-  off. With it on, the provider rewrites the URLs in the body, and what
-  that does to a message the kernel wrote was not seen.
+- The rendering with link tracking on, of an HTML body. On the plain-text
+  body of 2026-10-22, nothing was rewritten.
 - Whether a client other than Gmail shows the unsubscribe affordance, or
   Gmail shows it for a send it classes as bulk from this provider.
 - Whether an unsubscribe reaches the same address in another campaign.

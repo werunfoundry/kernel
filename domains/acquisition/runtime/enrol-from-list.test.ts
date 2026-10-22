@@ -74,6 +74,8 @@ const world = {
   /** Every enrolment handed to the sequencer, live or simulated. */
   enrolments: [] as Enrolment[],
   held: new Map<string, string>(),
+  /** The next enrolment call fails as a provider that is down does, leaving the registry row pending. */
+  failNext: false,
 };
 const ok = <T>(value: T): CallResult<T> => ({ ok: true, value });
 const emailOf = (p: Identity) => p.keys.find((k) => k.kind === "email")?.value ?? "";
@@ -113,6 +115,10 @@ const sequencer: Sequencer = {
     return ok({ sequenceKey, steps: world.steps, asOf: new Date().toISOString() });
   },
   async enrol(e, ctx) {
+    if (world.failNext) {
+      world.failNext = false;
+      return { ok: false, error: { code: "rate_limited", message: "the provider is busy", retryable: true } };
+    }
     world.enrolments.push(e);
     if (!ctx.dryRun) world.held.set(e.idempotencyKey, emailOf(e.person));
     return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { state: "active", idempotencyKey: e.idempotencyKey, asOf: new Date().toISOString() } };
@@ -150,6 +156,7 @@ beforeEach(async () => {
   await client.query("truncate relations.touch, relations.message, relations.list, relations.person, relations.company, acquisition.draft, acquisition.template, acquisition.enrolment_skip, acquisition.enrolment, core.experiment, core.run cascade");
   world.protected = [];
   world.enrolments = [];
+  world.failNext = false;
   world.held.clear();
   declares = reads;
   // Two steps, the second three days after the first, each rendering its own variables.
@@ -379,13 +386,21 @@ describe("the cap, judged ahead over the whole plan (0064 §3)", { skip: base ? 
       "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type, message_id) values ($1, 'email', 'outbound', true, 'memory-sequencer', gen_random_uuid()::text, $2, 'system', $3)",
       [personId, new Date(Date.now() - daysAgo * DAY_MS), messageId],
     );
-  /** Ada already enrolled in another sequence, carrying a plan of these delays, every step unsolicited. */
-  const anotherPlan = async (personId: string, days: number[]) => {
+  /** Ada already enrolled in another sequence, carrying a plan of these delays, every step unsolicited unless told otherwise. */
+  const anotherPlan = async (personId: string, days: number[], unsolicitedSteps = true) => {
     const plan = [];
     for (const [i, d] of days.entries()) {
-      const w = await writeMessage(db, register, { key: `other-${i}`, personId, channel: "email", body: `Other ${i + 1}`, unsolicited: true, cadence: "judged_ahead", actor: { type: "human", id: "an operator" } });
+      const w = await writeMessage(db, register, {
+        key: `other-${i}`,
+        personId,
+        channel: "email",
+        body: `Other ${i + 1}`,
+        unsolicited: unsolicitedSteps,
+        ...(unsolicitedSteps ? { cadence: "judged_ahead" as const } : {}),
+        actor: { type: "human", id: "an operator" },
+      });
       assert.ok(w.ok, JSON.stringify(w));
-      plan.push({ step: i + 1, afterPreviousMinutes: d * 24 * 60, messageId: w.messageId, unsolicited: true });
+      plan.push({ step: i + 1, afterPreviousMinutes: d * 24 * 60, messageId: w.messageId, unsolicited: unsolicitedSteps });
     }
     await client.query("insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type, plan, enrolled_at) values ($1, 'other', 'email', 'k-other', 'enrolled', 'memory-sequencer', 'system', $2, now())", [personId, JSON.stringify(plan)]);
     return plan;
@@ -434,6 +449,50 @@ describe("the cap, judged ahead over the whole plan (0064 §3)", { skip: base ? 
     const still = await run(request(experimentId, unsolicited({ max: 3, withinDays: 30 })));
     assert.deepEqual((await skipsOf(still.runId)).map(([reason]) => reason), ["capped"]);
     const r = await run(request(experimentId, unsolicited({ max: 4, withinDays: 30 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("times this plan by the provider's delays: steps far apart do not share a window", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    // A touch yesterday, step 1 today, step 2 in three days: two in any two
+    // days. Taken at once, the plan would put three in these two.
+    await aTouch(ada, 1);
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 2 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("counts only unsolicited outbound touches: a reply, or a message the person asked for, is not one", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    await client.query(
+      "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type) values ($1, 'email', 'inbound', false, 'memory-sequencer', 'a-reply', now() - interval '1 day', 'system'), ($1, 'email', 'outbound', false, 'memory-sequencer', 'an-answer', now() - interval '1 day', 'system')",
+      [ada],
+    );
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("does not count another plan's solicited steps", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    await anotherPlan(ada, [0, 7], false);
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("does not count, when a stopped run is replayed, the plan that run recorded for this same enrolment", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    world.failNext = true;
+    const stopped = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.match(stopped.stoppedBy ?? "", /enrolment interrupted/);
+    assert.equal((await one("select state from acquisition.enrolment where sequence_key = 'welcome'")).state, "pending");
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
     assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
   });
 

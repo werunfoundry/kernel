@@ -367,7 +367,9 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       }
       // 0064 §6: a cap that cannot see what the sequencer sent on its own is
       // not one. Refused as 0051's first refusal is: before a run, dry too.
-      if ((sequencer.declares?.pullTouches?.serves ?? "no") === "no" || typeof sequencer.pullTouches !== "function") {
+      // A pull declared served with no method behind it is refused above,
+      // with the declaration (0054).
+      if ((sequencer.declares?.pullTouches?.serves ?? "no") === "no") {
         const why = sequencer.declares?.pullTouches?.serves === "no" ? sequencer.declares.pullTouches.why : "it does not say";
         throw new Error(`the sequencer "${sequencer.provider}" does not pull what it sent (${why}), so an unsolicited enrolment through it cannot be capped (decision 0064 §6): nobody is enrolled`);
       }

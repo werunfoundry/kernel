@@ -360,10 +360,11 @@ describe("an enrolment from a list carries the kernel's messages (0064)", { skip
     assert.deepEqual((await skipsOf(r.runId)).map(([reason]) => reason), ["opted_out", "protected", "unreachable"]);
   });
 
-  it("takes its people from the list alone: no sourcing run, no query", async () => {
+  it("refuses, before any run, a caller that names no list: there is no enrolment without messages (0064 §1)", async () => {
     const { experimentId } = await aCampaign([]);
-    await assert.rejects(run(request(experimentId, {}, { query: { limit: 5 } })), /an enrolment from a list takes its people from the list alone/);
-    await assert.rejects(run(request(experimentId, {}, { fromSourcingRun: "00000000-0000-4000-8000-000000000000" })), /an enrolment from a list takes its people from the list alone/);
+    const { fromList: _, ...without } = request(experimentId);
+    await assert.rejects(run(without as EnrolRequest), /an enrolment takes its people from a sealed list.*no list was given/);
+    assert.equal((await one("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).n, 0);
   });
 
   it("keeps one message per draft when replayed, and enrols the person once", async () => {

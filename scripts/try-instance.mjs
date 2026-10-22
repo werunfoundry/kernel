@@ -16,14 +16,13 @@
  *   4. `kernel-check-instance` and `kernel-verify`, on plain Node — no
  *      loader, no flag — which must find the configuration real, and every
  *      experiment type measurable;
- *   5. `kernel-enrol`, three times: a dry run that writes nothing, a live run
- *      that enrols the open accounts' people and skips the protected one, and
- *      a replay that enrols nobody twice; then `kernel-source`, dry and
- *      live, excluding by protection and by the CRM before and after
- *      completion; then `kernel-enrol --from-run` on what it kept, twice;
- *      then a person's acts (0047) — each refused without a terminal, shown
- *      on a dry run, and a list and a decision written through a
- *      pseudo-terminal. Every run is read back from the database.
+ *   5. `kernel-source`, dry and live, excluding by protection and by the
+ *      CRM before and after completion; then a person's acts (0047) — each
+ *      refused without a terminal, shown on a dry run, and a list and a
+ *      decision written through a pseudo-terminal; then `kernel-enrol
+ *      --list`, carrying the messages drafted and approved for that list
+ *      (0064): a dry run that writes nothing, a live run, and a replay that
+ *      enrols nobody twice. Every run is read back from the database.
  *
  *   TEST_DATABASE_URL=postgresql://… node scripts/try-instance.mjs
  *
@@ -204,54 +203,14 @@ try {
   if (!realManifest) {
     expect(/experiments: 6 of 6 measurable/.test(verified.stdout), "not every experiment type is measurable with the template's sources");
 
-    const enrolArgs = ["--sequence", "welcome", "--channel", "email", "--max-age", "60"];
     const state = join(root, ".sandbox-state.json");
     const enrolled = (out) => Number(out.match(/(?:would enrol|enrolled): (\d+)/)?.[1] ?? -1);
     const runOf = async (out) => {
       const id = out.match(/^run: ([0-9a-f-]{36})/m)?.[1];
       return id ? await runRow(id) : undefined;
     };
-
-    step("enrol, dry run");
-    const dry = await bin("kernel-enrol", enrolArgs);
-    show(dry);
-    expect(dry.status === 0, `the dry run exited ${dry.status}`);
-    expect(enrolled(dry.stdout) === 3, "the dry run would not enrol the three open people");
-    expect(!existsSync(state), "the dry run wrote the sandbox's state");
-    expect((await runOf(dry.stdout))?.dry_run === true, "the dry run is not recorded as one");
     // The registry (0026), read back from the database the packs migrated.
     const registry = async () => (await client.query("select state, count(*)::int as n from acquisition.enrolment group by 1 order by 1")).rows;
-    const skipsOf = async (out) => {
-      const id = out.match(/^run: ([0-9a-f-]{36})/m)?.[1];
-      return id ? (await client.query("select reason, count(*)::int as n from acquisition.enrolment_skip where run_id = $1 group by 1 order by 1", [id])).rows : [];
-    };
-    expect(JSON.stringify(await registry()) === "[]", `the dry run wrote the registry: ${JSON.stringify(await registry())}`);
-    expect(JSON.stringify(await skipsOf(dry.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }]), "the dry run did not keep its skip");
-
-    step("enrol, live");
-    const live = await bin("kernel-enrol", [...enrolArgs, "--live"]);
-    show(live);
-    expect(live.status === 0, `the live run exited ${live.status}`);
-    expect(enrolled(live.stdout) === 3, "the live run did not enrol the three open people");
-    expect(/skipped, protected: 1/.test(live.stdout), "the protected account was not skipped as protected");
-    const held = existsSync(state) ? Object.keys(JSON.parse(readFileSync(state, "utf8")).enrolments.welcome ?? {}) : [];
-    expect(!held.some((e) => e.endsWith("customer.example.net")), "a protected account's person was enrolled");
-    expect(held.length === 3, `the sequencer holds ${held.length} people, not 3`);
-    const liveRow = await runOf(live.stdout);
-    expect(liveRow?.status === "succeeded" && liveRow?.dry_run === false, `the live run reads ${JSON.stringify(liveRow)}`);
-    expect(JSON.stringify(await registry()) === JSON.stringify([{ state: "enrolled", n: 3 }]), `the registry reads ${JSON.stringify(await registry())}`);
-
-    step("enrol, replayed");
-    const replay = await bin("kernel-enrol", [...enrolArgs, "--live"]);
-    show(replay);
-    expect(replay.status === 0, `the replay exited ${replay.status}`);
-    expect(enrolled(replay.stdout) === 0, "the replay enrolled someone again");
-    expect(/skipped, duplicate: 3/.test(replay.stdout), "the replay did not see the three as duplicates");
-    expect((replay.stdout.match(/already enrolled in this sequence, by the registry/g) ?? []).length === 3, "the replay did not answer from the registry");
-    expect(
-      JSON.stringify(await skipsOf(replay.stdout)) === JSON.stringify([{ reason: "protected", n: 1 }, { reason: "duplicate", n: 3 }]),
-      "the replay's skips were not kept with their reasons",
-    );
 
     // Inbound (0039): pulled after a cursor, stored once, nothing written by a dry run.
     const events = async () => (await client.query("select kind, count(*)::int as n from core.event group by 1 order by 1")).rows;
@@ -342,22 +301,7 @@ try {
     expect(/kept: 1/.test(sourcedLive.stdout), "the sourcing live run did not keep Ada");
     expect(JSON.stringify(await outcomesOf(sourcedLive.stdout)) === JSON.stringify(expected(1)), `the sourcing live run kept ${JSON.stringify(await outcomesOf(sourcedLive.stdout))}`);
 
-    // The bridge: enrolment reads the people that run kept — Ada — and no one
-    // else, in a sequence of its own; a second consumption enrols nobody.
     const sourcingRun = sourcedLive.stdout.match(/^run: ([0-9a-f-]{36})/m)?.[1] ?? "";
-    const fromArgs = ["--sequence", "sourced", "--channel", "email", "--max-age", "60", "--from-run", sourcingRun];
-
-    step("enrol from the sourcing run, live");
-    const fromLive = await bin("kernel-enrol", [...fromArgs, "--live"]);
-    show(fromLive);
-    expect(fromLive.status === 0, `enrolling from the sourcing run exited ${fromLive.status}`);
-    expect(enrolled(fromLive.stdout) === 1 && /\+ ada@open\.example\.com/.test(fromLive.stdout), "enrolling from the sourcing run did not enrol Ada alone");
-
-    step("enrol from the sourcing run, again");
-    const fromAgain = await bin("kernel-enrol", [...fromArgs, "--live"]);
-    show(fromAgain);
-    expect(enrolled(fromAgain.stdout) === 0, "a sourcing run consumed twice enrolled someone twice");
-    expect(/already enrolled in this sequence, by the registry/.test(fromAgain.stdout), "the second consumption was not caught by the registry");
 
     // A person's acts (0047), from the packs, on plain Node. Without a
     // terminal each writes nothing; `script` gives one a pseudo-terminal and
@@ -404,11 +348,12 @@ try {
     const triggers = (await client.query("select distinct trigger from core.run where process_key in ('acquisition.list.constitute', 'core.decision.record')")).rows;
     expect(JSON.stringify(triggers) === JSON.stringify([{ trigger: "cli" }]), `a person's acts recorded their channel as ${JSON.stringify(triggers)}, not cli (0048)`);
 
-    // The enrolment that carries the kernel's messages (0064), from the
+    // The enrolment, which carries the kernel's messages (0064), from the
     // packs, on plain Node: the list just constituted, drafted, approved by a
     // person, then enrolled through `kernel-enrol --list` into a sequence of
     // the sandbox, which reads its steps and keeps the variables it was
-    // handed. Solicited: an unsolicited one waits for the cap judged ahead.
+    // handed. Solicited: the sandbox does not pull what it sent, so an
+    // unsolicited enrolment through it cannot be capped (0064 §6).
     step("the enrolment from a list, carrying the kernel's messages");
     const experimentId = (await client.query("insert into core.experiment (slug, type, hypothesis_ref, lane, status) values ('try-send', 'campaign', 'https://example.com/h', 'reviewed', 'running') returning id")).rows[0].id;
     const templateId = (await client.query("insert into acquisition.template (experiment_id, variant, step, channel, subject, body) values ($1, 'a', 1, 'email', 'A subject', 'A first line.') returning id", [experimentId])).rows[0].id;
@@ -433,14 +378,27 @@ try {
     const draftedSaid = JSON.parse(drafting.stdout.trim().split("\n").pop() || "{}");
     expect(JSON.stringify(draftedSaid) === JSON.stringify({ drafted: ["awaiting_review"] }), `drafting reported ${JSON.stringify(draftedSaid)}`);
     const carryArgs = ["--sequence", "follow-up", "--channel", "email", "--max-age", "60", "--list", "sourced", "--experiment", experimentId];
-    // The sandbox does not pull what it sent: an unsolicited enrolment through it cannot be capped (0064 §6).
     const unsolicited = await bin("kernel-enrol", [...carryArgs, "--cap-max", "3", "--cap-days", "30", "--live"]);
     expect(unsolicited.status === 1 && /cannot be capped \(decision 0064 §6\)/.test(unsolicited.stdout), `kernel-enrol --list without --solicited: ${unsolicited.stdout.trim().split("\n").pop()}`);
+    const messages = () => count("relations.message");
+    const dry = await bin("kernel-enrol", [...carryArgs, "--solicited"]);
+    show(dry);
+    expect(dry.status === 0 && enrolled(dry.stdout) === 1, `kernel-enrol --list, dry: ${dry.stdout.trim().split("\n").pop()}`);
+    expect(/protected accounts read: 1 distinct/.test(dry.stdout), "the dry run did not read the protected set");
+    expect((await runOf(dry.stdout))?.dry_run === true, "the dry run is not recorded as one");
+    expect(!existsSync(state), "the dry run wrote the sandbox's state");
+    expect(JSON.stringify(await registry()) === "[]" && (await messages()) === 0, "the dry run wrote the registry or a message");
     const carried = await bin("kernel-enrol", [...carryArgs, "--solicited", "--live"]);
     show(carried);
-    expect(carried.status === 0 && /enrolled: 1/.test(carried.stdout), `kernel-enrol --list --solicited --live: ${carried.stdout.trim().split("\n").pop()}`);
+    expect(carried.status === 0 && enrolled(carried.stdout) === 1, `kernel-enrol --list --solicited --live: ${carried.stdout.trim().split("\n").pop()}`);
+    const carriedRow = await runOf(carried.stdout);
+    expect(carriedRow?.status === "succeeded" && carriedRow?.dry_run === false, `the live run reads ${JSON.stringify(carriedRow)}`);
+    expect(JSON.stringify(await registry()) === JSON.stringify([{ state: "enrolled", n: 1 }]), `the registry reads ${JSON.stringify(await registry())}`);
     const carriedAgain = await bin("kernel-enrol", [...carryArgs, "--solicited", "--live"]);
-    expect(carriedAgain.status === 0 && /enrolled: 0/.test(carriedAgain.stdout) && /skipped, duplicate: 1/.test(carriedAgain.stdout), "a replayed enrolment from the list enrolled someone again");
+    expect(
+      carriedAgain.status === 0 && enrolled(carriedAgain.stdout) === 0 && /already enrolled in this sequence, by the registry/.test(carriedAgain.stdout),
+      "a replayed enrolment from the list enrolled someone again, or was not answered from the registry",
+    );
     const crossed = (
       await client.query(
         "select m.key, m.subject, m.body, m.unsolicited, e.state from relations.message m join acquisition.draft d on m.key = 'acquisition.draft:' || d.id join acquisition.enrolment e on e.person_id = d.person_id and e.sequence_key = 'follow-up'",
@@ -502,11 +460,11 @@ try {
     // run is not.
     step("enrol, after an erasure: refused live, a dry run still read");
     const runs = await count("core.run");
-    const afterLive = await bin("kernel-enrol", [...enrolArgs, "--live"]);
+    const afterLive = await bin("kernel-enrol", [...carryArgs, "--solicited", "--live"]);
     show(afterLive);
     expect(afterLive.status === 1 && /an erasure has run on this instance/.test(afterLive.stdout), `kernel-enrol --live after an erasure: ${afterLive.stdout.trim()}`);
     expect((await count("core.run")) === runs, "the refused live run opened a run");
-    const afterDry = await bin("kernel-enrol", enrolArgs);
+    const afterDry = await bin("kernel-enrol", [...carryArgs, "--solicited"]);
     expect(afterDry.status === 0 && /dry run/.test(afterDry.stdout), `kernel-enrol dry after an erasure: ${afterDry.stdout.trim()}`);
   }
   await client.end();

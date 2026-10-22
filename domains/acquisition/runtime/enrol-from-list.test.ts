@@ -312,8 +312,9 @@ describe("an enrolment from a list carries the kernel's messages (0064)", { skip
 
   it("still reads protection, the objection and the list's companies: a list is a selection, never a permission (0037)", async () => {
     const ada = await aPerson("ada@example.com", "example.com");
-    const bo = await aPerson("bo@client.example.org", "client.example.org");
-    const cy = await aPerson("cy@example.net", "example.net", true);
+    // Bo's address is on another domain than the protected company's: only the company protects him.
+    const bo = await aPerson("bo@mail.example.net", "client.example.org");
+    const cy = await aPerson("cy@example.com", "example.com", true);
     const companyOnly = (await one("insert into relations.company (name, domain) values ('lone', 'lone.example.com') returning id")).id as string;
     const { experimentId, templates } = await aCampaign([{ personId: ada }, { personId: bo }, { personId: cy }, { companyId: companyOnly }]);
     for (const p of [ada, bo]) await drafted(experimentId, p, templates);
@@ -321,6 +322,12 @@ describe("an enrolment from a list carries the kernel's messages (0064)", { skip
     const r = await run(request(experimentId));
     assert.deepEqual(world.enrolments.map((e) => emailOf(e.person)), ["ada@example.com"]);
     assert.deepEqual((await skipsOf(r.runId)).map(([reason]) => reason), ["opted_out", "protected", "unreachable"]);
+  });
+
+  it("takes its people from the list alone: no sourcing run, no query", async () => {
+    const { experimentId } = await aCampaign([]);
+    await assert.rejects(run(request(experimentId, {}, { query: { limit: 5 } })), /an enrolment from a list takes its people from the list alone/);
+    await assert.rejects(run(request(experimentId, {}, { fromSourcingRun: "00000000-0000-4000-8000-000000000000" })), /an enrolment from a list takes its people from the list alone/);
   });
 
   it("keeps one message per draft when replayed, and enrols the person once", async () => {

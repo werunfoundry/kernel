@@ -65,7 +65,7 @@ import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequence
 import { readDeclaration, remainingOf } from "../contracts/sequencer.js";
 import type { TargetCompany, TargetList } from "../contracts/target-list.js";
 import { draft, enrolment, enrolmentSkip, template } from "../db/schema.js";
-import { readAcknowledged } from "./acknowledge.js";
+import { readAcknowledged, readAcknowledgedAccounts } from "./acknowledge.js";
 import { messageKey } from "./draft.js";
 import type { ProtectedStop } from "./protected.js";
 import { stopProtected } from "./protected.js";
@@ -157,6 +157,12 @@ export interface EnrolReport {
    * often as this or `kernel-stop-protected` runs (`PROMISE`).
    */
   protectedStop?: ProtectedStop;
+  /**
+   * The protected accounts known by the source's own identifier alone that a
+   * person acknowledged as unmatched (0068): the run went on, and could
+   * protect nobody at them. Absent when the run stopped before reading them.
+   */
+  unmatched?: { externalId: string; name?: string }[];
   enrolled: Enrolled[];
   /**
    * People a previous run wrote to the registry and died before confirming,
@@ -469,6 +475,24 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     report.protectedStop = await stopProtected({ db: deps.db, registry: deps.registry }, protection, ctx);
     if (report.protectedStop.refused.length > 0) {
       throw new Stop(`enrolments already running at protected accounts could not all be stopped, so nobody new is enrolled (decision 0057): ${report.protectedStop.refused.join("; ")}`);
+    }
+
+    /* 1c. What no company on record can be matched against (0068) ------ */
+
+    // An account the protected set knows by the source's own identifier
+    // alone protects a candidate of the target list, and no company on
+    // record: the list's people come from `relations`, which does not carry
+    // that identifier. Which of this run's people work there cannot be said,
+    // so the whole run stops — after the stop above, which reached what it
+    // could — until a person names each such account as unmatched. A new one
+    // stops it again: nothing acknowledges what it does not name.
+    const named = await readAcknowledgedAccounts(deps.db);
+    const unnamed = protection.bySourceIdOnly.filter((a) => !named.has(a.externalId));
+    report.unmatched = protection.bySourceIdOnly.filter((a) => named.has(a.externalId));
+    if (unnamed.length > 0) {
+      throw new Stop(
+        `protection unavailable: ${unnamed.length} protected account${unnamed.length === 1 ? " is" : "s are"} known by the target list's own identifier alone, which no company on record carries, so nobody on this list can be matched against ${unnamed.length === 1 ? "it" : "them"}, and nobody has acknowledged ${unnamed.length === 1 ? "it" : "them"} as unmatched (decision 0068): ${unnamed.map((a) => `${a.externalId}${a.name ? ` (${a.name})` : ""}`).join("; ")}`,
+      );
     }
 
     /* 2. Capacity, known before the first enrolment, or not checked ---- */

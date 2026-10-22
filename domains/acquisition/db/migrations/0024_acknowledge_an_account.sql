@@ -1,0 +1,4 @@
+ALTER TABLE "acquisition"."protection_acknowledgement" ALTER COLUMN "customer_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "acquisition"."protection_acknowledgement" ADD COLUMN "account_id" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "protection_acknowledgement_account_standing_uidx" ON "acquisition"."protection_acknowledgement" USING btree ("account_id") WHERE "acquisition"."protection_acknowledgement"."withdrawn_at" is null;--> statement-breakpoint
+ALTER TABLE "acquisition"."protection_acknowledgement" ADD CONSTRAINT "protection_acknowledgement_names_one_check" CHECK (("acquisition"."protection_acknowledgement"."customer_id" is null) <> ("acquisition"."protection_acknowledgement"."account_id" is null));

@@ -84,6 +84,13 @@ export interface ProtectedStop {
   refused: string[];
   /** Whether `protection_held` was written: a live act that met no refusal. */
   held: boolean;
+  /**
+   * Protected accounts known by the source's own identifier alone (0068): the
+   * registry records no such identifier for any company, so an enrolment at
+   * one of them, if there is one, is not found and keeps running. Named, and
+   * not a refusal: refusing would stop nobody else either.
+   */
+  unreached: { externalId: string; name?: string }[];
 }
 
 /** The company the registry recorded, as protection judges a candidate (0024). */
@@ -114,7 +121,7 @@ const covered = (host: string, domains: string[]) => domains.some((d) => host ==
  * that a run reads it once.
  */
 export async function stopProtected(deps: { db: Database; registry: Registry }, protection: Protection, ctx: CallContext): Promise<ProtectedStop> {
-  const out: ProtectedStop = { protectedAsOf: protection.asOf, accounts: protection.accounts, stops: [], suppressions: [], refused: [], held: false };
+  const out: ProtectedStop = { protectedAsOf: protection.asOf, accounts: protection.accounts, stops: [], suppressions: [], refused: [], held: false, unreached: protection.bySourceIdOnly };
 
   // Every enrolment a provider may still be sending for. Both states, as
   // 0060 has it: a pending row may be held at the provider all the same.
@@ -332,6 +339,11 @@ export function describeStop(act: ProtectedStop, dryRun: boolean, startedAt?: Da
   if (act.stops.length === 0) lines.push("  no running enrolment is at a protected account");
   for (const s of act.stops) lines.push(`  ${s.state} enrolment ${s.enrolment} in "${s.sequenceKey}" — ${s.why}: ${s.outcome}`);
   for (const s of act.suppressions) lines.push(`  suppression of ${s.target} through ${s.through}: ${s.outcome}`);
+  if (act.unreached.length > 0) {
+    lines.push(
+      `  not reached: ${act.unreached.length} protected account${act.unreached.length === 1 ? "" : "s"} known by the target list's own identifier alone, which the registry records for no company — an enrolment at ${act.unreached.length === 1 ? "it" : "them"} is not found, and keeps running (decision 0068): ${act.unreached.map((a) => `${a.externalId}${a.name ? ` (${a.name})` : ""}`).join("; ")}`,
+    );
+  }
   if (dryRun) lines.push("  a dry run: nothing was written, and the promise is not recorded as held");
   else if (act.held) lines.push(`  the promise held as of ${act.protectedAsOf}, recorded in acquisition.protection_held`);
   else lines.push("  the promise did not hold: nothing recorded in acquisition.protection_held");

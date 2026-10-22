@@ -1,5 +1,9 @@
 # 0034 — An uncovered customer stops the run until a person acknowledges it
 
+> Completed by [0068](0068-an-account-no-company-on-record-can-match-stops-the-enrolment-until-named.md): an
+> acknowledgement may name an account the enrolment cannot match, one by
+> one.
+
 Completes [0033](0033-protection-matches-the-company-id-and-is-not-an-identity.md),
 which left an account with no key stopping every run.
 

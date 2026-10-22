@@ -188,6 +188,11 @@ async function main(): Promise<number> {
         for (const u of p.uncovered) console.log(`      - ${u.customerId}${u.name ? ` (${u.name})` : ""}: ${u.rows} row${u.rows === 1 ? "" : "s"}, no key`);
       }
     }
+    // Known by the target list's own identifier alone, and acknowledged (0068).
+    if (report.unmatched && report.unmatched.length > 0) {
+      console.log(`    ! matched by no company on record, acknowledged as unmatched: ${report.unmatched.length}`);
+      for (const u of report.unmatched) console.log(`      - ${u.externalId}${u.name ? ` (${u.name})` : ""}`);
+    }
     // What the run's start did to enrolments already running at protected
     // accounts (0057) — and what that is not.
     if (report.protectedStop) {

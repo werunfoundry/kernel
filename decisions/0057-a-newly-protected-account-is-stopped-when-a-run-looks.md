@@ -15,6 +15,10 @@
 > Not reached: a company protected only by the target list's own identifier,
 > which the registry does not record.
 
+> Completed by [0068](0068-an-account-no-company-on-record-can-match-stops-the-enrolment-until-named.md): the
+> stop names each account known by the target list's own identifier alone,
+> which it cannot reach.
+
 Completes [0004](0004-protection-is-its-own-route.md), whose promise that
 a newly protected account is withdrawn from running sequences nothing
 keeps; and [0051](0051-a-sequencer-says-what-it-cannot-do-and-proves-what-it-did.md),

@@ -82,11 +82,14 @@ reaches them, and a sequencer that pulls what it sent; the touches pull
 records each step as a touch. The enrolment without messages is removed:
 nothing reaches a person past the message gate (0050, defects 1 and 2).
 
-**Withdrawing someone whose account becomes protected later.** The protected
-set is read whole and fresh before anyone is enrolled (0019). `suppress`
-exists on every sequencer (0014), but nothing yet calls it when an account
-becomes protected after enrolment. The registry (0026) is what makes it
-answerable: it records the company each person was enrolled through.
+**Withdrawing someone whose account becomes protected later.** Every
+enrolment run, and `kernel-stop-protected` on the instance's schedule,
+suspends the enrolments running at an account protection now excludes
+(0057), found by the company the registry recorded (0026). It cannot find
+one at an account the protected set knows by the target list's own
+identifier alone: the registry records no such identifier. It names those
+accounts each time, and an enrolment there keeps running until a person
+stops it at the provider (0068).
 
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
@@ -148,7 +151,11 @@ either enough (0033), and are counted by customer. A customer with no key on
 any of its rows is protected by nothing: it stops every run, naming itself,
 until a person acknowledges it with `kernel-acknowledge` — and every run then
 says it is uncovered (0034). Giving it a key upstream is the fix; the
-acknowledgement only makes the hole visible and owned.
+acknowledgement only makes the hole visible and owned. The same holds, for
+the enrolment, of an account known by the target list's own identifier
+alone: no company on record carries it, so it stops every enrolment until a
+person names it with `kernel-acknowledge --account`, one account at a time
+(0068).
 
 #### The objects phase 3 was going to build — what exists, and what is not wired
 

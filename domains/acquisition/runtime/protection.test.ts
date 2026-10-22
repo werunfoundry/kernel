@@ -236,3 +236,23 @@ describe("a domain is matched by its ancestors, and what is not a host fails clo
     ]);
   });
 });
+
+describe("an account known by the source's own identifier alone (0068)", () => {
+  const bySource = (externalId: string, more: Partial<ProtectedAccount> = {}): ProtectedAccount => ({ externalId, reason: "customer", ...more });
+
+  it("is listed, once, with its name, and still matched against a candidate that carries the identifier", async () => {
+    const p = await read([bySource("acct-7", { name: "Seven" }), bySource("acct-7"), account({ domain: "client.example.com" })]);
+    assert.deepEqual(p.bySourceIdOnly, [{ externalId: "acct-7", name: "Seven" }]);
+    assert.equal(p.company({ externalId: "acct-7", domain: "renamed.example.org", attributes: {} }), true);
+  });
+
+  it("is not listed when the account also carries a domain or a company id: those match a company on record", async () => {
+    const p = await read([bySource("acct-1", { domain: "one.example.com" }), bySource("acct-2", { identity: byId("42") })]);
+    assert.deepEqual(p.bySourceIdOnly, []);
+  });
+
+  it("is not listed when another row carries the same identifier beside a domain", async () => {
+    const p = await read([bySource("acct-3"), bySource("acct-3", { domain: "three.example.com" })]);
+    assert.deepEqual(p.bySourceIdOnly, []);
+  });
+});

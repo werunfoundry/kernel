@@ -39,7 +39,7 @@ import { constituteList } from "@werunfoundry/relations/runtime/list";
 import type { CapacityLimit, Sequencer, SequencerDeclaration } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetList } from "../contracts/target-list.js";
 import type { EnrolRequest } from "./enrol.js";
-import { acknowledgeUncovered, withdrawAcknowledgement } from "./acknowledge.js";
+import { acknowledge, acknowledgeUncovered, withdraw, withdrawAcknowledgement } from "./acknowledge.js";
 import { approve, propose } from "./draft.js";
 import { CannotSuspend, enrol, ErasedWithoutRegister } from "./enrol.js";
 
@@ -816,6 +816,48 @@ describe("an uncovered customer", { skip: base ? false : "TEST_DATABASE_URL is n
     await withdrawAcknowledgement(db, { customerId: "cust-z", by: "an operator" });
     const withdrawn = await run({ dryRun: true });
     assert.equal(withdrawn.status, "failed");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* An account known by the target list's own identifier alone (0068)          */
+/* -------------------------------------------------------------------------- */
+
+describe("an account known by the target list's own identifier alone (0068)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  // The only row beside the default protected domain: whatever stops the run
+  // is this account, never the rest of the fixture.
+  const seven: ProtectedAccount = { externalId: "acct-7", name: "Seven", reason: "open_opportunity" };
+
+  it("stops the run, enrolling nobody and naming the account, once the stop of what runs has reached what it could", async () => {
+    world.protected.push(seven);
+    const r = await run();
+    assert.equal(r.status, "failed");
+    assert.match(r.stoppedBy ?? "", /^protection unavailable: 1 protected account is known by the target list's own identifier alone.*\(decision 0068\): acct-7 \(Seven\)$/);
+    assert.equal(world.enrolCalls, 0, "an enrolment was attempted");
+    assert.deepEqual(held(), []);
+    assert.ok(r.protectedStop, "the run stopped before stopping what already runs");
+    assert.deepEqual(r.protectedStop.unreached, [{ externalId: "acct-7", name: "Seven" }]);
+    assert.equal((await row(r.runId)).status, "failed");
+  });
+
+  it("goes on once a person names it, says so, and stops again for each account not named", async () => {
+    world.protected.push(seven);
+    await acknowledge(db, { accountId: "acct-7", note: "known upstream by its id alone; reviewed", by: "an operator" });
+    const named = await run({ dryRun: true });
+    assert.equal(named.status, "succeeded", named.stoppedBy);
+    assert.deepEqual(named.unmatched, [{ externalId: "acct-7", name: "Seven" }]);
+    assert.equal(named.enrolled.length, 2);
+
+    // A new one, in the same form: not covered by the first acknowledgement.
+    world.protected.push({ externalId: "acct-8", reason: "customer" });
+    const another = await run({ dryRun: true });
+    assert.equal(another.status, "failed");
+    assert.match(another.stoppedBy ?? "", /\(decision 0068\): acct-8$/);
+
+    await withdraw(db, { accountId: "acct-7", by: "an operator" });
+    world.protected.pop();
+    const withdrawn = await run({ dryRun: true });
+    assert.match(withdrawn.stoppedBy ?? "", /\(decision 0068\): acct-7 \(Seven\)$/);
   });
 });
 

@@ -18,6 +18,10 @@
 > the kernel's own enrolments, and the second refusal (section 6). The
 > enrolment without messages still stands, uncapped.
 
+> Built by #135, in part: the enrolment without messages is removed
+> (section 1); `enrol` takes its people from a sealed list alone. `enrol`
+> still names a channel.
+
 > Completed by [0065](0065-the-kernel-writes-what-is-delivered-and-every-message-says-how-to-stop.md):
 > the kernel writes the form the provider delivers, adds a way out to every
 > body by default, records a cut on the enrolment, and serves no link of

@@ -52,6 +52,8 @@ const state = {
   hang: false,
   /** When set, the next lead lookup finds nothing — a read that loses a race. */
   missNextList: false,
+  /** The campaign's `sequences`, as its read returns them. */
+  sequences: undefined as unknown,
 };
 let seen: Seen[] = [];
 /** Requests left unanswered on purpose; closed once their test is over. */
@@ -89,7 +91,7 @@ before(async () => {
     const p = url.pathname;
     if (req.method === "GET" && p === "/api/v2/campaigns") return reply(200, { items: [{ id: "c1" }] });
     if (req.method === "GET" && p.startsWith("/api/v2/campaigns/")) {
-      return p.endsWith("/c1") ? reply(200, { id: "c1", status: 1 }) : reply(404, { message: "not found" });
+      return p.endsWith("/c1") ? reply(200, { id: "c1", status: 1, ...(state.sequences !== undefined ? { sequences: state.sequences } : {}) }) : reply(404, { message: "not found" });
     }
     if (req.method === "POST" && p === "/api/v2/leads/list") {
       if (state.missNextList) {
@@ -173,6 +175,7 @@ beforeEach(() => {
   state.blocklist = [];
   state.forceStatus = 0;
   state.missNextList = false;
+  state.sequences = undefined;
   state.moveDoesNothing = false;
   state.addDoesNothing = false;
   state.blockDoesNothing = false;
@@ -450,7 +453,7 @@ describe("what it declares (decision 0051)", () => {
       assert.equal(s.gap.known, false, "a gap nobody measured is declared as a number");
       assert.equal(s.notTheLeastDestructive, undefined);
     }
-    assert.deepEqual([a.declares!.pullTouches.serves, a.declares!.pullUnsubscribes.serves], ["no", "partially"]);
+    assert.deepEqual([a.declares!.pullTouches.serves, a.declares!.pullUnsubscribes.serves, a.declares!.readSteps?.serves], ["no", "partially", "yes"]);
     assert.equal(readDeclaration(a).suspends, true);
     assert.deepEqual(seen, []);
   });
@@ -533,6 +536,55 @@ describe("the unsubscribes pull (decision 0051, verb 4)", () => {
     state.forceStatus = 500;
     const r = await adapter().pullUnsubscribes!(ctx(true));
     assert.equal(r.ok, false);
+  });
+});
+
+describe("reading a sequence's steps (decision 0064)", () => {
+  const v = (subject: string, body: string, off = false) => ({ subject, body, ...(off ? { v_disabled: true } : {}) });
+
+  it("reads each step's channel, its delay after the one before, and the variable it renders, and writes nothing", async () => {
+    state.sequences = [
+      {
+        steps: [
+          { type: "email", delay: 2, delay_unit: "days", variants: [v("{{engine_subject_1}}", "{{ engine_body_1 }}")] },
+          { type: "email", delay: 90, delay_unit: "minutes", variants: [v("", "{{engine_body_2}}"), v("x", "y", true)] },
+          { type: "email", delay: 1, variants: [v("Re: hello", "Hello {{firstName}}"), v("", "{{engine_body_3}}")] },
+        ],
+      },
+    ];
+    const r = await adapter().readSteps!("welcome", ctx(false));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.deepEqual(r.value.steps, [
+      { step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, variants: 1 },
+      { step: 2, channel: "email", afterPreviousMinutes: 2 * 24 * 60, subject: null, body: { variable: "engine_body_2" }, variants: 1 },
+      { step: 3, channel: "email", afterPreviousMinutes: 90, subject: { written: "text of its own" }, body: { written: "text of its own" }, variants: 2 },
+    ]);
+    assert.equal(r.value.sequenceKey, "welcome");
+    assert.deepEqual(writes(), []);
+  });
+
+  it("reads a delay with no unit in days, as the API's schema has it", async () => {
+    state.sequences = [{ steps: [{ type: "email", delay: 3, variants: [v("", "{{a}}")] }, { type: "email", delay: 0, variants: [v("", "{{b}}")] }] }];
+    const r = await adapter().readSteps!("welcome", ctx(true));
+    assert.ok(r.ok && r.value.steps[1]!.afterPreviousMinutes === 3 * 24 * 60, JSON.stringify(r));
+  });
+
+  it("is an error, not a guess, for a delay it cannot read", async () => {
+    state.sequences = [{ steps: [{ type: "email", delay: 3, delay_unit: "weeks", variants: [v("", "{{a}}")] }, { type: "email", variants: [v("", "{{b}}")] }] }];
+    const r = await adapter().readSteps!("welcome", ctx(true));
+    assert.ok(!r.ok && r.error.code === "unknown" && /step 1 of "welcome" gives no delay this adapter can read/.test(r.error.message), JSON.stringify(r));
+  });
+
+  it("is an error for a campaign that does not read one sequence", async () => {
+    state.sequences = [];
+    const r = await adapter().readSteps!("welcome", ctx(true));
+    assert.ok(!r.ok && /reads 0 sequences; this adapter reads one/.test(r.error.message), JSON.stringify(r));
+  });
+
+  it("refuses a sequence with no campaign mapped, before calling anyone", async () => {
+    const r = await adapter().readSteps!("unmapped", ctx(true));
+    assert.ok(!r.ok && r.error.code === "invalid");
+    assert.deepEqual(seen, []);
   });
 });
 

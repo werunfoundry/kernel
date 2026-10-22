@@ -52,7 +52,13 @@ closer was tried. Pulling the touches: not served, not built yet. Pulling
 the unsubscribes: served partially, only the bound campaigns', each dated
 by the lead's last update (*Unsubscribes*, below). A reply asking to stop:
 not classed as an unsubscribe, as measured on 2026-10-22 (*The throwaway
-campaign of 2026-10-22*). A binding with a sequence that has no parking subsequence
+campaign of 2026-10-22*). Reading a sequence's steps (0064): served, from
+the campaign's read (`GET /api/v2/campaigns/{id}`). A step's `delay` is,
+by the API's schema, "the delay value before sending the NEXT email", in
+`delay_unit`, days when absent: so a step leaves after the previous one by
+the previous one's delay. That is the schema's word, not a measure; the
+one run with two steps saw them about 26 minutes apart for a delay of 20.
+A binding with a sequence that has no parking subsequence
 declares that it cannot suspend, and `kernel-enrol` refuses it.
 
 Before 0051, `withdraw` deleted the lead and reported success on the status

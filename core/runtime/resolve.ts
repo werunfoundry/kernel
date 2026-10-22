@@ -42,6 +42,12 @@ export interface ResolvedAdapter {
    * does not find keys (decision 0030).
    */
   finds: readonly string[];
+  /**
+   * The binding's settings, as the manifest gives them (decision 0069): for
+   * the domain that declared each key to read. The adapter is never handed
+   * them, and the core reads none.
+   */
+  settings: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   /** Its position in the manifest's `providers`, for messages. */
   index: number;
 }
@@ -286,6 +292,7 @@ async function build(
       adapter: adapter as Contract,
       channels: binding.channels ?? serves ?? [],
       finds: binding.finds ?? finds ?? [],
+      settings: Object.freeze({ ...binding.settings }),
       index,
     },
   };

@@ -302,6 +302,48 @@ describe("booting an instance", () => {
     });
   });
 
+  describe("a binding's settings (0069)", () => {
+    /** An adapter that keeps what its factory was handed, to show it. */
+    const telling = 'export default (init) => ({ provider: "fixture", channels: ["email"], handed: Object.keys(init).sort(), options: init.options });\n';
+    const withSettings = (contract: string, settings: string) =>
+      instance({
+        "manifest.yaml": manifest(["enabledDomains: [relations, acquisition]", "providers:", `  - { contract: ${contract}, adapter: ./adapters/a.mjs, env: [], options: { o: 1 }, settings: ${settings} }`]),
+        "adapters/a.mjs": telling,
+      });
+
+    it("loads a setting a domain declares for the contract, for the domain to read, and never hands it to the adapter", async () => {
+      const r = await boot({ root: withSettings("sequencer", '{ acquisition: { wayOut: { line: "To stop: {link}" } } }'), env: ENV });
+      assert.equal(r.ok, true, JSON.stringify(r.issues));
+      if (!r.ok) return;
+      const [bound] = r.registry.list();
+      assert.deepEqual(bound!.settings, { acquisition: { wayOut: { line: "To stop: {link}" } } });
+      const adapter = bound!.adapter as unknown as { handed: string[]; options: Record<string, unknown> };
+      assert.deepEqual(adapter.handed, ["env", "options"]);
+      assert.deepEqual(adapter.options, { o: 1 });
+    });
+
+    it("refuses, under an enabled domain, a key it does not declare, or declares for another contract", async () => {
+      const undeclared = await boot({ root: withSettings("sequencer", "{ acquisition: { tone: warm } }"), env: ENV });
+      assert.match(messages(undeclared).join("\n"), /providers\.0\.settings\.acquisition\.tone "acquisition" declares no setting "tone" for a "sequencer" binding/);
+      const elsewhere = await boot({ root: withSettings("crm", "{ acquisition: { wayOut: cut } }"), env: ENV });
+      assert.match(messages(elsewhere).join("\n"), /"acquisition" declares no setting "wayOut" for a "crm" binding/);
+    });
+
+    // A domain disabled with its settings left in the manifest is not a lock.
+    it("boots with the settings of a domain that is not enabled, warns of them, and reads none", async () => {
+      const root = instance(
+        {
+          "manifest.yaml": manifest(["enabledDomains: [relations]", "providers:", "  - { contract: crm, adapter: ./adapters/a.mjs, env: [], settings: { acquisition: { wayOut: cut } } }"]),
+          "adapters/a.mjs": ADAPTER,
+        },
+        ["relations"],
+      );
+      const r = await boot({ root, env: ENV });
+      assert.equal(r.ok, true, JSON.stringify(r.issues));
+      assert.match(messages(r).join("\n"), /providers\.0\.settings\.acquisition "acquisition" is not enabled: these settings are read by nobody/);
+    });
+  });
+
   describe("a contract bound in sequence, by what it finds (0030)", () => {
     /** An adapter that finds the given key kinds. */
     const finding = (provider: string, ...kinds: string[]) =>

@@ -57,6 +57,16 @@ export interface DomainManifest {
   truthKinds?: string[];
 
   /**
+   * The settings an instance may put on a binding of a contract this domain
+   * reads, beside the adapter's options (decision 0069). The core loads
+   * them, refuses a key no enabled domain declares for that contract, and
+   * reads none of them: the declaring domain does, and the adapter is never
+   * handed them. What a value means, and whether it is well formed, is the
+   * domain's.
+   */
+  bindingSettings?: BindingSettingDeclaration[];
+
+  /**
    * The keys that name the subjects this domain owns (decision 0013). A kind
    * is declared by one domain only: two needing it is the signal it moves
    * down.
@@ -106,6 +116,13 @@ export interface DomainManifest {
    * whether its bound sources can measure it.
    */
   experimentMetrics?: Record<string, string[]>;
+}
+
+export interface BindingSettingDeclaration {
+  /** The contract whose bindings may carry it. */
+  contract: string;
+  /** The key under the binding's `settings`. */
+  key: string;
 }
 
 export interface MetricDeclaration {
@@ -162,6 +179,14 @@ export interface ProviderBinding {
   /** Names of environment variables. Values live in the environment. */
   env: string[];
   options?: Record<string, string | number | boolean>;
+  /**
+   * Values a domain declared for this contract's bindings (decision 0069),
+   * under the domain's name, then by key: `settings.<domain>.<key>`. Not the
+   * adapter's: it is never handed them. The core checks the keys of enabled
+   * domains and nothing else; a domain not enabled is warned of and read by
+   * nobody, so disabling a domain never stops an instance from booting.
+   */
+  settings?: Record<string, Record<string, unknown>>;
   /**
    * The channels this binding takes (decision 0015). Defaults to every
    * channel the adapter declares. A contract may be bound more than once,

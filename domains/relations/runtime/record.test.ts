@@ -19,7 +19,7 @@ import { identityVocabulary, normalizeIdentity } from "@werunfoundry/core/identi
 import { loadDomain } from "@werunfoundry/core/manifest/load";
 import type { Database } from "@werunfoundry/core/runtime/run";
 
-import { findPerson, recordCompany, recordPerson, recordTouch } from "./record.js";
+import { findCompany, findPerson, recordCompany, recordPerson, recordTouch } from "./record.js";
 
 const base = process.env.TEST_DATABASE_URL;
 const database = `kernel_record_${process.pid}`;
@@ -125,6 +125,39 @@ describe("recordCompany", { skip: base ? false : "TEST_DATABASE_URL is not set" 
     const b = await recordCompany(db, company({ kind: "domain", value: "open.example.com" }, { kind: "social_company_id", value: "7", network: "net_a" }), { name: "Open" });
     assert.ok("id" in a && "id" in b && a.id === b.id);
     assert.deepEqual(await rows("select name, domain, external_id from relations.company"), [{ name: "open.example.com", domain: "open.example.com", external_id: "net_a:7" }]);
+  });
+
+  // #96, the defect #95 fixed in findPerson: a company is looked up by every
+  // key of each kind. The probe puts the matching key second; its control
+  // puts it first, and passed before the fix — the order alone is the cause.
+  const domain = (value: string) => ({ kind: "domain", value });
+  const id = (value: string, network = "net_a") => ({ kind: "social_company_id", value, network });
+
+  it("finds a company by any of the identity's keys, not the first of each kind (0013)", async () => {
+    const acme = await recordCompany(db, company(domain("acme.example.com"), id("42")));
+    assert.ok("id" in acme);
+    assert.deepEqual(await findCompany(db, company(domain("acme-group.example.org"), domain("Acme.example.com"))), { id: acme.id });
+    assert.deepEqual(await findCompany(db, company(id("7", "net_b"), id("42"))), { id: acme.id });
+  });
+
+  it("finds it with the matching key first, as before: the control of the probe above", async () => {
+    const acme = await recordCompany(db, company(domain("acme.example.com"), id("42")));
+    assert.ok("id" in acme);
+    assert.deepEqual(await findCompany(db, company(domain("acme.example.com"), domain("acme-group.example.org"))), { id: acme.id });
+  });
+
+  it("refuses to merge two recorded companies that each hold one of the keys, whatever their order", async () => {
+    await recordCompany(db, company(domain("one.example.com")));
+    await recordCompany(db, company(domain("two.example.com")));
+    const r = await findCompany(db, company(domain("one.example.com"), domain("two.example.com")));
+    assert.ok("conflict" in r && /two recorded companies/.test(r.conflict), JSON.stringify(r));
+  });
+
+  it("refuses a shared domain on a company with another immutable id: two companies, by 0013", async () => {
+    await recordCompany(db, company(domain("shared.example.com"), id("1")));
+    const r = await recordCompany(db, company(domain("other.example.org"), domain("shared.example.com"), id("2")));
+    assert.ok("conflict" in r && /another immutable id/.test(r.conflict), JSON.stringify(r));
+    assert.equal((await rows("select count(*)::int as n from relations.company"))[0].n, 1);
   });
 
   it("records a domain as its host, so two spellings are one company (decision 0028)", async () => {

@@ -11,8 +11,10 @@
  *   `external_id` as `<network>:<id>`, and each address, compared without
  *   case. Not the first of each: a person who opted out under the second
  *   address the source attests is that person.
- * - **A company** is found by its id on a network the same way, then by
- *   domain, compared without case.
+ * - **A company** is found the same way, by every key: each company id on a
+ *   network, and each domain, as the host it names (decision 0028). Not the
+ *   first of each: a company recorded under the second domain a source
+ *   attests is that company (#96, the defect #95 fixed for people).
  *
  * Two rows that each match one key, or a row whose immutable key differs from
  * the identity's, are two subjects by 0013's rule, and the answer is
@@ -58,24 +60,6 @@ function companyKeys(identity: Identity): { domain?: string; externalId?: string
   return { ...(domain ? { domain } : {}), ...(externalId ? { externalId } : {}) };
 }
 
-/** One row from either key, or the reason the two keys name two subjects. */
-function settle(
-  byImmutable: { id: string; externalId: string | null } | undefined,
-  byMutable: { id: string; externalId: string | null } | undefined,
-  externalId: string | undefined,
-  what: string,
-): Found {
-  if (byImmutable && byMutable && byImmutable.id !== byMutable.id) {
-    return { conflict: `the ${what}'s id and its other key name two recorded ${what === "person" ? "people" : "companies"}` };
-  }
-  const row = byImmutable ?? byMutable;
-  if (!row) return { none: true };
-  if (externalId && row.externalId && row.externalId !== externalId) {
-    return { conflict: `a recorded ${what} shares a key with this one and has another immutable id` };
-  }
-  return { id: row.id };
-}
-
 /**
  * Reads only: the recorded person for an identity, if there is one — found
  * by any of its keys, every one of them looked up. Two recorded people
@@ -106,13 +90,34 @@ export async function findPerson(db: Database, identity: Identity): Promise<Foun
   return { id: row.id };
 }
 
+/**
+ * Reads only: the recorded company for an identity, if there is one — found
+ * by any of its keys, every one of them looked up, as `findPerson` does. Two
+ * recorded companies reached by the keys of one identity are two subjects
+ * (0013), and the answer is `conflict`; so is a recorded company whose id on
+ * a network differs from the identity's on that network.
+ */
 export async function findCompany(db: Database, identity: Identity): Promise<Found> {
   const keys = companyKeys(identity);
   if ("refused" in keys) return { conflict: keys.refused };
-  const cols = { id: company.id, externalId: company.externalId };
-  const [byImmutable] = keys.externalId ? await db.select(cols).from(company).where(eq(company.externalId, keys.externalId)) : [];
-  const [byMutable] = keys.domain ? await db.select(cols).from(company).where(sql`lower(${company.domain}) = ${keys.domain}`) : [];
-  return settle(byImmutable, byMutable, keys.externalId, "company");
+  const domains = [...new Set(identity.keys.filter((k) => k.kind === "domain").map((k) => hostOfKey(k.value)).filter((d): d is string => d !== undefined))];
+  const ids = [
+    ...new Set(identity.keys.filter((k) => k.kind === "social_company_id" && k.network && k.value.trim() !== "").map((k) => `${k.network}:${k.value.trim()}`)),
+  ];
+  const reached = [
+    ...(ids.length ? [sql`${company.externalId} in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`] : []),
+    ...(domains.length ? [sql`lower(${company.domain}) in (${sql.join(domains.map((d) => sql`${d}`), sql`, `)})`] : []),
+  ];
+  const rows = await db.select({ id: company.id, externalId: company.externalId }).from(company).where(sql.join(reached, sql` or `));
+  if (rows.length === 0) return { none: true };
+  if (rows.length > 1) return { conflict: "the company's keys name two recorded companies" };
+  const row = rows[0]!;
+  // An immutable key of the same network that differs: another subject, whatever else is shared (0013).
+  const network = row.externalId?.split(":")[0];
+  if (row.externalId && ids.some((i) => i.split(":")[0] === network) && !ids.includes(row.externalId)) {
+    return { conflict: "a recorded company shares a key with this one and has another immutable id" };
+  }
+  return { id: row.id };
 }
 
 const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -130,6 +130,18 @@ describe("writing a message", { skip: base ? false : "TEST_DATABASE_URL is not s
     }
   });
 
+  it("cadence: judges no window behind for a message whose writer judged the cap ahead over its plan (0064 §3)", async () => {
+    const personId = await aPerson();
+    const cap = { max: 1, withinDays: 30 };
+    assert.ok((await writeMessage(db, register, input(personId, { unsolicited: true, cap }))).ok);
+    // Past the cap behind: refused as a message on its own…
+    assert.match((await refusal(writeMessage(db, register, input(personId, { unsolicited: true, cap }))))[0]!, /^cadence: /);
+    // …written as one step of a plan whose cap was judged ahead, with no other check lifted.
+    assert.ok((await writeMessage(db, register, input(personId, { unsolicited: true, cadence: "judged_ahead" }))).ok);
+    await client.query("update relations.person set opted_out_at = now() where id = $1", [personId]);
+    assert.deepEqual(await refusal(writeMessage(db, register, input(personId, { unsolicited: true, cadence: "judged_ahead" }))), ["consent: the person opted out"]);
+  });
+
   it("cadence: refuses an unsolicited message with no cap", async () => {
     const [r] = await refusal(writeMessage(db, register, input(await aPerson(), { unsolicited: true })));
     assert.match(r!, /needs a cap/);

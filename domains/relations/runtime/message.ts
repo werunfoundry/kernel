@@ -15,9 +15,10 @@
  *   answer. The objection is global today, so it refuses every message,
  *   solicited or not, until consent is per purpose;
  * - **cadence** — an unsolicited message with no cap given (there is no
- *   default), or past it. The cap reads touches (decision 0050): the
- *   unsolicited outbound touches to the person inside the cap's window,
- *   whoever recorded them, plus the unsolicited messages inside it that no
+ *   default), or past it — unless its writer judged the cap ahead over the
+ *   whole plan the message belongs to (0064 §3), as an enrolment does. The
+ *   cap reads touches (decision 0050): the unsolicited outbound touches to
+ *   the person inside the cap's window, whoever recorded them, plus the unsolicited messages inside it that no
  *   touch names yet — handed over and not confirmed, which count rather than
  *   let a second through. A message and its touch count once. A solicited
  *   message is never held back by a cadence;
@@ -54,6 +55,15 @@ export interface MessageInput {
   unsolicited: boolean;
   /** Required when unsolicited: at most `max` unsolicited messages to the person in `withinDays`. */
   cap?: { max: number; withinDays: number };
+  /**
+   * `judged_ahead`: the writer judged the cap over the whole plan this
+   * message belongs to, before writing it (decision 0064 §3) — an enrolment
+   * writes every step's message at once, and steps leave over weeks. The
+   * gate then judges no window behind for it: counting a message for the
+   * fifth step as if it left today would refuse a plan the cap allows.
+   * Every other check stands.
+   */
+  cadence?: "judged_ahead";
   experimentId?: string;
   /** A person's name, `lane:autonomous` or `lane:reactive`. Required when the writer is not a person. */
   approvedBy?: string;
@@ -81,7 +91,7 @@ export async function writeMessage(db: Database, fingerprints: Fingerprinter, in
     if (objection.answer === "cannot_answer") refused.push(`consent: cannot answer whether the person objected — ${objection.why}`);
     if (objection.answer === "objected") refused.push(objection.by === "record" ? "consent: the person opted out" : "consent: the person objected before an erasure, and the register holds it");
 
-    if (input.unsolicited) {
+    if (input.unsolicited && input.cadence !== "judged_ahead") {
       const cap = input.cap;
       if (!cap || !Number.isInteger(cap.max) || cap.max < 0 || !(cap.withinDays > 0)) {
         refused.push("cadence: an unsolicited message needs a cap — a count and a window — and there is no default");

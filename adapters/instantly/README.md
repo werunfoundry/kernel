@@ -48,8 +48,10 @@ What it declares (0051): enrolment served; suspension served by parking,
 costing the person `provider_status_stays_active` and the sequence
 `shared_state_changes`, with its gap **unknown**: in the test above,
 suspensions made 18 minutes or more before a due step held, and nothing
-closer was tried. Pulling the touches: not served, not built yet. Pulling
-the unsubscribes: served partially, only the bound campaigns', each dated
+closer was tried. Pulling the touches: served partially, only the bound
+campaigns' sends, read back an hour behind the cursor because the record
+lists a send late (*Pulling what was sent*, *The way out, written after the
+upload*). Pulling the unsubscribes: served partially, only the bound campaigns', each dated
 by the lead's last update (*Unsubscribes*, below). A reply asking to stop:
 not classed as an unsubscribe, as measured on 2026-10-22 (*The throwaway
 campaign of 2026-10-22*). Reading a sequence's steps (0064): served, from

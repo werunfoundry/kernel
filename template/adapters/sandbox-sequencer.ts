@@ -7,7 +7,7 @@
 import type { AdapterFactory, CallResult } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 import { hostOf } from "@werunfoundry/core/identity";
-import type { EnrolmentStatus, Sequencer, Withdrawal } from "@werunfoundry/acquisition/contracts/sequencer";
+import type { EnrolmentStatus, SequenceStep, Sequencer, Withdrawal } from "@werunfoundry/acquisition/contracts/sequencer";
 
 import { loadState, saveState, stateFile } from "./sandbox-store.ts";
 
@@ -46,11 +46,34 @@ export const sequencerOn = (store: SandboxStore = { load: loadState, save: saveS
         gap: { known: true, minutes: 0, basis: "by construction: the sandbox sends nothing, and the deletion is synchronous", measuredOn: "2026-10-20" },
       },
       pullUnsubscribes: { serves: "no", why: "nobody can unsubscribe from the sandbox" },
+      readSteps: { serves: "yes" },
     },
 
     async probe(): Promise<CallResult<void>> {
       const state = loadState(path);
       return state.ok ? { ok: true, value: undefined } : state;
+    },
+
+    /**
+     * Decision 0064's steps verb. A sequence's steps are the binding's
+     * option `steps.<sequenceKey>`: the days each waits after the one
+     * before, comma-separated, the first 0 — one step when absent. Each
+     * renders `engine_body_<n>`, and the first `engine_subject_<n>` too:
+     * the later ones go as replies in the thread.
+     */
+    async readSteps(sequenceKey) {
+      const option = options[`steps.${sequenceKey}`];
+      const days = (typeof option === "string" ? option : String(option ?? "0")).split(",").map((d) => Number(d.trim()));
+      if (days.some((d) => !Number.isInteger(d) || d < 0)) return invalid(`steps.${sequenceKey} is not a list of whole days: "${String(option)}"`);
+      const steps: SequenceStep[] = days.map((d, i) => ({
+        step: i + 1,
+        channel: "email",
+        afterPreviousMinutes: d * 24 * 60,
+        subject: i === 0 ? { variable: `engine_subject_${i + 1}` } : null,
+        body: { variable: `engine_body_${i + 1}` },
+        variants: 1,
+      }));
+      return { ok: true, value: { sequenceKey, steps, asOf: new Date().toISOString() } };
     },
 
     async enrol(e, ctx): Promise<CallResult<EnrolmentStatus>> {
@@ -71,7 +94,7 @@ export const sequencerOn = (store: SandboxStore = { load: loadState, save: saveS
         return { ok: true, value: { state: "active", sequenceKey: e.sequenceKey, channel: "email", asOf: held.at } };
       }
       if (ctx.dryRun) return { ok: true, simulated: true, value: { state: "active", sequenceKey: e.sequenceKey, channel: "email", asOf } };
-      state.value.enrolments[e.sequenceKey] = { ...state.value.enrolments[e.sequenceKey], [email]: { key: e.idempotencyKey, at: asOf } };
+      state.value.enrolments[e.sequenceKey] = { ...state.value.enrolments[e.sequenceKey], [email]: { key: e.idempotencyKey, at: asOf, ...(e.variables ? { variables: e.variables } : {}) } };
       const saved = saveState(path, state.value);
       if (!saved.ok) return saved;
       return { ok: true, value: { state: "active", sequenceKey: e.sequenceKey, channel: "email", asOf } };

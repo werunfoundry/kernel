@@ -86,6 +86,13 @@ export const skipReason = acquisition.enum("skip_reason", [
   // every reading by reason wrong. See `enrolment_state.suspended` for what
   // this does not reach.
   "suspended",
+  // Enrolled from a list, carrying the kernel's messages (0064): no approved
+  // draft for every step of the sequence, so nothing to carry.
+  "not_drafted",
+  // The message gate refused a step's message (0038), so nobody is reached.
+  "refused",
+  // The cap, judged ahead over the whole plan (0064 §3), would be passed.
+  "capped",
 ]);
 
 /**
@@ -385,6 +392,16 @@ export const enrolment = acquisition.table(
     /** For `refused`: what the provider said. */
     refusal: text("refusal"),
     enrolledAt: timestamp("enrolled_at", { withTimezone: true }),
+
+    /**
+     * What an enrolment that carries the kernel's messages commits to
+     * (decision 0064): each step, how long after the one before it leaves,
+     * the message it carries, and whether it was asked for. Null for an
+     * enrolment that carries none. The cap counts it ahead (0064 §3), and
+     * the touches pull finds a send's message by it (§5). No key of the
+     * person's: step numbers, delays and the messages' ids.
+     */
+    plan: jsonb("plan").$type<{ step: number; afterPreviousMinutes: number; messageId: string; unsolicited: boolean }[]>(),
 
     /**
      * For `suspended` (0051): the kernel's record of the stop, because the

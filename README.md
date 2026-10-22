@@ -48,7 +48,7 @@ scripts/              checks that make the doctrine enforceable
 | A person's acts | commands at a terminal, refused without one (0047): `kernel-stage`, `kernel-relationship`, `kernel-list`, `kernel-decide`, beside `kernel-acknowledge`, `kernel-erase` and `kernel-attest-stop` |
 | HTTP API | written (0040): `kernel-api`, one token per instance; health, a run, listing and proposing drafts, an erasure's plan. It refuses `actorType: human`, so no act reserved to a person is on it |
 | Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not. Before any of it, each enrolment a provider may hold is suspended there, or the erasure is refused (0056); where retrying cannot help, a person attests the stop with `kernel-attest-stop`. An objector's keys survive as fingerprints in `relations.suppression`, written by the erasure alone (0052, 0062) under versions `kernel-fingerprint` generates (0058); the one reader (0055) reads them wherever the objection is read: sourcing, enrolment, drafting, queueing and the message gate. The API's plan shows the rules only |
-| Sending path | written, with its hand-over stubbed (0050): from a frozen list to drafts, a person's approval, protection read at sending, the message's gate, a touch. No hand-over ships and no command calls it: nothing is sent for real |
+| Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent; the hand-over is withdrawn |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
 | Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
@@ -75,12 +75,14 @@ Next:
   column; it has run against a fake of the warehouse's API, not a real one.
 - **enrichment and a social sequencer**, which wait for the choice of tools.
 
-**Sending for real.** The sending path runs end to end with its hand-over
-stubbed (0050); the real hand-over is the next decision. Until it exists,
-nothing the kernel drafts is sent. And a person enrolled in a sequence is
-sent to by the sequencer alone: those sends do not pass the message's gate,
-and nothing records them as touches, so the solicitation cap, which reads
-touches, does not count them (0050, defects 1 and 2).
+**Sending for real.** An enrolment from a list carries the kernel's
+messages, each written through the gate first (0064). Unsolicited, it needs
+a cap, judged ahead over each person's whole plan against what already
+reaches them, and a sequencer that pulls what it sent; the touches pull
+records each step as a touch. The enrolment without messages still stays,
+though 0064 rules it out, until it is removed: its sends pass no gate, and
+the pull records them as unsolicited touches no message names (0050,
+defects 1 and 2).
 
 **Withdrawing someone whose account becomes protected later.** The protected
 set is read whole and fresh before anyone is enrolled (0019). `suppress`
@@ -119,8 +121,8 @@ is a data migration on a Postgres type, and a value cannot be dropped from a
 Postgres enum (0044). Note what "like `channels`" means today: the manifest
 validator reads the declaration; the enrolment path only routes to declared
 channels (0015); `kernel-inbound` writes a touch only on a declared channel
-(0039); the sending path records its template's channel without checking it
-against the declared ones (0050). Adding a vocabulary key to `domain.yaml`
+(0039); the enrolment from a list holds its templates' channels against the
+provider's steps, not against the declared ones (0064). Adding a vocabulary key to `domain.yaml`
 changes how a domain contributes its vocabulary, which is a decision record
 when the change is made.
 

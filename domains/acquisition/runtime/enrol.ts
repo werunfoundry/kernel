@@ -38,7 +38,7 @@
 
 import { createHash } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
@@ -47,25 +47,32 @@ import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
-import { run as runTable } from "@werunfoundry/core/db/schema";
+import { experiment as experimentTable, run as runTable } from "@werunfoundry/core/db/schema";
 import type { FoundPerson, PeopleSource } from "@werunfoundry/relations/contracts/people-source";
-import { person as personTable } from "@werunfoundry/relations/db/schema";
+import { company as companyTable, person as personTable, touch as touchTable } from "@werunfoundry/relations/db/schema";
+import { readList } from "@werunfoundry/relations/runtime/list";
+import { writeMessage } from "@werunfoundry/relations/runtime/message";
 import { readObjection, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequencer.js";
 import { readDeclaration, remainingOf } from "../contracts/sequencer.js";
 import type { TargetCompany, TargetList, TargetQuery } from "../contracts/target-list.js";
-import { enrolment, enrolmentSkip, sourcingResult } from "../db/schema.js";
+import { draft, enrolment, enrolmentSkip, sourcingResult, template } from "../db/schema.js";
 import { readAcknowledged } from "./acknowledge.js";
+import { messageKey } from "./draft.js";
 import type { ProtectedStop } from "./protected.js";
 import { stopProtected } from "./protected.js";
 import type { Protection } from "./protection.js";
 import { readProtection } from "./protection.js";
+import type { Cap } from "./cap.js";
+import { judgeAhead, planTimes } from "./cap.js";
+import type { PlannedStep, StepRender } from "./steps.js";
+import { compareSteps } from "./steps.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", peopleSource: "people_source", sequencer: "sequencer" } as const;
 
-export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable" | "suspended";
+export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable" | "suspended" | "not_drafted" | "refused" | "capped";
 
 export interface EnrolRequest {
   sequenceKey: string;
@@ -75,6 +82,20 @@ export interface EnrolRequest {
    * source. Nobody that run did not keep is considered.
    */
   fromSourcingRun?: string;
+  /**
+   * Decision 0064: enrol the people of this sealed list, each carrying the
+   * messages the kernel wrote — one approved draft per step of the sequence,
+   * of one variant of the experiment, each written through the message gate
+   * (0038) before the provider is called, and handed to it as the variable
+   * its step renders. The provider's steps are read and held against the
+   * experiment's templates first: a plan it will not run is refused.
+   *
+   * Unsolicited, the cap is required, with no default (0038), and judged
+   * ahead over the whole plan before anyone is reached (0064 §3), through a
+   * sequencer that pulls what it sent (§6). Solicited, it is not capped,
+   * and the report says so.
+   */
+  fromList?: { listKey: string; experimentId: string; unsolicited: boolean; cap?: Cap; reactiveWithinMinutes?: number };
   channel: string;
   /** The candidate query, passed to the target list untouched. */
   query?: TargetQuery;
@@ -147,6 +168,11 @@ export interface EnrolReport {
   skipped: Skipped[];
   /** Whether capacity bounded the run, or why not. */
   capacity: { checked: true; budget: number } | { checked: false; why: string };
+  /**
+   * From a list (0064): the cap judged ahead over each person's plan, or why
+   * the enrolment is not capped — said whenever it is not.
+   */
+  cap?: { judged: true; max: number; withinDays: number } | { judged: false; why: string };
   /**
    * Whether the run row was closed with this outcome. False means the
    * database refused the last write: the row still reads "running", and this
@@ -236,6 +262,69 @@ async function keptBy(deps: EnrolDeps, runId: string): Promise<{ company: Target
   return [...groups.values()];
 }
 
+/** A recorded person, as the keys `relations` holds for them: an address, and a profile id on a network. */
+function recordedIdentity(row: { email: string | null; externalId: string | null }): Identity {
+  const keys: Identity["keys"] = [];
+  if (row.email) keys.push({ kind: "email", value: row.email });
+  const at = row.externalId?.indexOf(":") ?? -1;
+  if (row.externalId && at > 0) keys.push({ kind: "social_profile_id", network: row.externalId.slice(0, at), value: row.externalId.slice(at + 1) });
+  return { subject: "person", keys };
+}
+
+/**
+ * The company `relations` recorded for a person, as protection compares one:
+ * its domain, and its id on a network. Not the target list's answer about
+ * where they work now — nothing knows that (0050, *The missing affiliation*).
+ */
+function recordedCompany(row: { domain: string | null; externalId: string | null; name: string | null }): TargetCompany {
+  const keys: Identity["keys"] = [];
+  if (row.domain) keys.push({ kind: "domain", value: row.domain });
+  const at = row.externalId?.indexOf(":") ?? -1;
+  if (row.externalId && at > 0) keys.push({ kind: "social_company_id", network: row.externalId.slice(0, at), value: row.externalId.slice(at + 1) });
+  return { ...(row.domain ? { domain: row.domain } : {}), ...(row.name ? { name: row.name } : {}), identity: { subject: "company", keys }, attributes: {} } as TargetCompany;
+}
+
+/**
+ * The people of a sealed list, grouped by the company each is recorded at,
+ * and the experiment's plan, variant by variant: its templates, step by step.
+ * Read before the run is opened: a list or an experiment that cannot be
+ * enrolled from could not have done anything.
+ */
+async function listed(deps: EnrolDeps, from: NonNullable<EnrolRequest["fromList"]>) {
+  const list = await readList(deps.db, from.listKey.trim());
+  if (!list) throw new Error(`no list ${from.listKey} is on record`);
+  if (!list.sealedAt) throw new Error(`the list ${from.listKey} is not sealed: it is still being constituted`);
+  const [exp] = await deps.db.select({ slug: experimentTable.slug }).from(experimentTable).where(eq(experimentTable.id, from.experimentId));
+  if (!exp) throw new Error(`no experiment ${from.experimentId} is on record`);
+  const templates = await deps.db
+    .select({ variant: template.variant, step: template.step, channel: template.channel, delayDays: template.delayDays, subject: template.subject })
+    .from(template)
+    .where(eq(template.experimentId, from.experimentId));
+  if (templates.length === 0) throw new Error(`the experiment ${from.experimentId} has no template: there is no message to carry`);
+  const plans = new Map<string, PlannedStep[]>();
+  for (const t of templates) plans.set(t.variant, [...(plans.get(t.variant) ?? []), { step: t.step, channel: t.channel, delayDays: t.delayDays, subject: t.subject !== null }]);
+
+  const groups = new Map<string, { company: TargetCompany; companyId: string | null; people: (FoundPerson & { personId: string })[] }>();
+  const companies: { companyId: string }[] = [];
+  for (const member of list.members) {
+    if (!member.personId) {
+      companies.push({ companyId: member.companyId! });
+      continue;
+    }
+    const [who] = await deps.db
+      .select({ email: personTable.email, externalId: personTable.externalId, fullName: personTable.fullName, companyId: personTable.companyId, domain: companyTable.domain, companyExternalId: companyTable.externalId, companyName: companyTable.name })
+      .from(personTable)
+      .leftJoin(companyTable, eq(companyTable.id, personTable.companyId))
+      .where(eq(personTable.id, member.personId));
+    if (!who) continue;
+    const key = who.companyId ?? `none:${member.personId}`;
+    const group = groups.get(key) ?? { company: recordedCompany({ domain: who.domain, externalId: who.companyExternalId, name: who.companyName }), companyId: who.companyId, people: [] };
+    group.people.push({ personId: member.personId, identity: recordedIdentity(who), ...(who.fullName ? { display: { fullName: who.fullName } } : {}) });
+    groups.set(key, group);
+  }
+  return { experimentSlug: exp.slug, plans, groups: [...groups.values()], companies };
+}
+
 export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<EnrolReport> {
   const now = deps.now ?? (() => new Date());
   const targets = deps.registry.get(CONTRACTS.targetList) as TargetList | undefined;
@@ -244,7 +333,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
   // Configuration, checked before a run is opened: a run that could not have
   // done anything is not a run.
   if (!targets) throw new Error(`no adapter is bound to "${CONTRACTS.targetList}"`);
-  if (!people && !request.fromSourcingRun) throw new Error(`no adapter is bound to "${CONTRACTS.peopleSource}"`);
+  if (request.fromList && (request.fromSourcingRun || request.query)) throw new Error("an enrolment from a list takes its people from the list alone: no sourcing run, no query");
+  if (!people && !request.fromSourcingRun && !request.fromList) throw new Error(`no adapter is bound to "${CONTRACTS.peopleSource}"`);
   if (!sequencer) throw new Error(`no "${CONTRACTS.sequencer}" adapter takes the channel "${request.channel}"`);
   // An enrolment nobody can stop until its sequence ends is protection that
   // lasts until the next step fires (0004, 0051). Dry runs too: a dry run
@@ -267,10 +357,33 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     }
   }
   if (!(request.protectedMaxAgeMinutes > 0)) throw new Error("protectedMaxAgeMinutes must be a positive number of minutes");
+  if (request.fromList) {
+    // 0064 §3: an unsolicited enrolment is capped ahead, over its whole
+    // plan, or not made. The cap that exists judges the window behind.
+    if (request.fromList.unsolicited) {
+      const cap = request.fromList.cap;
+      if (!cap || !Number.isInteger(cap.max) || cap.max < 0 || !(cap.withinDays > 0)) {
+        throw new Error("an unsolicited enrolment needs a cap — a count and a window — and there is no default (decisions 0038, 0064 §3): nobody is enrolled");
+      }
+      // 0064 §6: a cap that cannot see what the sequencer sent on its own is
+      // not one. Refused as 0051's first refusal is: before a run, dry too.
+      // A pull declared served with no method behind it is refused above,
+      // with the declaration (0054).
+      if ((sequencer.declares?.pullTouches?.serves ?? "no") === "no") {
+        const why = sequencer.declares?.pullTouches?.serves === "no" ? sequencer.declares.pullTouches.why : "it does not say";
+        throw new Error(`the sequencer "${sequencer.provider}" does not pull what it sent (${why}), so an unsolicited enrolment through it cannot be capped (decision 0064 §6): nobody is enrolled`);
+      }
+    }
+    // 0064 §5: the provider's steps are held against the templates.
+    if (typeof sequencer.readSteps !== "function" || (sequencer.declares?.readSteps?.serves ?? "no") === "no") {
+      throw new Error(`the sequencer "${sequencer.provider}" does not read a sequence's steps, and an enrolment that carries messages is held against them (decision 0064 §5): nobody is enrolled`);
+    }
+  }
 
   // A sourcing run is read before this run is opened: a run that names one
   // that cannot be enrolled from could not have done anything.
   const fromRun = request.fromSourcingRun ? await keptBy(deps, request.fromSourcingRun) : undefined;
+  const fromList = request.fromList ? await listed(deps, request.fromList) : undefined;
 
   const open: OpenRun = await openRun(deps.db, {
     processKey: `acquisition.enrol.${request.sequenceKey}`,
@@ -290,6 +403,13 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     reconciled: [],
     skipped: [],
     capacity: { checked: false, why: "no sender was given" },
+    ...(request.fromList
+      ? {
+          cap: request.fromList.unsolicited
+            ? { judged: true as const, max: request.fromList.cap!.max, withinDays: request.fromList.cap!.withinDays }
+            : { judged: false as const, why: "solicited: the person asked for it, on the reactive lane (decision 0042), and a solicited enrolment is not capped (decision 0064 §6)" },
+        }
+      : {}),
     recorded: false,
   };
 
@@ -325,8 +445,34 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         .where(and(eq(enrolment.personId, personId), eq(enrolment.sequenceKey, request.sequenceKey)))
     )[0];
 
+  /**
+   * What already reaches a person, for the cap judged ahead (0064 §3): their
+   * unsolicited outbound touches, on every channel, and the unsolicited steps
+   * still planned of their other enrolments that carry a plan, from when each
+   * was enrolled — a step whose touch is recorded counts once, as the touch.
+   * Served by the touch index on (person, occurred_at) and the registry's
+   * unique on (person, sequence).
+   */
+  const reaching = async (personId: string, sequenceKey: string): Promise<Date[]> => {
+    const touched = await deps.db
+      .select({ at: touchTable.occurredAt, messageId: touchTable.messageId })
+      .from(touchTable)
+      .where(and(eq(touchTable.personId, personId), eq(touchTable.direction, "outbound"), eq(touchTable.unsolicited, true)));
+    const sent = new Set(touched.flatMap((t) => (t.messageId ? [t.messageId] : [])));
+    const others = await deps.db
+      .select({ plan: enrolment.plan, enrolledAt: enrolment.enrolledAt, createdAt: enrolment.createdAt })
+      .from(enrolment)
+      .where(and(eq(enrolment.personId, personId), ne(enrolment.sequenceKey, sequenceKey), inArray(enrolment.state, ["pending", "enrolled"])));
+    const planned = others.flatMap((o) => {
+      if (!o.plan) return [];
+      const times = planTimes(o.enrolledAt ?? o.createdAt, o.plan);
+      return o.plan.flatMap((p, i) => (p.unsolicited && !sent.has(p.messageId) ? [times[i]!] : []));
+    });
+    return [...touched.map((t) => t.at), ...planned];
+  };
+
   /** Moves a registry row, attributed to this run. */
-  const settleRow = (id: string, change: { state: "pending" | "enrolled" | "refused"; enrolledAt?: Date; refusal?: string | null }) =>
+  const settleRow = (id: string, change: { state: "pending" | "enrolled" | "refused"; enrolledAt?: Date; refusal?: string | null; plan?: (typeof enrolment.$inferInsert)["plan"] }) =>
     deps.db
       .update(enrolment)
       .set({
@@ -391,6 +537,27 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       report.capacity = { checked: true, budget };
     }
 
+    /* 2b. From a list: the provider's steps, against the templates (0064) */
+
+    /** What each variant's steps render, once the provider's steps agree with its templates. */
+    const renders = new Map<string, StepRender[]>();
+    /** Each step's delay after the one before, as the provider will run it. */
+    const delays = new Map<number, number>();
+    if (fromList) {
+      const read = await sequencer.readSteps!(request.sequenceKey, ctx);
+      if (!read.ok) throw new Stop(`the steps of "${request.sequenceKey}" cannot be read: ${read.error.code}: ${read.error.message}`);
+      const elsewhere = [...new Set(read.value.steps.map((s) => s.channel).filter((c) => c !== request.channel))];
+      if (elsewhere.length > 0) {
+        throw new Stop(`"${request.sequenceKey}" runs steps on ${elsewhere.map((c) => `"${c}"`).join(", ")}, and this enrolment is on "${request.channel}": one enrolment carries one channel until the registry row holds several (decision 0064)`);
+      }
+      for (const s of read.value.steps) delays.set(s.step, s.afterPreviousMinutes);
+      for (const [variant, plan] of fromList.plans) {
+        const agreed = compareSteps(read.value, plan);
+        if (!agreed.agrees) throw new Stop(`the provider's steps of "${request.sequenceKey}" and the templates of variant "${variant}" disagree, so the plan would not be the one run (decision 0064 §5): ${agreed.disagreements.join("; ")}`);
+        renders.set(variant, agreed.renders);
+      }
+    }
+
     /* 3. Who to consider: the target list's people, or a sourcing run's -- */
 
     /**
@@ -402,6 +569,21 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
      * protection is read fresh by this run, not trusted from the other one.
      */
     async function* considered(): AsyncGenerator<{ company: TargetCompany; host: string; people: FoundPerson[] }> {
+      if (fromList) {
+        for (const { companyId } of fromList.companies) {
+          await skip({ reason: "unreachable", company: { attributes: {}, externalId: companyId } as unknown as TargetCompany, detail: "a company on a list names nobody to write to" });
+        }
+        for (const group of fromList.groups) {
+          const company = group.company;
+          const refused = companySkip(company);
+          if (refused) {
+            await skip({ ...refused, company });
+            continue;
+          }
+          yield { company, host: company.domain ? domainOf(company.domain) : "", people: group.people };
+        }
+        return;
+      }
       if (fromRun) {
         for (const group of fromRun) {
           const company = group.company;
@@ -543,6 +725,94 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
           continue;
         }
 
+        // From a list (0064): the messages this person's sequence carries,
+        // one approved draft per step of one variant, each written through
+        // the gate before anyone is reached. A step's message refused by the
+        // gate reaches nobody; the messages already written stay, as what
+        // would have been said, and a replay writes each once.
+        let carried: { variables: Record<string, string>; variant: string; plan: NonNullable<(typeof enrolment.$inferInsert)["plan"]> } | undefined;
+        if (fromList) {
+          if (!("id" in known)) {
+            await skip({ reason: "unreachable", person, company, detail: "the list names someone no longer on record" });
+            continue;
+          }
+          const drafts = await deps.db
+            .select({ id: draft.id, state: draft.state, step: template.step, variant: template.variant, subject: draft.renderedSubject, body: draft.renderedBody, decidedBy: draft.decidedBy })
+            .from(draft)
+            .innerJoin(template, eq(template.id, draft.templateId))
+            .where(and(eq(draft.experimentId, request.fromList!.experimentId), eq(draft.personId, known.id)));
+          const approved = drafts.filter((d) => d.state === "approved");
+          const variants = [...new Set(approved.map((d) => d.variant))];
+          const steps = variants.length === 1 ? renders.get(variants[0]!) : undefined;
+          const missing = steps?.filter((r) => !approved.some((d) => d.step === r.step)) ?? [];
+          if (!steps || missing.length > 0) {
+            const why =
+              variants.length === 0
+                ? "no approved draft"
+                : variants.length > 1
+                  ? `approved drafts of ${variants.length} variants`
+                  : `no approved draft for step ${missing.map((r) => r.step).join(", ")}`;
+            await skip({ reason: "not_drafted", person, company, detail: `${why}: every step of the sequence carries one (decision 0064)` });
+            continue;
+          }
+          // 0064 §3: the whole plan, judged ahead against what already
+          // reaches the person, before any message is written.
+          if (request.fromList!.unsolicited) {
+            const verdict = judgeAhead(
+              await reaching(known.id, request.sequenceKey),
+              planTimes(now(), steps.map((r) => ({ afterPreviousMinutes: delays.get(r.step) ?? 0 }))),
+              request.fromList!.cap!,
+            );
+            if (!verdict.within) {
+              await skip({
+                reason: "capped",
+                person,
+                company,
+                detail: `${verdict.count} unsolicited touches between ${verdict.from.toISOString()} and ${verdict.to.toISOString()}, past the cap of ${request.fromList!.cap!.max} in ${request.fromList!.cap!.withinDays} days, counting this plan (decision 0064 §3)`,
+              });
+              continue;
+            }
+          }
+          const variables: Record<string, string> = {};
+          const plan: NonNullable<(typeof enrolment.$inferInsert)["plan"]> = [];
+          const refusals: string[] = [];
+          for (const r of steps) {
+            const d = approved.find((x) => x.step === r.step)!;
+            variables[r.body] = d.body ?? "";
+            if (r.subject) variables[r.subject] = d.subject ?? "";
+            if (request.dryRun) continue;
+            const written = await writeMessage(
+              deps.db,
+              deps.fingerprints,
+              {
+                key: messageKey(d.id),
+                personId: known.id,
+                channel: request.channel,
+                ...(r.subject && d.subject ? { subject: d.subject } : {}),
+                body: d.body ?? "",
+                unsolicited: request.fromList!.unsolicited,
+                ...(request.fromList!.unsolicited ? { cadence: "judged_ahead" as const } : {}),
+                experimentId: request.fromList!.experimentId,
+                ...(d.decidedBy ? { approvedBy: d.decidedBy } : {}),
+                ...(request.fromList!.reactiveWithinMinutes !== undefined ? { reactiveWithinMinutes: request.fromList!.reactiveWithinMinutes } : {}),
+                actor: request.actor,
+                runId: open.id,
+              },
+              now(),
+            );
+            if (!written.ok) {
+              refusals.push(`step ${r.step}: ${written.refused.join("; ")}`);
+              break;
+            }
+            plan.push({ step: r.step, afterPreviousMinutes: delays.get(r.step) ?? 0, messageId: written.messageId, unsolicited: request.fromList!.unsolicited });
+          }
+          if (refusals.length > 0) {
+            await skip({ reason: "refused", person, company, detail: `the message gate refused, so nobody is reached (decision 0038): ${refusals.join("; ")}` });
+            continue;
+          }
+          carried = { variables, variant: variants[0]!, plan };
+        }
+
         // Written before the provider is called, so that a run dying in
         // between leaves something the next one can reconcile.
         if (!request.dryRun) {
@@ -560,7 +830,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
             continue;
           }
           if (row) {
-            await settleRow(row.id, { state: "pending", refusal: null });
+            await settleRow(row.id, { state: "pending", refusal: null, ...(carried ? { plan: carried.plan } : {}) });
           } else {
             await deps.db
               .insert(enrolment)
@@ -571,6 +841,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
                 channel: request.channel,
                 idempotencyKey: key,
                 provider: sequencer.provider,
+                ...(carried ? { plan: carried.plan } : {}),
                 actorType: request.actor.type,
                 ...(request.actor.id ? { actorId: request.actor.id } : {}),
                 runId: open.id,
@@ -593,7 +864,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
             channel: request.channel,
             person,
             ...(one.display?.fullName ? { display: { fullName: one.display.fullName } } : {}),
-            attribution: { runId: open.id },
+            ...(carried ? { variables: carried.variables } : {}),
+            attribution: { runId: open.id, ...(carried ? { experimentSlug: fromList!.experimentSlug, variant: carried.variant } : {}) },
           },
           ctx,
         );

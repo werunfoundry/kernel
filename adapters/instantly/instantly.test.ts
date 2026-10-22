@@ -54,6 +54,10 @@ const state = {
   missNextList: false,
   /** The campaign's `sequences`, as its read returns them. */
   sequences: undefined as unknown,
+  /** The provider's record of emails, as `GET /api/v2/emails` lists them, newest first. */
+  /** When set, the record ignores `email_type`, as a provider may: the adapter then sees the replies too. */
+  ignoreEmailType: false,
+  emails: [] as { id: string; lead: string; campaign_id: string; step: string; ue_type: number; timestamp_email: string; timestamp_created: string; eaccount?: string; subsequence_id?: string | null }[],
 };
 let seen: Seen[] = [];
 /** Requests left unanswered on purpose; closed once their test is over. */
@@ -92,6 +96,17 @@ before(async () => {
     if (req.method === "GET" && p === "/api/v2/campaigns") return reply(200, { items: [{ id: "c1" }] });
     if (req.method === "GET" && p.startsWith("/api/v2/campaigns/")) {
       return p.endsWith("/c1") ? reply(200, { id: "c1", status: 1, ...(state.sequences !== undefined ? { sequences: state.sequences } : {}) }) : reply(404, { message: "not found" });
+    }
+    if (req.method === "GET" && p === "/api/v2/emails") {
+      const q = url.searchParams;
+      const since = q.get("min_timestamp_created");
+      const all = state.emails.filter(
+        (m) => m.campaign_id === q.get("campaign_id") && (state.ignoreEmailType || q.get("email_type") !== "sent" || m.ue_type === 1) && (!since || m.timestamp_created >= since),
+      );
+      const after = q.get("starting_after");
+      const from = after ? all.findIndex((m) => m.id === after) + 1 : 0;
+      const items = all.slice(from, from + Number(q.get("limit") ?? 100));
+      return reply(200, { items, next_starting_after: from + items.length < all.length ? items.at(-1)!.id : null });
     }
     if (req.method === "POST" && p === "/api/v2/leads/list") {
       if (state.missNextList) {
@@ -176,6 +191,8 @@ beforeEach(() => {
   state.forceStatus = 0;
   state.missNextList = false;
   state.sequences = undefined;
+  state.emails = [];
+  state.ignoreEmailType = false;
   state.moveDoesNothing = false;
   state.addDoesNothing = false;
   state.blockDoesNothing = false;
@@ -453,7 +470,7 @@ describe("what it declares (decision 0051)", () => {
       assert.equal(s.gap.known, false, "a gap nobody measured is declared as a number");
       assert.equal(s.notTheLeastDestructive, undefined);
     }
-    assert.deepEqual([a.declares!.pullTouches.serves, a.declares!.pullUnsubscribes.serves, a.declares!.readSteps?.serves], ["no", "partially", "yes"]);
+    assert.deepEqual([a.declares!.pullTouches.serves, a.declares!.pullUnsubscribes.serves, a.declares!.readSteps?.serves], ["partially", "partially", "yes"]);
     assert.equal(readDeclaration(a).suspends, true);
     assert.deepEqual(seen, []);
   });
@@ -585,6 +602,65 @@ describe("reading a sequence's steps (decision 0064)", () => {
     const r = await adapter().readSteps!("unmapped", ctx(true));
     assert.ok(!r.ok && r.error.code === "invalid");
     assert.deepEqual(seen, []);
+  });
+});
+
+describe("the touches pull (decision 0051, verb 2)", () => {
+  const sent = (id: string, created: string, over: Partial<(typeof state.emails)[number]> = {}) =>
+    ({ id, lead: `${id}@example.com`, campaign_id: "c1", step: "0_0_0", ue_type: 1, timestamp_email: created, timestamp_created: created, eaccount: "sender@example.com", ...over }) as (typeof state.emails)[number];
+
+  it("reads every send of the bound campaign as a step, with its own id, and writes nothing", async () => {
+    state.emails = [
+      sent("e2", "2026-10-22T10:05:00.000Z", { step: "0_1_0" }),
+      sent("e1", "2026-10-22T10:00:00.000Z"),
+      sent("r1", "2026-10-22T10:06:00.000Z", { ue_type: 2 }),
+      sent("p1", "2026-10-22T10:07:00.000Z", { subsequence_id: "s1" }),
+      sent("x1", "2026-10-22T10:08:00.000Z", { campaign_id: "c9" }),
+    ];
+    const r = await adapter().pullTouches!({}, ctx(false));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.deepEqual(r.value.items, [
+      { providerEventId: "e2", sequenceKey: "welcome", step: 2, person: { subject: "person", keys: [{ kind: "email", value: "e2@example.com" }] }, channel: "email", occurredAt: "2026-10-22T10:05:00.000Z", sender: "sender@example.com" },
+      { providerEventId: "e1", sequenceKey: "welcome", step: 1, person: { subject: "person", keys: [{ kind: "email", value: "e1@example.com" }] }, channel: "email", occurredAt: "2026-10-22T10:00:00.000Z", sender: "sender@example.com" },
+      { providerEventId: "p1", sequenceKey: "welcome", person: { subject: "person", keys: [{ kind: "email", value: "p1@example.com" }] }, channel: "email", occurredAt: "2026-10-22T10:07:00.000Z", sender: "sender@example.com" },
+    ]);
+    assert.equal(r.value.cursor, "2026-10-22T10:07:00.000Z");
+    assert.equal(r.value.complete, true);
+    assert.deepEqual(writes(), []);
+  });
+
+  it("reads no reply as a send, should the record ignore the filter it is asked", async () => {
+    state.ignoreEmailType = true;
+    state.emails = [sent("r1", "2026-10-22T10:06:00.000Z", { ue_type: 2 }), sent("e1", "2026-10-22T10:00:00.000Z")];
+    const r = await adapter().pullTouches!({}, ctx(true));
+    assert.ok(r.ok && r.value.items.map((i) => i.providerEventId).join() === "e1", JSON.stringify(r));
+  });
+
+  it("reads back an overlap behind its cursor, so a send listed late is seen", async () => {
+    // Listed after the cursor was taken, with the time it left, before the cursor.
+    state.emails = [sent("late", "2026-10-22T09:30:00.000Z")];
+    const r = await adapter().pullTouches!({ after: "2026-10-22T10:00:00.000Z" }, ctx(true));
+    assert.ok(r.ok && r.value.items.map((i) => i.providerEventId).join() === "late", JSON.stringify(r));
+    assert.ok(seen.some((s) => s.path.includes("min_timestamp_created=2026-10-22T09%3A00%3A00.000Z")), "the pull did not read an hour behind its cursor");
+    // An hour and more behind is past the overlap, and is not read again.
+    state.emails = [sent("old", "2026-10-22T08:59:00.000Z")];
+    const r2 = await adapter().pullTouches!({ after: "2026-10-22T10:00:00.000Z" }, ctx(true));
+    assert.ok(r2.ok && r2.value.items.length === 0);
+    assert.equal(r2.value.cursor, "2026-10-22T10:00:00.000Z", "a pull that read nothing moved its cursor");
+  });
+
+  it("follows the pages, and says the read is incomplete at its page bound", async () => {
+    state.emails = Array.from({ length: 150 }, (_, i) => sent(`m${i}`, `2026-10-22T10:${String(i % 60).padStart(2, "0")}:00.000Z`));
+    const all = await adapter().pullTouches!({}, ctx(true));
+    assert.ok(all.ok && all.value.items.length === 150 && all.value.complete);
+    const bounded = await factory({ options: { baseUrl, "campaign.welcome": "c1", "subsequence.welcome": "s1", touchPages: 1 }, env: { INSTANTLY_API_KEY: "test-key" } }).pullTouches!({}, ctx(true));
+    assert.ok(bounded.ok && bounded.value.items.length === 100 && !bounded.value.complete);
+  });
+
+  it("fails the read when a page fails", async () => {
+    state.forceStatus = 500;
+    const r = await adapter().pullTouches!({}, ctx(true));
+    assert.equal(r.ok, false);
   });
 });
 
@@ -761,6 +837,7 @@ const ALLOWED = [
   "POST /api/v2/block-lists-entries",
   "GET /api/v2/accounts/{}",
   "GET /api/v2/accounts/analytics/daily",
+  "GET /api/v2/emails",
 ].sort();
 
 const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");

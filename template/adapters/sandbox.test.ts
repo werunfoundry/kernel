@@ -136,6 +136,29 @@ describe("the sequencer", () => {
     if (!other.ok) assert.equal(other.error.code, "conflict");
   });
 
+  it("reads a sequence's steps from its binding, one step when it says nothing (0064)", async () => {
+    const two = sequencerFactory({ options: { stateFile: state, "steps.follow-up": "0,3" }, env: {} });
+    const r = await two.readSteps!("follow-up", ctx(true));
+    assert.ok(r.ok);
+    assert.deepEqual(r.value.steps, [
+      { step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, variants: 1 },
+      { step: 2, channel: "email", afterPreviousMinutes: 3 * 24 * 60, subject: null, body: { variable: "engine_body_2" }, variants: 1 },
+    ]);
+    const one = await sequencer.readSteps!("welcome", ctx(true));
+    assert.ok(one.ok && one.value.steps.length === 1);
+    const bad = await sequencerFactory({ options: { stateFile: state, "steps.x": "0,soon" }, env: {} }).readSteps!("x", ctx(true));
+    assert.ok(!bad.ok && /not a list of whole days/.test(bad.error.message));
+  });
+
+  it("keeps the variables an enrolment carried, as the messages the kernel wrote", async () => {
+    const carried = sequencerFactory({ options: { stateFile: join(dir, "carried.json") }, env: {} });
+    const variables = { engine_subject_1: "Hello", engine_body_1: "One." };
+    assert.ok((await carried.enrol({ ...enrolment, variables }, ctx(false))).ok);
+    const kept = loadState(join(dir, "carried.json"));
+    assert.ok(kept.ok);
+    assert.deepEqual(kept.value.enrolments.welcome?.["ada@open.example.com"]?.variables, variables);
+  });
+
   it("says which enrolment it read, by the key its record holds, in status and in a withdrawal (0060)", async () => {
     const status = await sequencer.status({ person: ada, sequenceKey: "welcome" }, ctx(false));
     assert.ok(status.ok && status.value.idempotencyKey === "k1", JSON.stringify(status));

@@ -148,6 +148,13 @@
       "when": 1792597814135,
       "tag": "0020_protection_held",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792678367580,
+      "tag": "0021_skip_not_drafted_or_refused",
+      "breakpoints": true
     }
   ]
 }

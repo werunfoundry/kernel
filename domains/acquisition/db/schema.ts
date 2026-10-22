@@ -86,6 +86,11 @@ export const skipReason = acquisition.enum("skip_reason", [
   // every reading by reason wrong. See `enrolment_state.suspended` for what
   // this does not reach.
   "suspended",
+  // Enrolled from a list, carrying the kernel's messages (0064): no approved
+  // draft for every step of the sequence, so nothing to carry.
+  "not_drafted",
+  // The message gate refused a step's message (0038), so nobody is reached.
+  "refused",
 ]);
 
 /**

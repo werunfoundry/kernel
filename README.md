@@ -48,7 +48,7 @@ scripts/              checks that make the doctrine enforceable
 | A person's acts | commands at a terminal, refused without one (0047): `kernel-stage`, `kernel-relationship`, `kernel-list`, `kernel-decide`, beside `kernel-acknowledge`, `kernel-erase` and `kernel-attest-stop` |
 | HTTP API | written (0040): `kernel-api`, one token per instance; health, a run, listing and proposing drafts, an erasure's plan. It refuses `actorType: human`, so no act reserved to a person is on it |
 | Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not. Before any of it, each enrolment a provider may hold is suspended there, or the erasure is refused (0056); where retrying cannot help, a person attests the stop with `kernel-attest-stop`. An objector's keys survive as fingerprints in `relations.suppression`, written by the erasure alone (0052, 0062) under versions `kernel-fingerprint` generates (0058); the one reader (0055) reads them wherever the objection is read: sourcing, enrolment, drafting, queueing and the message gate. The API's plan shows the rules only |
-| Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Solicited only, until the cap is judged ahead over the whole plan; the hand-over is withdrawn |
+| Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent; the hand-over is withdrawn |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
 | Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
@@ -76,12 +76,13 @@ Next:
 - **enrichment and a social sequencer**, which wait for the choice of tools.
 
 **Sending for real.** An enrolment from a list carries the kernel's
-messages, each written through the gate first (0064); it is solicited only,
-because the cap judged ahead over the whole plan is not built, nor the
-touches pull that records what each step sent. Until then the enrolment
-without messages stays, though 0064 rules it out, as the only unsolicited
-enrolment there is: its sends pass no gate and are recorded as no touch
-(0050, defects 1 and 2).
+messages, each written through the gate first (0064). Unsolicited, it needs
+a cap, judged ahead over each person's whole plan against what already
+reaches them, and a sequencer that pulls what it sent; the touches pull
+records each step as a touch. The enrolment without messages still stays,
+though 0064 rules it out, until it is removed: its sends pass no gate, and
+the pull records them as unsolicited touches no message names (0050,
+defects 1 and 2).
 
 **Withdrawing someone whose account becomes protected later.** The protected
 set is read whole and fresh before anyone is enrolled (0019). `suppress`

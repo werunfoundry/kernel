@@ -38,7 +38,7 @@
 
 import { createHash } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
@@ -49,7 +49,7 @@ import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/r
 import { openRun } from "@werunfoundry/core/runtime/run";
 import { experiment as experimentTable, run as runTable } from "@werunfoundry/core/db/schema";
 import type { FoundPerson, PeopleSource } from "@werunfoundry/relations/contracts/people-source";
-import { company as companyTable, person as personTable } from "@werunfoundry/relations/db/schema";
+import { company as companyTable, person as personTable, touch as touchTable } from "@werunfoundry/relations/db/schema";
 import { readList } from "@werunfoundry/relations/runtime/list";
 import { writeMessage } from "@werunfoundry/relations/runtime/message";
 import { readObjection, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
@@ -64,13 +64,15 @@ import type { ProtectedStop } from "./protected.js";
 import { stopProtected } from "./protected.js";
 import type { Protection } from "./protection.js";
 import { readProtection } from "./protection.js";
+import type { Cap } from "./cap.js";
+import { judgeAhead, planTimes } from "./cap.js";
 import type { PlannedStep, StepRender } from "./steps.js";
 import { compareSteps } from "./steps.js";
 
 /** The contract names this path asks the registry for. The template binds them under these names. */
 export const CONTRACTS = { targetList: "target_list", peopleSource: "people_source", sequencer: "sequencer" } as const;
 
-export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable" | "suspended" | "not_drafted" | "refused";
+export type SkipReason = "protected" | "unreadable_key" | "opted_out" | "capacity" | "duplicate" | "unreachable" | "suspended" | "not_drafted" | "refused" | "capped";
 
 export interface EnrolRequest {
   sequenceKey: string;
@@ -88,11 +90,12 @@ export interface EnrolRequest {
    * its step renders. The provider's steps are read and held against the
    * experiment's templates first: a plan it will not run is refused.
    *
-   * Unsolicited is refused here until the cap is judged ahead (0064 §3):
-   * the gate's cap counts only the window behind, which 0064 rules out for
-   * an enrolment.
+   * Unsolicited, the cap is required, with no default (0038), and judged
+   * ahead over the whole plan before anyone is reached (0064 §3), through a
+   * sequencer that pulls what it sent (§6). Solicited, it is not capped,
+   * and the report says so.
    */
-  fromList?: { listKey: string; experimentId: string; unsolicited: boolean; reactiveWithinMinutes?: number };
+  fromList?: { listKey: string; experimentId: string; unsolicited: boolean; cap?: Cap; reactiveWithinMinutes?: number };
   channel: string;
   /** The candidate query, passed to the target list untouched. */
   query?: TargetQuery;
@@ -165,6 +168,11 @@ export interface EnrolReport {
   skipped: Skipped[];
   /** Whether capacity bounded the run, or why not. */
   capacity: { checked: true; budget: number } | { checked: false; why: string };
+  /**
+   * From a list (0064): the cap judged ahead over each person's plan, or why
+   * the enrolment is not capped — said whenever it is not.
+   */
+  cap?: { judged: true; max: number; withinDays: number } | { judged: false; why: string };
   /**
    * Whether the run row was closed with this outcome. False means the
    * database refused the last write: the row still reads "running", and this
@@ -353,7 +361,16 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     // 0064 §3: an unsolicited enrolment is capped ahead, over its whole
     // plan, or not made. The cap that exists judges the window behind.
     if (request.fromList.unsolicited) {
-      throw new Error("an unsolicited enrolment is capped over its whole plan before it is made (decision 0064 §3), and that cap is not built yet: nobody is enrolled");
+      const cap = request.fromList.cap;
+      if (!cap || !Number.isInteger(cap.max) || cap.max < 0 || !(cap.withinDays > 0)) {
+        throw new Error("an unsolicited enrolment needs a cap — a count and a window — and there is no default (decisions 0038, 0064 §3): nobody is enrolled");
+      }
+      // 0064 §6: a cap that cannot see what the sequencer sent on its own is
+      // not one. Refused as 0051's first refusal is: before a run, dry too.
+      if ((sequencer.declares?.pullTouches?.serves ?? "no") === "no" || typeof sequencer.pullTouches !== "function") {
+        const why = sequencer.declares?.pullTouches?.serves === "no" ? sequencer.declares.pullTouches.why : "it does not say";
+        throw new Error(`the sequencer "${sequencer.provider}" does not pull what it sent (${why}), so an unsolicited enrolment through it cannot be capped (decision 0064 §6): nobody is enrolled`);
+      }
     }
     // 0064 §5: the provider's steps are held against the templates.
     if (typeof sequencer.readSteps !== "function" || (sequencer.declares?.readSteps?.serves ?? "no") === "no") {
@@ -384,6 +401,13 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     reconciled: [],
     skipped: [],
     capacity: { checked: false, why: "no sender was given" },
+    ...(request.fromList
+      ? {
+          cap: request.fromList.unsolicited
+            ? { judged: true as const, max: request.fromList.cap!.max, withinDays: request.fromList.cap!.withinDays }
+            : { judged: false as const, why: "solicited: the person asked for it, on the reactive lane (decision 0042), and a solicited enrolment is not capped (decision 0064 §6)" },
+        }
+      : {}),
     recorded: false,
   };
 
@@ -418,6 +442,32 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         .from(enrolment)
         .where(and(eq(enrolment.personId, personId), eq(enrolment.sequenceKey, request.sequenceKey)))
     )[0];
+
+  /**
+   * What already reaches a person, for the cap judged ahead (0064 §3): their
+   * unsolicited outbound touches, on every channel, and the unsolicited steps
+   * still planned of their other enrolments that carry a plan, from when each
+   * was enrolled — a step whose touch is recorded counts once, as the touch.
+   * Served by the touch index on (person, occurred_at) and the registry's
+   * unique on (person, sequence).
+   */
+  const reaching = async (personId: string, sequenceKey: string): Promise<Date[]> => {
+    const touched = await deps.db
+      .select({ at: touchTable.occurredAt, messageId: touchTable.messageId })
+      .from(touchTable)
+      .where(and(eq(touchTable.personId, personId), eq(touchTable.direction, "outbound"), eq(touchTable.unsolicited, true)));
+    const sent = new Set(touched.flatMap((t) => (t.messageId ? [t.messageId] : [])));
+    const others = await deps.db
+      .select({ plan: enrolment.plan, enrolledAt: enrolment.enrolledAt, createdAt: enrolment.createdAt })
+      .from(enrolment)
+      .where(and(eq(enrolment.personId, personId), ne(enrolment.sequenceKey, sequenceKey), inArray(enrolment.state, ["pending", "enrolled"])));
+    const planned = others.flatMap((o) => {
+      if (!o.plan) return [];
+      const times = planTimes(o.enrolledAt ?? o.createdAt, o.plan);
+      return o.plan.flatMap((p, i) => (p.unsolicited && !sent.has(p.messageId) ? [times[i]!] : []));
+    });
+    return [...touched.map((t) => t.at), ...planned];
+  };
 
   /** Moves a registry row, attributed to this run. */
   const settleRow = (id: string, change: { state: "pending" | "enrolled" | "refused"; enrolledAt?: Date; refusal?: string | null; plan?: (typeof enrolment.$inferInsert)["plan"] }) =>
@@ -703,6 +753,24 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
             await skip({ reason: "not_drafted", person, company, detail: `${why}: every step of the sequence carries one (decision 0064)` });
             continue;
           }
+          // 0064 §3: the whole plan, judged ahead against what already
+          // reaches the person, before any message is written.
+          if (request.fromList!.unsolicited) {
+            const verdict = judgeAhead(
+              await reaching(known.id, request.sequenceKey),
+              planTimes(now(), steps.map((r) => ({ afterPreviousMinutes: delays.get(r.step) ?? 0 }))),
+              request.fromList!.cap!,
+            );
+            if (!verdict.within) {
+              await skip({
+                reason: "capped",
+                person,
+                company,
+                detail: `${verdict.count} unsolicited touches between ${verdict.from.toISOString()} and ${verdict.to.toISOString()}, past the cap of ${request.fromList!.cap!.max} in ${request.fromList!.cap!.withinDays} days, counting this plan (decision 0064 §3)`,
+              });
+              continue;
+            }
+          }
           const variables: Record<string, string> = {};
           const plan: NonNullable<(typeof enrolment.$inferInsert)["plan"]> = [];
           const refusals: string[] = [];
@@ -721,6 +789,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
                 ...(r.subject && d.subject ? { subject: d.subject } : {}),
                 body: d.body ?? "",
                 unsolicited: request.fromList!.unsolicited,
+                ...(request.fromList!.unsolicited ? { cadence: "judged_ahead" as const } : {}),
                 experimentId: request.fromList!.experimentId,
                 ...(d.decidedBy ? { approvedBy: d.decidedBy } : {}),
                 ...(request.fromList!.reactiveWithinMinutes !== undefined ? { reactiveWithinMinutes: request.fromList!.reactiveWithinMinutes } : {}),

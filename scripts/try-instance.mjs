@@ -433,8 +433,9 @@ try {
     const draftedSaid = JSON.parse(drafting.stdout.trim().split("\n").pop() || "{}");
     expect(JSON.stringify(draftedSaid) === JSON.stringify({ drafted: ["awaiting_review"] }), `drafting reported ${JSON.stringify(draftedSaid)}`);
     const carryArgs = ["--sequence", "follow-up", "--channel", "email", "--max-age", "60", "--list", "sourced", "--experiment", experimentId];
-    const unsolicited = await bin("kernel-enrol", [...carryArgs, "--live"]);
-    expect(unsolicited.status === 1 && /capped over its whole plan before it is made \(decision 0064 §3\)/.test(unsolicited.stdout), `kernel-enrol --list without --solicited: ${unsolicited.stdout.trim().split("\n").pop()}`);
+    // The sandbox does not pull what it sent: an unsolicited enrolment through it cannot be capped (0064 §6).
+    const unsolicited = await bin("kernel-enrol", [...carryArgs, "--cap-max", "3", "--cap-days", "30", "--live"]);
+    expect(unsolicited.status === 1 && /cannot be capped \(decision 0064 §6\)/.test(unsolicited.stdout), `kernel-enrol --list without --solicited: ${unsolicited.stdout.trim().split("\n").pop()}`);
     const carried = await bin("kernel-enrol", [...carryArgs, "--solicited", "--live"]);
     show(carried);
     expect(carried.status === 0 && /enrolled: 1/.test(carried.stdout), `kernel-enrol --list --solicited --live: ${carried.stdout.trim().split("\n").pop()}`);

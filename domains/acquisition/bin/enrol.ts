@@ -18,7 +18,10 @@
  *                       messages the kernel wrote (decision 0064); with:
  *   --experiment <id>   the experiment whose approved drafts they carry
  *   --solicited         the person asked for it; without it the enrolment is
- *                       unsolicited, refused until the cap is judged ahead
+ *                       unsolicited, and needs a cap, judged ahead over the
+ *                       whole plan (decision 0064 §3):
+ *   --cap-max <n>       at most this many unsolicited touches to a person…
+ *   --cap-days <days>   …in any window of this many days
  *   --reactive-within <min>  for a draft the reactive lane approved
  *   --live              actually enrol
  *
@@ -161,6 +164,7 @@ async function main(): Promise<number> {
                 listKey: value("list")!,
                 experimentId: value("experiment") ?? "",
                 unsolicited: !flag("solicited"),
+                ...(value("cap-max") !== undefined || value("cap-days") !== undefined ? { cap: { max: Number(value("cap-max")), withinDays: Number(value("cap-days")) } } : {}),
                 ...(Number(value("reactive-within")) > 0 ? { reactiveWithinMinutes: Number(value("reactive-within")) } : {}),
               },
             }
@@ -210,13 +214,16 @@ async function main(): Promise<number> {
     console.log(
       `  capacity: ${report.capacity.checked ? `budget ${report.capacity.budget}` : `not checked — ${report.capacity.why}`}`,
     );
+    if (report.cap) {
+      console.log(`  cap: ${report.cap.judged ? `${report.cap.max} unsolicited touches in any ${report.cap.withinDays} days, judged ahead over each person's plan (decision 0064 §3)` : `not capped — ${report.cap.why}`}`);
+    }
     console.log(`  ${report.dryRun ? "would enrol" : "enrolled"}: ${report.enrolled.length}`);
     for (const e of report.enrolled) console.log(`    + ${shown(e.person)} (${e.state})`);
     if (report.reconciled.length > 0) {
       console.log(`  reconciled, enrolled by an earlier run that stopped before recording it: ${report.reconciled.length}`);
       for (const e of report.reconciled) console.log(`    = ${shown(e.person)} (${e.state})`);
     }
-    const reasons = ["protected", "unreadable_key", "opted_out", "suspended", "not_drafted", "refused", "capacity", "duplicate", "unreachable"] as const;
+    const reasons = ["protected", "unreadable_key", "opted_out", "suspended", "not_drafted", "refused", "capped", "capacity", "duplicate", "unreachable"] as const;
     for (const reason of reasons) {
       const these = report.skipped.filter((s) => s.reason === reason);
       if (these.length === 0) continue;

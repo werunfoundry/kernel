@@ -22,6 +22,7 @@ import { fingerprinter, generateSecret } from "@werunfoundry/core/runtime/finger
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import { constituteList } from "@werunfoundry/relations/runtime/list";
+import { writeMessage } from "@werunfoundry/relations/runtime/message";
 
 import type { Enrolment, SequenceStep, Sequencer, SequencerDeclaration } from "../contracts/sequencer.js";
 import type { ProtectedAccount, TargetList } from "../contracts/target-list.js";
@@ -73,6 +74,8 @@ const world = {
   /** Every enrolment handed to the sequencer, live or simulated. */
   enrolments: [] as Enrolment[],
   held: new Map<string, string>(),
+  /** The next enrolment call fails as a provider that is down does, leaving the registry row pending. */
+  failNext: false,
 };
 const ok = <T>(value: T): CallResult<T> => ({ ok: true, value });
 const emailOf = (p: Identity) => p.keys.find((k) => k.kind === "email")?.value ?? "";
@@ -92,7 +95,7 @@ const targetList: TargetList = {
 
 const reads: SequencerDeclaration = {
   enrol: { serves: "yes" },
-  pullTouches: { serves: "no", why: "not in this test" },
+  pullTouches: { serves: "yes" },
   suspend: { serves: "yes", method: "letting go of the person", costs: { person: [], sequence: [] }, gap: { known: true, minutes: 0, basis: "by construction", measuredOn: "2026-10-22" } },
   pullUnsubscribes: { serves: "no", why: "not in this test" },
   readSteps: { serves: "yes" },
@@ -105,10 +108,17 @@ const sequencer: Sequencer = {
   get declares() {
     return declares;
   },
+  async pullTouches() {
+    return ok({ items: [], complete: true });
+  },
   async readSteps(sequenceKey) {
     return ok({ sequenceKey, steps: world.steps, asOf: new Date().toISOString() });
   },
   async enrol(e, ctx) {
+    if (world.failNext) {
+      world.failNext = false;
+      return { ok: false, error: { code: "rate_limited", message: "the provider is busy", retryable: true } };
+    }
     world.enrolments.push(e);
     if (!ctx.dryRun) world.held.set(e.idempotencyKey, emailOf(e.person));
     return { ok: true, ...(ctx.dryRun ? { simulated: true } : {}), value: { state: "active", idempotencyKey: e.idempotencyKey, asOf: new Date().toISOString() } };
@@ -146,6 +156,7 @@ beforeEach(async () => {
   await client.query("truncate relations.touch, relations.message, relations.list, relations.person, relations.company, acquisition.draft, acquisition.template, acquisition.enrolment_skip, acquisition.enrolment, core.experiment, core.run cascade");
   world.protected = [];
   world.enrolments = [];
+  world.failNext = false;
   world.held.clear();
   declares = reads;
   // Two steps, the second three days after the first, each rendering its own variables.
@@ -226,10 +237,29 @@ describe("an enrolment from a list carries the kernel's messages (0064)", { skip
     ]);
   });
 
-  it("refuses an unsolicited enrolment before any run, until the cap is judged ahead (0064 §3)", async () => {
+  it("refuses an unsolicited enrolment without a cap, before any run: there is no default (0038)", async () => {
     const { experimentId } = await aCampaign([]);
-    await assert.rejects(run(request(experimentId, { unsolicited: true })), /capped over its whole plan before it is made \(decision 0064 §3\), and that cap is not built yet/);
+    await assert.rejects(run(request(experimentId, { unsolicited: true })), /an unsolicited enrolment needs a cap — a count and a window — and there is no default/);
+    await assert.rejects(run(request(experimentId, { unsolicited: true, cap: { max: 2, withinDays: 0 } })), /needs a cap/);
     assert.equal((await one("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).n, 0);
+  });
+
+  it("refuses an unsolicited enrolment through a sequencer that does not pull what it sent, before any run (0064 §6)", async () => {
+    const { experimentId } = await aCampaign([]);
+    declares = { ...reads, pullTouches: { serves: "no", why: "not built" } };
+    await assert.rejects(run(request(experimentId, { unsolicited: true, cap: { max: 3, withinDays: 30 } })), /does not pull what it sent \(not built\), so an unsolicited enrolment through it cannot be capped \(decision 0064 §6\)/);
+    await assert.rejects(run(request(experimentId, { unsolicited: true, cap: { max: 3, withinDays: 30 } }, { dryRun: true })), /cannot be capped/);
+    assert.equal((await one("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).n, 0);
+  });
+
+  it("enrols solicited through that same sequencer, and says it is not capped, and why", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    declares = { ...reads, pullTouches: { serves: "no", why: "not built" } };
+    const r = await run(request(experimentId));
+    assert.equal(r.enrolled.length, 1);
+    assert.ok(r.cap && !r.cap.judged && /solicited: .* not capped \(decision 0064 §6\)/.test(r.cap.why), JSON.stringify(r.cap));
   });
 
   it("refuses, before any run, a sequencer that does not read its steps (0064 §5)", async () => {
@@ -345,5 +375,134 @@ describe("an enrolment from a list carries the kernel's messages (0064)", { skip
     assert.deepEqual((await skipsOf(again.runId)).map(([reason]) => reason), ["duplicate"]);
     assert.equal((await one("select count(*)::int as n from relations.message")).n, 2);
     assert.equal(world.held.size, 1);
+  });
+});
+
+describe("the cap, judged ahead over the whole plan (0064 §3)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const unsolicited = (cap: { max: number; withinDays: number }) => ({ unsolicited: true, cap });
+  const aTouch = (personId: string, daysAgo: number, messageId: string | null = null) =>
+    client.query(
+      "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type, message_id) values ($1, 'email', 'outbound', true, 'memory-sequencer', gen_random_uuid()::text, $2, 'system', $3)",
+      [personId, new Date(Date.now() - daysAgo * DAY_MS), messageId],
+    );
+  /** Ada already enrolled in another sequence, carrying a plan of these delays, every step unsolicited unless told otherwise. */
+  const anotherPlan = async (personId: string, days: number[], unsolicitedSteps = true) => {
+    const plan = [];
+    for (const [i, d] of days.entries()) {
+      const w = await writeMessage(db, register, {
+        key: `other-${i}`,
+        personId,
+        channel: "email",
+        body: `Other ${i + 1}`,
+        unsolicited: unsolicitedSteps,
+        ...(unsolicitedSteps ? { cadence: "judged_ahead" as const } : {}),
+        actor: { type: "human", id: "an operator" },
+      });
+      assert.ok(w.ok, JSON.stringify(w));
+      plan.push({ step: i + 1, afterPreviousMinutes: d * 24 * 60, messageId: w.messageId, unsolicited: unsolicitedSteps });
+    }
+    await client.query("insert into acquisition.enrolment (person_id, sequence_key, channel, idempotency_key, state, provider, actor_type, plan, enrolled_at) values ($1, 'other', 'email', 'k-other', 'enrolled', 'memory-sequencer', 'system', $2, now())", [personId, JSON.stringify(plan)]);
+    return plan;
+  };
+
+  it("enrols a plan within the cap, its messages unsolicited, and judges no window behind at the gate", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    // Steps 3 days apart, against a cap of 2 in 30 days: the plan fits. The
+    // gate's window behind would count step 1's message as sent today and
+    // refuse step 2's.
+    world.steps[1] = { ...world.steps[1]!, afterPreviousMinutes: 3 * DAY };
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.equal(r.stoppedBy, undefined);
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+    assert.deepEqual((await rows("select unsolicited from relations.message")).map((m) => m.unsolicited), [true, true]);
+    assert.deepEqual(((await one("select plan from acquisition.enrolment")).plan as { unsolicited: boolean }[]).map((p) => p.unsolicited), [true, true]);
+    assert.ok(r.cap?.judged);
+  });
+
+  it("refuses a plan that would pass the cap with what already reached the person, writing nothing", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    await aTouch(ada, 10);
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    const skips = await skipsOf(r.runId);
+    assert.equal(skips.length, 1);
+    assert.equal(skips[0]![0], "capped");
+    assert.match(skips[0]![1]!, /^3 unsolicited touches between .* past the cap of 2 in 30 days, counting this plan \(decision 0064 §3\)$/);
+    assert.deepEqual(world.enrolments, []);
+    assert.equal((await one("select count(*)::int as n from relations.message")).n, 0);
+  });
+
+  it("counts the steps still planned of the person's other enrolments, and a step already sent once", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    // Another sequence plans a step today and one in a week: with this plan's two, four in a month.
+    const other = await anotherPlan(ada, [0, 7]);
+    const capped = await run(request(experimentId, unsolicited({ max: 3, withinDays: 30 })));
+    assert.deepEqual((await skipsOf(capped.runId)).map(([reason]) => reason), ["capped"]);
+    // Its first step is sent, and recorded: it counts once, as the touch, not twice.
+    await aTouch(ada, 0, other[0]!.messageId);
+    const still = await run(request(experimentId, unsolicited({ max: 3, withinDays: 30 })));
+    assert.deepEqual((await skipsOf(still.runId)).map(([reason]) => reason), ["capped"]);
+    const r = await run(request(experimentId, unsolicited({ max: 4, withinDays: 30 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("times this plan by the provider's delays: steps far apart do not share a window", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    // A touch yesterday, step 1 today, step 2 in three days: two in any two
+    // days. Taken at once, the plan would put three in these two.
+    await aTouch(ada, 1);
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 2 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("counts only unsolicited outbound touches: a reply, or a message the person asked for, is not one", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    await client.query(
+      "insert into relations.touch (person_id, channel, direction, unsolicited, provider, provider_event_id, occurred_at, actor_type) values ($1, 'email', 'inbound', false, 'memory-sequencer', 'a-reply', now() - interval '1 day', 'system'), ($1, 'email', 'outbound', false, 'memory-sequencer', 'an-answer', now() - interval '1 day', 'system')",
+      [ada],
+    );
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("does not count another plan's solicited steps", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    await anotherPlan(ada, [0, 7], false);
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("does not count, when a stopped run is replayed, the plan that run recorded for this same enrolment", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    world.failNext = true;
+    const stopped = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.match(stopped.stoppedBy ?? "", /enrolment interrupted/);
+    assert.equal((await one("select state from acquisition.enrolment where sequence_key = 'welcome'")).state, "pending");
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
+  });
+
+  it("does not count a suspended enrolment's planned steps: they will not leave", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    await anotherPlan(ada, [0, 7]);
+    await client.query("update acquisition.enrolment set state = 'suspended', suspension_asked_at = now(), suspension_method = 'a test', suspension_costs = '{}'::jsonb, suspension_read_back = '{}'::jsonb where sequence_key = 'other'");
+    const r = await run(request(experimentId, unsolicited({ max: 2, withinDays: 30 })));
+    assert.equal(r.enrolled.length, 1, JSON.stringify(await skipsOf(r.runId)));
   });
 });

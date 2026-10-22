@@ -91,6 +91,8 @@ export const skipReason = acquisition.enum("skip_reason", [
   "not_drafted",
   // The message gate refused a step's message (0038), so nobody is reached.
   "refused",
+  // The cap, judged ahead over the whole plan (0064 §3), would be passed.
+  "capped",
 ]);
 
 /**

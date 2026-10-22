@@ -29,6 +29,11 @@
 > verb 2 gets its method, and an adapter that cannot pull its touches is
 > refused for an unsolicited enrolment, as one that cannot suspend is.
 
+> Completed by [0065](0065-the-kernel-writes-what-is-delivered-and-every-message-says-how-to-stop.md):
+> an adapter declares the form its provider delivers, the way out it offers
+> and when it is known, and whether its provider classes a reply asking to
+> stop.
+
 Completes:
 
 - [0014](0014-one-sequencer-contract-every-channel.md): the contract gains

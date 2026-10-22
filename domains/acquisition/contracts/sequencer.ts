@@ -86,8 +86,9 @@ export interface Enrolment {
   /** For the provider's templates and for humans. Never used for matching. */
   display?: { fullName?: string };
   /**
-   * Values substituted into the steps. The engine renders what it can itself;
-   * what remains here is what the provider must resolve at send time.
+   * What the kernel wrote (decision 0064): each step's message, whole, under
+   * the variable that step renders (`readSteps`). The provider renders it as
+   * given, and writes nothing of its own into the copy.
    */
   variables?: Record<string, string>;
   /** Carried through so a reply can be attributed without a join table. */

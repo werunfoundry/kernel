@@ -55,6 +55,8 @@ const state = {
   /** The campaign's `sequences`, as its read returns them. */
   sequences: undefined as unknown,
   /** The provider's record of emails, as `GET /api/v2/emails` lists them, newest first. */
+  /** When set, the record ignores `email_type`, as a provider may: the adapter then sees the replies too. */
+  ignoreEmailType: false,
   emails: [] as { id: string; lead: string; campaign_id: string; step: string; ue_type: number; timestamp_email: string; timestamp_created: string; eaccount?: string; subsequence_id?: string | null }[],
 };
 let seen: Seen[] = [];
@@ -99,7 +101,7 @@ before(async () => {
       const q = url.searchParams;
       const since = q.get("min_timestamp_created");
       const all = state.emails.filter(
-        (m) => m.campaign_id === q.get("campaign_id") && (q.get("email_type") !== "sent" || m.ue_type === 1) && (!since || m.timestamp_created >= since),
+        (m) => m.campaign_id === q.get("campaign_id") && (state.ignoreEmailType || q.get("email_type") !== "sent" || m.ue_type === 1) && (!since || m.timestamp_created >= since),
       );
       const after = q.get("starting_after");
       const from = after ? all.findIndex((m) => m.id === after) + 1 : 0;
@@ -190,6 +192,7 @@ beforeEach(() => {
   state.missNextList = false;
   state.sequences = undefined;
   state.emails = [];
+  state.ignoreEmailType = false;
   state.moveDoesNothing = false;
   state.addDoesNothing = false;
   state.blockDoesNothing = false;
@@ -624,6 +627,13 @@ describe("the touches pull (decision 0051, verb 2)", () => {
     assert.equal(r.value.cursor, "2026-10-22T10:07:00.000Z");
     assert.equal(r.value.complete, true);
     assert.deepEqual(writes(), []);
+  });
+
+  it("reads no reply as a send, should the record ignore the filter it is asked", async () => {
+    state.ignoreEmailType = true;
+    state.emails = [sent("r1", "2026-10-22T10:06:00.000Z", { ue_type: 2 }), sent("e1", "2026-10-22T10:00:00.000Z")];
+    const r = await adapter().pullTouches!({}, ctx(true));
+    assert.ok(r.ok && r.value.items.map((i) => i.providerEventId).join() === "e1", JSON.stringify(r));
   });
 
   it("reads back an overlap behind its cursor, so a send listed late is seen", async () => {

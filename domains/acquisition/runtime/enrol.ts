@@ -43,13 +43,14 @@ import { and, eq } from "drizzle-orm";
 import type { CallContext } from "@werunfoundry/core/contracts/types";
 import type { Identity, IdentityVocabulary } from "@werunfoundry/core/identity";
 import { checkIdentity, hostOf, normalizeIdentity } from "@werunfoundry/core/identity";
+import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
 import { run as runTable } from "@werunfoundry/core/db/schema";
 import type { FoundPerson, PeopleSource } from "@werunfoundry/relations/contracts/people-source";
 import { person as personTable } from "@werunfoundry/relations/db/schema";
-import { findPerson, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
+import { readObjection, recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
 
 import type { EnrolmentState, SenderRef, Sequencer } from "../contracts/sequencer.js";
 import { readDeclaration, remainingOf } from "../contracts/sequencer.js";
@@ -158,6 +159,8 @@ export interface EnrolDeps {
   db: Database;
   registry: Registry;
   identity: IdentityVocabulary;
+  /** What the one reader recognises the register's entries with (0055): boot's. */
+  fingerprints: Fingerprinter;
   now?: () => Date;
 }
 
@@ -174,10 +177,11 @@ export class CannotSuspend extends Error {}
 /**
  * PROVISIONAL — removed when the guard decision 0055 brings lands, and not to
  * be extended to anything else. A live enrolment once an erasure has run,
- * while nothing reads 0052's suppression register: erasure keeps an
- * objection there as fingerprints (0062), and 0055's one reader, which would
- * find it again, is not built. Thrown before a run is opened, here and not only in
- * `kernel-enrol`, so that no other caller goes round it.
+ * while the passage that holds 0055's threshold is not built. The one reader
+ * now finds an erased objector by the keys the erasure kept (0052, 0062), and
+ * enrolment asks it; 0055 removes this guard with `clear`, never before.
+ * Thrown before a run is opened, here and not only in `kernel-enrol`, so that
+ * no other caller goes round it.
  */
 export class ErasedWithoutRegister extends Error {}
 
@@ -258,7 +262,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       .limit(1);
     if (erased.length > 0) {
       throw new ErasedWithoutRegister(
-        "an erasure has run on this instance, and nothing reads the suppression register yet (decisions 0052, 0055): a person erased after opting out would be enrolled as someone who never did",
+        "an erasure has run on this instance, and the passage that holds the threshold is not built (decision 0055): live enrolment stays refused until it is",
       );
     }
   }
@@ -474,22 +478,21 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         }
         seenPeople.add(computed);
 
-        // The registry first: what this engine already did for this person in
-        // this sequence. Reads only, so a dry run asks it too.
-        const known = await findPerson(deps.db, person);
-        if ("conflict" in known) {
-          await skip({ reason: "unreachable", person, company, detail: `the registry cannot tell who this is: ${known.conflict}` });
+        // The objection, through the one reader (0055): an opt-out on record,
+        // or a key in the register, which finds an erased objector again. It
+        // also says who this is on record, for the registry below. Reads
+        // only, so a dry run asks it too.
+        const objection = await readObjection(deps.db, deps.fingerprints, { identity: person });
+        if (objection.answer === "cannot_answer" && objection.stops) throw new Stop(`the objection cannot be read: ${objection.why}`);
+        if (objection.answer === "cannot_answer") {
+          await skip({ reason: "unreachable", person, company, detail: `the registry cannot tell who this is: ${objection.why}` });
           continue;
         }
-        // The global opt-out, read by every path that contacts anyone: a
-        // person who opted out is not enrollable by any route.
-        if ("id" in known) {
-          const [recorded] = await deps.db.select({ optedOutAt: personTable.optedOutAt }).from(personTable).where(eq(personTable.id, known.id));
-          if (recorded?.optedOutAt) {
-            await skip({ reason: "opted_out", person, company, detail: "opted out" });
-            continue;
-          }
+        if (objection.answer === "objected") {
+          await skip({ reason: "opted_out", person, company, detail: objection.by === "record" ? "opted out" : "objected before an erasure; the register holds it" });
+          continue;
         }
+        const known: { id: string } | { none: true } = objection.personId !== undefined ? { id: objection.personId } : { none: true };
         let row = "id" in known ? await registryRow(known.id) : undefined;
         if (row?.state === "enrolled") {
           await skip({ reason: "duplicate", person, company, detail: "already enrolled in this sequence, by the registry" });

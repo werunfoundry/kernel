@@ -57,9 +57,10 @@ export function fingerprintOf(secret: string, key: IdentityKey, vocabulary: Iden
 export const wrap = (secret: string, previous: string): string => hmac(secret, Buffer.from(previous, "hex")).toString("hex");
 
 /**
- * What an erasure is handed (0062): the means to fingerprint under the
- * version that writes, and the labels whose secret the instance no longer
- * holds (0063). Never a secret.
+ * What an erasure and the one reader are handed (0055, 0062): the means to
+ * fingerprint under the version that writes, to recompute a key as an entry
+ * keyed under any chain holds it, and the labels whose secret the instance
+ * no longer holds (0063). Never a secret.
  */
 export interface Fingerprinter {
   /** The label new entries are written under: an entry's chain, never wrapped. */
@@ -67,12 +68,29 @@ export interface Fingerprinter {
   /** Declared versions whose variable is not set (0063). */
   readonly missing: readonly string[];
   fingerprint(key: IdentityKey): { fingerprint: string; chain: string[] };
+  /**
+   * The key as an entry keyed under `chain` holds it (0058, §3): its
+   * fingerprint under the first label, wrapped under each one after.
+   * `undefined` when a label's secret is not held: no entry under it can be
+   * recognised, and the reader cannot answer.
+   */
+  under(chain: readonly string[], key: IdentityKey): string | undefined;
 }
 
-export function fingerprinter(writes: string, secret: string, missing: readonly string[], vocabulary: IdentityVocabulary): Fingerprinter {
+/** `secrets`: each declared version's secret the instance holds, by label; the one that writes among them. */
+export function fingerprinter(writes: string, secrets: Readonly<Record<string, string>>, missing: readonly string[], vocabulary: IdentityVocabulary): Fingerprinter {
+  const held = new Map(Object.entries(secrets));
+  const writing = held.get(writes);
+  if (writing === undefined) throw new Error(`the secret of version ${writes}, which writes, is not held`);
   return Object.freeze({
     writes,
     missing: Object.freeze([...missing]),
-    fingerprint: (key: IdentityKey) => ({ fingerprint: fingerprintOf(secret, key, vocabulary), chain: [writes] }),
+    fingerprint: (key: IdentityKey) => ({ fingerprint: fingerprintOf(writing, key, vocabulary), chain: [writes] }),
+    under: (chain: readonly string[], key: IdentityKey) => {
+      const secrets = chain.map((label) => held.get(label));
+      if (secrets.length === 0 || secrets.some((s) => s === undefined)) return undefined;
+      const [first, ...rest] = secrets as string[];
+      return rest.reduce((previous, secret) => wrap(secret, previous), fingerprintOf(first!, key, vocabulary));
+    },
   });
 }

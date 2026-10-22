@@ -47,7 +47,7 @@ scripts/              checks that make the doctrine enforceable
 | Sourcing path | written (0031): company pass by protection and the CRM before any spend — lazy, only as far as the run needs, resuming after what earlier live runs examined (0043) — people, completion in sequence, person pass on the completed identity, every address at the targeted company (0045); run in CI on a generated instance, and on a real instance (0043–0045); `kernel-enrol --from-run` enrols what a sourcing run kept (0032) |
 | A person's acts | commands at a terminal, refused without one (0047): `kernel-stage`, `kernel-relationship`, `kernel-list`, `kernel-decide`, beside `kernel-acknowledge`, `kernel-erase` and `kernel-attest-stop` |
 | HTTP API | written (0040): `kernel-api`, one token per instance; health, a run, listing and proposing drafts, an erasure's plan. It refuses `actorType: human`, so no act reserved to a person is on it |
-| Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not. Before any of it, each enrolment a provider may hold is suspended there, or the erasure is refused (0056); where retrying cannot help, a person attests the stop with `kernel-attest-stop`. An objector's keys survive as fingerprints in `relations.suppression`, written by the erasure alone (0052, 0062) under versions `kernel-fingerprint` generates (0058); nothing reads them yet (0055). The API's plan shows the rules only |
+| Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not. Before any of it, each enrolment a provider may hold is suspended there, or the erasure is refused (0056); where retrying cannot help, a person attests the stop with `kernel-attest-stop`. An objector's keys survive as fingerprints in `relations.suppression`, written by the erasure alone (0052, 0062) under versions `kernel-fingerprint` generates (0058); the one reader (0055) reads them wherever the objection is read: sourcing, enrolment, drafting, queueing and the message gate. The API's plan shows the rules only |
 | Sending path | written, with its hand-over stubbed (0050): from a frozen list to drafts, a person's approval, protection read at sending, the message's gate, a touch. No hand-over ships and no command calls it: nothing is sent for real |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
 | Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
@@ -233,8 +233,8 @@ whatever writes it, reads it, or connects it to the rest.
 - **Retention** of what names a person outside the database — backups,
   execution logs, working copies — is the instance's: `kernel-erase` does not
   reach it, and says so (0049). Erasure itself is built (0040, 0049), and
-  so is the register an objection survives in (0052, 0062); its reader is
-  not (0055).
+  so are the register an objection survives in (0052, 0062) and its one
+  reader (0055).
 - **The experiment object**, beyond the row that exists, waits until a real
   campaign has run.
 

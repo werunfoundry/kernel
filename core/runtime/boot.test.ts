@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 
 import { boot } from "./boot.js";
-import { checkValueOf, fingerprintOf, generateSecret } from "./fingerprint.js";
+import { checkValueOf, fingerprintOf, generateSecret, wrap } from "./fingerprint.js";
 
 const kernel = join(import.meta.dirname, "../..");
 const made: string[] = [];
@@ -441,6 +441,16 @@ describe("the register's versions (0058, 0063)", () => {
     assert.deepEqual(r.fingerprints.fingerprint(key), { fingerprint: fingerprintOf(SECRET, key, r.identity), chain: ["T1"] });
     assert.deepEqual(r.fingerprints.missing, []);
     assert.doesNotMatch(JSON.stringify(r.fingerprints), new RegExp(SECRET));
+  });
+
+  it("hands the one reader every version it holds, so an entry under an older chain is recognised (0055, 0058 §3)", async () => {
+    const r = await at(versions("T1", version("T0", OLD), version("T1", SECRET)), { ...ENV, KERNEL_FINGERPRINT_T0: OLD });
+    assert.equal(r.ok, true, JSON.stringify(r.issues));
+    if (!r.ok) return;
+    const key = { kind: "email", value: "ada@example.com" };
+    assert.equal(r.fingerprints.under(["T0"], key), fingerprintOf(OLD, key, r.identity));
+    assert.equal(r.fingerprints.under(["T0", "T1"], key), wrap(SECRET, fingerprintOf(OLD, key, r.identity)));
+    assert.doesNotMatch(JSON.stringify(r.fingerprints), new RegExp(OLD));
   });
 
   it("refuses the version that writes when its variable is not set, for every process (0063)", async () => {

@@ -423,11 +423,11 @@ try {
       const handed = [];
       const stub = { provider: "stub-handover", async handOver(m) { handed.push(m.idempotencyKey); return { ok: true, value: { providerEventId: "stub:" + m.idempotencyKey, at: new Date().toISOString() } }; } };
       const actor = { type: "agent", id: "a drafting agent" };
-      const drafted = await draftFromList(db, { listKey: "sourced", experimentId: ${JSON.stringify(experimentId)}, templateId: ${JSON.stringify(templateId)}, compose: (_p, t) => ({ body: t.body }), gate: { autonomyAfter: 5 }, dryRun: false, trigger: "cli", actor });
+      const drafted = await draftFromList(db, booted.fingerprints, { listKey: "sourced", experimentId: ${JSON.stringify(experimentId)}, templateId: ${JSON.stringify(templateId)}, compose: (_p, t) => ({ body: t.body }), gate: { autonomyAfter: 5 }, dryRun: false, trigger: "cli", actor });
       for (const d of drafted.drafted) await approve(db, d.draftId, { by: "an operator" }, { actor: { type: "human", id: "an operator" } });
       const request = { listKey: "sourced", experimentId: ${JSON.stringify(experimentId)}, unsolicited: true, cap: { max: 1, withinDays: 30 }, protectedMaxAgeMinutes: 60, dryRun: false, trigger: "cli", actor: { type: "system", id: "try-instance" } };
-      const sent = await sendFromList({ db, registry: booted.registry, handOver: stub }, request);
-      const again = await sendFromList({ db, registry: booted.registry, handOver: stub }, request);
+      const sent = await sendFromList({ db, registry: booted.registry, handOver: stub, fingerprints: booted.fingerprints }, request);
+      const again = await sendFromList({ db, registry: booted.registry, handOver: stub, fingerprints: booted.fingerprints }, request);
       await end();
       console.log(JSON.stringify({ drafted: drafted.drafted.map((d) => d.outcome), sent: sent.drafts.map((d) => d.outcome), again: again.drafts.length, handed: handed.length }));
     `;
@@ -456,7 +456,7 @@ try {
     const erasePlan = await bin("kernel-erase", ["--person", adaId, "--plan"]);
     show(erasePlan);
     expect(erasePlan.status === 0 && /sourcing_result: \d+ rows \(\d+ by keys\) — anonymise/.test(erasePlan.stdout), "kernel-erase --plan did not show the rows reached by keys");
-    expect(/Not reached by this command \(decision 0049\)/.test(erasePlan.stdout) && /opt-out survives only as fingerprints in the register \(decision 0052\), and nothing reads them yet/.test(erasePlan.stdout), "kernel-erase --plan did not say what it does not reach");
+    expect(/Not reached by this command \(decision 0049\)/.test(erasePlan.stdout) && /opt-out survives only as fingerprints in the register \(decision 0052\), one per key the erasure gathered: the one reader \(decision 0055\) finds the person objecting/.test(erasePlan.stdout), "kernel-erase --plan did not say what it does not reach");
     // Decision 0062: the plan says what the erasure would write in the register, under either answer.
     const wouldKeep = Number(erasePlan.stdout.match(/during erasure, relations: (\d+) entries it would write in the register, one per key, if the request includes not being contacted/)?.[1] ?? -1);
     expect(wouldKeep > 0, "the plan did not say what the erasure would keep of Ada's objection"); 

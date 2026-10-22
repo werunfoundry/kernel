@@ -21,13 +21,14 @@
  * not.
  */
 
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 
-import type { Identity } from "@werunfoundry/core/identity";
+import type { Identity, IdentityKey } from "@werunfoundry/core/identity";
 import { hostOf } from "@werunfoundry/core/identity";
+import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { ActorKind, Database } from "@werunfoundry/core/runtime/run";
 
-import { company, person, touch } from "../db/schema.js";
+import { company, person, suppression, touch } from "../db/schema.js";
 
 export type Found = { id: string } | { none: true } | { conflict: string };
 
@@ -274,11 +275,91 @@ export async function recordOptOut(db: Database, personId: string, at: Date): Pr
 /**
  * What erasing a person does to their opt-out (decisions 0049, 0052), said
  * wherever an erasure is shown. The objection survives as fingerprints in
- * the register, and nothing reads them yet: the one reader is 0055's.
- * Silence about that would read as protection.
+ * the register, which the one reader reads (0055, below), by the keys in
+ * hand: a key the erasure did not gather does not find it. Silence about
+ * that would read as protection.
  */
 export const OPT_OUT_AFTER_ERASURE =
-  "the opt-out survives only as fingerprints in the register (decision 0052), and nothing reads them yet: the one reader is decision 0055's, not built. Until it is, a later run that finds this person records a new person who has not opted out, and live enrolment is refused once an erasure has run. A person who did not object leaves nothing"
+  "the opt-out survives only as fingerprints in the register (decision 0052), one per key the erasure gathered: the one reader (decision 0055) finds the person objecting by any of those keys, and by no other. Live enrolment stays refused once an erasure has run, until the passage holds the threshold. A person who did not object leaves nothing"
+
+/**
+ * The one reader of an objection (decision 0055, §3). Whether a person
+ * objected, from the keys in hand or a recorded person's id: their opt-out
+ * on record, then the register (0052) for every key, under every chain an
+ * entry is keyed under. Every read of the objection goes through it.
+ *
+ * - **objected**: an opt-out on record, or a key in the register;
+ * - **none**: no objection on record. Keys that name nobody recorded and
+ *   match no entry are not "objected": the kernel honours the objections it
+ *   observed, and an erased objector found again is found by the register;
+ * - **cannot answer**:
+ *   - an id that names no row, or keys that name two people: there is
+ *     nobody to answer for, and it is never recorded as an objection.
+ *     `stops` is false: the caller refuses this one person;
+ *   - a version whose secret is not held, declared missing (0063) or named
+ *     by an entry's chain: an entry under it cannot be recognised. `stops`
+ *     is true: the run stops (0052).
+ *
+ * A record or register that cannot be read throws, and the run stops with
+ * it. `lock` locks the person's row, for a writer that counts against it.
+ */
+export type Objection =
+  | { answer: "objected"; by: "record" | "register"; personId?: string }
+  | { answer: "none"; personId?: string }
+  | { answer: "cannot_answer"; why: string; stops: boolean };
+
+export async function readObjection(
+  db: Database,
+  fingerprints: Fingerprinter,
+  asked: { personId: string } | { identity: Identity },
+  options: { lock?: boolean } = {},
+): Promise<Objection> {
+  let personId: string | undefined;
+  const keys: IdentityKey[] = [];
+  if ("identity" in asked) {
+    const found = await findPerson(db, asked.identity);
+    if ("conflict" in found) return { answer: "cannot_answer", why: found.conflict, stops: false };
+    if ("id" in found) personId = found.id;
+    keys.push(...asked.identity.keys);
+  } else {
+    personId = asked.personId;
+  }
+  if (personId !== undefined) {
+    const read = db.select({ optedOutAt: person.optedOutAt, email: person.email, externalId: person.externalId }).from(person).where(eq(person.id, personId));
+    const [row] = options.lock ? await read.for("update") : await read;
+    if (!row) return { answer: "cannot_answer", why: `no person ${personId} is on record`, stops: false };
+    if (row.optedOutAt !== null) return { answer: "objected", by: "record", personId };
+    // The row's own keys, as erasure gathers them (relations' domain.yaml,
+    // `keyColumns`): a profile id is held as `<network>:<id>`.
+    if (row.email) keys.push({ kind: "email", value: row.email });
+    const cut = row.externalId?.indexOf(":") ?? -1;
+    if (row.externalId && cut > 0) keys.push({ kind: "social_profile_id", network: row.externalId.slice(0, cut), value: row.externalId.slice(cut + 1) });
+  }
+  const asking = keys.filter((k) => typeof k.value === "string" && k.value.trim() !== "");
+  if (fingerprints.missing.length > 0) {
+    return { answer: "cannot_answer", why: `the register cannot be read: no secret is held for version ${fingerprints.missing.join(", ")} (decision 0063)`, stops: true };
+  }
+  if (asking.length > 0) {
+    // Every chain an entry is keyed under; one, until a rewrap adds one.
+    const chains = await db.selectDistinct({ chain: suppression.chain }).from(suppression);
+    const sought = new Set<string>();
+    for (const { chain } of chains) {
+      for (const key of asking) {
+        const fingerprint = fingerprints.under(chain, key);
+        if (fingerprint === undefined) {
+          return { answer: "cannot_answer", why: `the register cannot be read: an entry is keyed under ${chain.join(" → ")}, and a secret of that chain is not held (decision 0063)`, stops: true };
+        }
+        sought.add(fingerprint);
+      }
+    }
+    if (sought.size > 0) {
+      // Served by the unique on the fingerprint.
+      const [hit] = await db.select({ id: suppression.id }).from(suppression).where(inArray(suppression.fingerprint, [...sought])).limit(1);
+      if (hit) return { answer: "objected", by: "register", ...(personId ? { personId } : {}) };
+    }
+  }
+  return { answer: "none", ...(personId ? { personId } : {}) };
+}
 
 /**
  * Whether the person reached us on this channel after `since`: an inbound

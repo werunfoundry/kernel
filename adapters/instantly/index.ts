@@ -314,7 +314,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
           what: "Instantly's unsubscribe link, /unsub/1/<lead id>, whose id comes back with the upload",
           window: {
             known: false,
-            why: "two observations, not a bound: a lead added to a running campaign left 156, then 382 seconds after the upload answered (2026-10-22, one lead each, one idle account; README)",
+            why: "three observations, not a bound: a lead added to a running campaign left 156, 382, then 46 seconds after the upload answered (2026-10-22, one lead each, one idle account; README)",
           },
         }
       : {
@@ -534,7 +534,8 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
       };
       // A body is one variable, or two separated by blank space only: the
       // message, then the way-out line and nothing after it (0067). A body
-      // of two variables has not been sent at this provider yet (README).
+      // of two variables, a blank line between them, was sent once and
+      // arrived as written (README, *The closing rule, measured*).
       const bodyOf = (text: string): { body: StepCopy; wayOut: StepCopy | null } => {
         const two = /^\s*\{\{\s*([A-Za-z0-9_]+)\s*\}\}\s+\{\{\s*([A-Za-z0-9_]+)\s*\}\}\s*$/.exec(text);
         if (two) return { body: { variable: two[1]! }, wayOut: { variable: two[2]! } };

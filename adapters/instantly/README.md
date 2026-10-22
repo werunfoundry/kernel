@@ -86,9 +86,9 @@ Unbound, it declares none, and says why. Once the lead is uploaded,
 
 What reads back is the provider's record, not the message a person
 receives. A step's body is the message's variable, then the way-out
-variable after a blank space, and nothing else: **a body of two variables
-has not been sent at this provider yet.** The send of 2026-10-22 rewrote a
-single variable that held the body and the link together.
+variable after a blank space, and nothing else. Sent once in that form,
+the body and the line arrived in that order, a blank line between them
+and nothing after (*The closing rule, measured*, below).
 
 Before 0051, `withdraw` deleted the lead and reported success on the status
 code.
@@ -457,13 +457,50 @@ within a minute; this one was not.
 deleted and read 404. Unlike the morning's, `GET /api/v2/emails` read just
 after listed nothing for the deleted campaign.
 
+## The closing rule, measured (2026-10-22, evening)
+
+Decision 0067's closing rule — after the body, the way-out line and nothing
+else — in the form production uses, read in the message received. One
+campaign, created for it, one step, one lead on the operator's alias,
+nobody else; then the lead and the campaign deleted, both read 404.
+Sources as above: *the run* (this repository's own code), *the provider's
+record*, *the message*.
+
+**The production path, run as such** (the run):
+- the campaign's step body was `{{engine_body_1}}`, a blank line, then
+  `{{engine_way_out}}`; this adapter's `readSteps` read it as the body
+  followed by the way-out variable, and the kernel's `compareSteps` agreed
+  with a line declared;
+- `unsubscribeLink` was bound for real, to the workspace's tracking domain;
+- the lead was uploaded by this adapter's `enrol`, the way-out variable
+  empty, with a body of eight lines in French — paragraphs, accents, an em
+  dash, a signature;
+- this adapter's `writeWayOut` wrote the line 0.4 seconds later and read it
+  back as written: every variable, the bodies included.
+
+**What arrived** (the message, read as its raw MIME): `text/plain`, one
+part, quoted-printable. Decoded, it was byte for byte the body, then
+`CRLF CRLF`, then the line, then the `CRLF` that ends a last line:
+- the two variables rendered in their order, nothing between them but the
+  blank line the step put there, and nothing after the line;
+- the blank line *between* two variables survived — until now a line break
+  had only been seen to survive *inside* one;
+- `{link}` was substituted: the line carried
+  `https://<tracking domain>/unsub/1/<lead id>`, the link `writeWayOut`
+  returned, and the same link the `List-Unsubscribe` header carried.
+
+**The window, a third time.** The step left 46 seconds after the upload
+answered (the provider's record of the lead; the message's `Date` agrees):
+156, 382 and now 46 seconds. Not a bound: a fourth could be shorter than
+0.4 seconds.
+
 ## What a later throwaway campaign would measure
 
 - What link tracking does to an HTML body: the provider delivered none.
 - A reply asking to stop sent from the lead's own address, rather than
   from another address in the same thread.
 - The window again, on a busy account and more often, before it is
-  declared as a bound: two observations, 156 and 382 seconds.
+  declared as a bound: three observations, 156, 382 and 46 seconds.
 - How long the provider's record of sends lags a send, and whether a
   deleted campaign's sends stay listed: seen both ways.
 

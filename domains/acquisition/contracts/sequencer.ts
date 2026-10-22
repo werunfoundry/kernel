@@ -219,6 +219,35 @@ export interface Withdrawal {
   asOf: string;
 }
 
+/**
+ * One step a sequencer sent, as its record shows it (0051's verb 2, 0064
+ * §5): what happened, never what will. The kernel records it as an outbound
+ * touch, and finds the message it carried by the enrolment and the step.
+ */
+export interface SentStep {
+  /** The provider's own id for the send: a second read of it is a replay. */
+  providerEventId: string;
+  /** The sequence as the instance declared it; absent for a send in none of the adapter's sequences. */
+  sequenceKey?: string;
+  /** 1 for the first step; absent when the record does not say which step it was. */
+  step?: number;
+  /** Who it went to, by the keys the provider reaches them by. */
+  person: Identity;
+  channel: string;
+  /** When it left, by the provider's record. */
+  occurredAt: string;
+  sender?: string;
+}
+
+/** A page of sends, after a cursor (0051's verb 2). */
+export interface TouchesPage {
+  items: SentStep[];
+  /** Where the next pull starts. Opaque: the adapter's. */
+  cursor?: string;
+  /** Whether every page up to now was read. */
+  complete: boolean;
+}
+
 /** What the unsubscribes pull read (0051's verb 4). */
 export interface UnsubscribesRead {
   /** Each an `acquisition.unsubscribe` event, about one person, from one of the adapter's sequences. */
@@ -386,8 +415,8 @@ export type StopClassing = ({ classes: "yes" } & Measured) | { classes: "no"; wh
  */
 export interface SequencerDeclaration {
   enrol: Serves;
-  /** 0051's verb 2. No method in this contract yet. */
-  pullTouches: NotServed;
+  /** 0051's verb 2: `pullTouches`. */
+  pullTouches: Serves;
   suspend: SuspendDeclaration;
   /** 0051's verb 4: `pullUnsubscribes`. */
   pullUnsubscribes: Serves;
@@ -421,9 +450,9 @@ const VERBS = ["enrol", "pullTouches", "suspend", "pullUnsubscribes"] as const;
  * above says the same for an adapter the compiler sees; this says it for one
  * it never saw, written in plain JavaScript (0005).
  */
-const METHOD: Record<(typeof VERBS)[number], "enrol" | "withdraw" | "pullUnsubscribes" | null> = {
+const METHOD: Record<(typeof VERBS)[number], "enrol" | "withdraw" | "pullTouches" | "pullUnsubscribes" | null> = {
   enrol: "enrol",
-  pullTouches: null,
+  pullTouches: "pullTouches",
   suspend: "withdraw",
   pullUnsubscribes: "pullUnsubscribes",
 };
@@ -740,6 +769,23 @@ export interface Sequencer extends Contract {
    * no method (0054).
    */
   readSteps?(sequenceKey: string, ctx: CallContext): Promise<CallResult<SequenceSteps>>;
+
+  /**
+   * 0051's verb 2: what the sequencer sent, step by step, with its own id
+   * for each, after a cursor. Indexed on the person: every send the
+   * provider records for the adapter's sequences, the kernel's enrolments or
+   * not — a send no enrolment of the kernel's made is the one only this pull
+   * sees (0064 §3).
+   *
+   * A provider's record may list a send late, and with the time it left: a
+   * cursor on that time would step past it. The adapter reads back far
+   * enough to see late ones again, and each send's `providerEventId` makes a
+   * second read of it a replay.
+   *
+   * Optional: an adapter that does not serve the verb declares so, and has
+   * no method (0054).
+   */
+  pullTouches?(request: { after?: string }, ctx: CallContext): Promise<CallResult<TouchesPage>>;
 
   /**
    * Stop this provider reaching a person or a whole account, on every

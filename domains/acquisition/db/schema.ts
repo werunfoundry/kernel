@@ -392,6 +392,16 @@ export const enrolment = acquisition.table(
     enrolledAt: timestamp("enrolled_at", { withTimezone: true }),
 
     /**
+     * What an enrolment that carries the kernel's messages commits to
+     * (decision 0064): each step, how long after the one before it leaves,
+     * the message it carries, and whether it was asked for. Null for an
+     * enrolment that carries none. The cap counts it ahead (0064 §3), and
+     * the touches pull finds a send's message by it (§5). No key of the
+     * person's: step numbers, delays and the messages' ids.
+     */
+    plan: jsonb("plan").$type<{ step: number; afterPreviousMinutes: number; messageId: string; unsolicited: boolean }[]>(),
+
+    /**
      * For `suspended` (0051): the kernel's record of the stop, because the
      * provider's is not one — its status may keep reading active, and its
      * reference disappears with the object it points to. When the suspension

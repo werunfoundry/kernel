@@ -155,6 +155,13 @@
       "when": 1792678367580,
       "tag": "0021_skip_not_drafted_or_refused",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792680201957,
+      "tag": "0022_enrolment_plan",
+      "breakpoints": true
     }
   ]
 }

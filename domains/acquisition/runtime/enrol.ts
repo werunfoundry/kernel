@@ -420,7 +420,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
     )[0];
 
   /** Moves a registry row, attributed to this run. */
-  const settleRow = (id: string, change: { state: "pending" | "enrolled" | "refused"; enrolledAt?: Date; refusal?: string | null }) =>
+  const settleRow = (id: string, change: { state: "pending" | "enrolled" | "refused"; enrolledAt?: Date; refusal?: string | null; plan?: (typeof enrolment.$inferInsert)["plan"] }) =>
     deps.db
       .update(enrolment)
       .set({
@@ -489,6 +489,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
 
     /** What each variant's steps render, once the provider's steps agree with its templates. */
     const renders = new Map<string, StepRender[]>();
+    /** Each step's delay after the one before, as the provider will run it. */
+    const delays = new Map<number, number>();
     if (fromList) {
       const read = await sequencer.readSteps!(request.sequenceKey, ctx);
       if (!read.ok) throw new Stop(`the steps of "${request.sequenceKey}" cannot be read: ${read.error.code}: ${read.error.message}`);
@@ -496,6 +498,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
       if (elsewhere.length > 0) {
         throw new Stop(`"${request.sequenceKey}" runs steps on ${elsewhere.map((c) => `"${c}"`).join(", ")}, and this enrolment is on "${request.channel}": one enrolment carries one channel until the registry row holds several (decision 0064)`);
       }
+      for (const s of read.value.steps) delays.set(s.step, s.afterPreviousMinutes);
       for (const [variant, plan] of fromList.plans) {
         const agreed = compareSteps(read.value, plan);
         if (!agreed.agrees) throw new Stop(`the provider's steps of "${request.sequenceKey}" and the templates of variant "${variant}" disagree, so the plan would not be the one run (decision 0064 §5): ${agreed.disagreements.join("; ")}`);
@@ -675,7 +678,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         // the gate before anyone is reached. A step's message refused by the
         // gate reaches nobody; the messages already written stay, as what
         // would have been said, and a replay writes each once.
-        let carried: { variables: Record<string, string>; variant: string } | undefined;
+        let carried: { variables: Record<string, string>; variant: string; plan: NonNullable<(typeof enrolment.$inferInsert)["plan"]> } | undefined;
         if (fromList) {
           if (!("id" in known)) {
             await skip({ reason: "unreachable", person, company, detail: "the list names someone no longer on record" });
@@ -701,6 +704,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
             continue;
           }
           const variables: Record<string, string> = {};
+          const plan: NonNullable<(typeof enrolment.$inferInsert)["plan"]> = [];
           const refusals: string[] = [];
           for (const r of steps) {
             const d = approved.find((x) => x.step === r.step)!;
@@ -729,12 +733,13 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
               refusals.push(`step ${r.step}: ${written.refused.join("; ")}`);
               break;
             }
+            plan.push({ step: r.step, afterPreviousMinutes: delays.get(r.step) ?? 0, messageId: written.messageId, unsolicited: request.fromList!.unsolicited });
           }
           if (refusals.length > 0) {
             await skip({ reason: "refused", person, company, detail: `the message gate refused, so nobody is reached (decision 0038): ${refusals.join("; ")}` });
             continue;
           }
-          carried = { variables, variant: variants[0]! };
+          carried = { variables, variant: variants[0]!, plan };
         }
 
         // Written before the provider is called, so that a run dying in
@@ -754,7 +759,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
             continue;
           }
           if (row) {
-            await settleRow(row.id, { state: "pending", refusal: null });
+            await settleRow(row.id, { state: "pending", refusal: null, ...(carried ? { plan: carried.plan } : {}) });
           } else {
             await deps.db
               .insert(enrolment)
@@ -765,6 +770,7 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
                 channel: request.channel,
                 idempotencyKey: key,
                 provider: sequencer.provider,
+                ...(carried ? { plan: carried.plan } : {}),
                 actorType: request.actor.type,
                 ...(request.actor.id ? { actorId: request.actor.id } : {}),
                 runId: open.id,

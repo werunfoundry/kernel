@@ -20,6 +20,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { run } from "@werunfoundry/core/db/schema";
 import type { DomainManifest } from "@werunfoundry/core/manifest/types";
 import { NOT_REACHED, planErasure } from "@werunfoundry/core/runtime/erase";
+import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import { draft, draftState } from "@werunfoundry/acquisition/db/schema";
 import { propose } from "@werunfoundry/acquisition/runtime/draft";
@@ -27,6 +28,8 @@ import { OPT_OUT_AFTER_ERASURE } from "@werunfoundry/relations/runtime/record";
 
 export interface ApiDeps {
   db: Database;
+  /** What the one reader recognises the register's entries with (0055): boot's. */
+  fingerprints: Fingerprinter;
   /** The enabled domains, for what they declare — erasure, today. */
   domains: readonly DomainManifest[];
   token: string;
@@ -108,7 +111,7 @@ export const routes: { method: string; path: string; handler: Handler }[] = [
   {
     method: "post",
     path: "/v1/drafts",
-    handler: async ({ db }, { body }) => {
+    handler: async ({ db, fingerprints }, { body }) => {
       const b = object(body);
       const allowed = new Set(["experimentId", "personId", "step", "templateId", "renderedSubject", "renderedBody", "sender", "autonomyAfter", "reactiveWithinMinutes", "actor", "runId"]);
       for (const k of Object.keys(b)) if (!allowed.has(k)) throw new BadRequest(`${k} is not a field of this operation`);
@@ -116,6 +119,7 @@ export const routes: { method: string; path: string; handler: Handler }[] = [
       if ("status" in actor) return actor;
       const proposed = await propose(
         db,
+        fingerprints,
         {
           experimentId: uuid(b.experimentId, "experimentId"),
           personId: uuid(b.personId, "personId"),

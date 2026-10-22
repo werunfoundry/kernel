@@ -30,6 +30,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { CallContext, CallResult, Contract } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
+import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
@@ -114,7 +115,8 @@ export interface DraftReport {
   skipped: { member: { personId?: string; companyId?: string }; reason: string }[];
 }
 
-export async function draftFromList(db: Database, request: DraftRequest): Promise<DraftReport> {
+/** `fingerprints`: what the one reader recognises the register's entries with (0055), boot's. */
+export async function draftFromList(db: Database, fingerprints: Fingerprinter, request: DraftRequest): Promise<DraftReport> {
   // Read before a run is opened: a run that could not have done anything is not a run.
   const list = await sealedList(db, request.listKey);
   const [t] = await db.select().from(template).where(eq(template.id, request.templateId));
@@ -141,6 +143,7 @@ export async function draftFromList(db: Database, request: DraftRequest): Promis
       }
       const proposed = await propose(
         db,
+        fingerprints,
         {
           experimentId: request.experimentId,
           personId: member.personId,
@@ -199,6 +202,8 @@ export interface SendDeps {
   db: Database;
   registry: Registry;
   handOver: HandOver;
+  /** What the one reader recognises the register's entries with (0055): boot's. */
+  fingerprints: Fingerprinter;
   now?: () => Date;
 }
 
@@ -299,6 +304,7 @@ export async function sendFromList(deps: SendDeps, request: SendRequest): Promis
       /* 5. The message, through its gate ----------------------------------- */
       const written = await writeMessage(
         db,
+        deps.fingerprints,
         {
           key: messageKey(d.id),
           personId: d.personId,
@@ -324,7 +330,7 @@ export async function sendFromList(deps: SendDeps, request: SendRequest): Promis
 
       /* 6. Queued, by the draft's own gate ---------------------------------- */
       if (d.state === "approved") {
-        const queued = await queue(db, d.id, by);
+        const queued = await queue(db, deps.fingerprints, d.id, by);
         if (!queued.ok) {
           report.drafts.push({ ...line, outcome: "not_queued", detail: [queued.refused] });
           continue;

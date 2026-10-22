@@ -5,6 +5,11 @@
 > the two checks, a dry run through the gate. What stands is the provisional
 > guard (*The threshold is held by code*).
 
+> Built by #125, in part: the one reader of section 3, in `relations`, and
+> every read of the objection through it. The passage, the threshold, the
+> sandbox's move, the checks and the dry run are still not built, and the
+> provisional guard stands.
+
 > Superseded in part by [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md):
 > the whole of section 2 — cadence and lane move to the enrolment — the
 > hand-over among section 1's contact verbs, and "for a send" in section 5.

@@ -268,7 +268,7 @@ const factory: AdapterFactory<Sequencer> = ({ options, env }) => {
     },
     classesStop: {
       classes: "no",
-      why: "not proved: no reply asking to stop has been sent to this provider and read back",
+      why: "measured on 2026-10-22: a reply asking to stop was recorded as a reply, the lead set not interested and the campaign stopped; the lead was not unsubscribed and nothing was blocklisted (README, The throwaway campaign of 2026-10-22)",
     },
   };
 

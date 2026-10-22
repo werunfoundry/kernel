@@ -23,6 +23,7 @@ import type { CallResult, Contract } from "@werunfoundry/core/contracts/types";
 import type { Identity } from "@werunfoundry/core/identity";
 import { identityVocabulary } from "@werunfoundry/core/identity";
 import { loadDomain } from "@werunfoundry/core/manifest/load";
+import { fingerprinter, fingerprintOf, generateSecret } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { Database } from "@werunfoundry/core/runtime/run";
 import type { Crm } from "@werunfoundry/relations/contracts/crm";
@@ -211,6 +212,8 @@ const registry: Registry = {
 const relationsDomain = loadDomain(join(import.meta.dirname, "../../relations/domain.yaml")).manifest;
 if (!relationsDomain) throw new Error("relations/domain.yaml does not load");
 const identity = identityVocabulary([relationsDomain], ["net_a"]);
+/** The register's secret, under one version (0055). */
+const SECRET = generateSecret();
 
 const request = (over: Partial<SourceRequest> = {}): SourceRequest => ({
   maxPeople: 10,
@@ -221,7 +224,7 @@ const request = (over: Partial<SourceRequest> = {}): SourceRequest => ({
   actor: { type: "system", id: "test" },
   ...over,
 });
-const run = (over: Partial<SourceRequest> = {}) => source({ db, registry, identity, now: () => NOW }, request(over));
+const run = (over: Partial<SourceRequest> = {}, fingerprints = fingerprinter("T1", { T1: SECRET }, [], identity)) => source({ db, registry, identity, fingerprints, now: () => NOW }, request(over));
 
 const recorded = async () => (await client.query("select email from relations.person order by email")).rows.map((r) => r.email as string);
 const outcomes = async (runId: string) =>
@@ -231,6 +234,8 @@ const outcomes = async (runId: string) =>
     has_person: boolean;
   }[];
 const runRow = async (id: string) => (await client.query("select status, dry_run, error from core.run where id = $1", [id])).rows[0] as { status: string; dry_run: boolean; error: string | null };
+/** The register refuses a truncate that would destroy an entry (0052); between tests, its triggers are set aside, as only a database's owner can. */
+const forgetRegister = () => client.query("set session_replication_role = replica; truncate relations.suppression; set session_replication_role = origin");
 const kept = (r: Awaited<ReturnType<typeof run>>) => r.looked.filter((l) => l.outcome === "kept").map((l) => l.person?.keys.find((k) => k.kind === "email")?.value);
 
 beforeEach(async () => {
@@ -442,6 +447,23 @@ describe("the person pass, on the completed identity", { skip: base ? false : "T
     assert.match(r.stoppedBy ?? "", /the CRM could not be read/);
     assert.deepEqual(await recorded(), []);
     assert.equal(world.completed.length, 1, "the run went on paying after the CRM went quiet");
+  });
+
+  it("excludes a person the register holds an objection for, though nobody is on record (0055)", async () => {
+    await client.query("insert into relations.suppression (fingerprint, chain, written_at) values ($1, '{T1}', now())", [fingerprintOf(SECRET, { kind: "email", value: "bo@open.example.com" }, identity)]);
+    try {
+      const r = await run();
+      assert.deepEqual(kept(r), ["ada@open.example.com"]);
+      assert.deepEqual(r.looked.filter((l) => l.outcome === "opted_out").map((l) => l.detail), ["objected before an erasure; the register holds it"]);
+    } finally {
+      await forgetRegister();
+    }
+  });
+
+  it("stops the run while the register cannot be read: a version's secret is missing (0063)", async () => {
+    const r = await run({}, fingerprinter("T1", { T1: SECRET }, ["T0"], identity));
+    assert.match(r.stoppedBy ?? "", /the objection cannot be read: the register cannot be read: no secret is held for version T0/);
+    assert.deepEqual(kept(r), []);
   });
 
   it("excludes a person who opted out", async () => {

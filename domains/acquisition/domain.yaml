@@ -106,6 +106,10 @@ erasure:
       refusal: "erased (decision 0053); the provider's answer is not kept"
       suspension_read_back: '{"erased": "decision 0053"}'
       suspension_attestation: '{"erased": "decision 0053"}'
+      # The way out's line and link name the person's record at the
+      # provider (0067); the state and the times stand.
+      way_out_line: "erased (decision 0053)"
+      way_out_link: "erased (decision 0053)"
   - table: sourcing_result
     column: person_id
     keys: person

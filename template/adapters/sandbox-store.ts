@@ -40,6 +40,12 @@ export interface SandboxState {
   suppressed: string[];
   crm: { email: string; reason: string }[];
   notes: { subject: string; body: string; at: string }[];
+  /**
+   * The sequences whose way-out line the sandbox refuses to write (0067):
+   * what lets a run see an enrolment made without one. Set by hand, or by a
+   * test; the sandbox never writes it.
+   */
+  wayOutRefused?: string[];
 }
 
 const unavailable = (message: string): { ok: false; error: CallError } => ({

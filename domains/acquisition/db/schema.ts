@@ -72,6 +72,24 @@ export const enrolmentState = acquisition.enum("enrolment_state", [
 ]);
 
 /**
+ * What the enrolment records of the way out after the body (decision 0067
+ * §3): three states, each a fact written once, none presumed.
+ *
+ * - `written` — the line, with the provider's link, written after the upload
+ *   and read back at `way_out_read_back_at`. **Read back is the provider's
+ *   record, not the message delivered**, which has twice been shown to
+ *   differ: `written` says the line was written and read back at that time,
+ *   never that the person received it. Whether the first step left before
+ *   the read-back is what the touches pull's time of that step establishes,
+ *   against this one (0067 §3); there is no column for it.
+ * - `cut` — the instance cut the way out (0065 §2), and why.
+ * - `absent` — none was written, and why: the adapter offers none or says
+ *   nothing, the instance declares no line (0069), or the rewrite failed.
+ *   The person stays enrolled: an absence is recorded, not refused.
+ */
+export const wayOutState = acquisition.enum("way_out", ["written", "cut", "absent"]);
+
+/**
  * Why someone was not enrolled. Never folded into one (0019). A company whose
  * domain is not a host is `unreadable_key`, not `protected` (0044).
  */
@@ -425,6 +443,24 @@ export const enrolment = acquisition.table(
      */
     suspensionAttestation: jsonb("suspension_attestation"),
 
+    /**
+     * The way out after the body (decision 0067 §3), written once, when the
+     * enrolment is made, and never rewritten — the migration's trigger
+     * refuses it, but for erasure, which replaces the line and the link,
+     * which name the person's record at the provider. Null on a row made
+     * before 0067, or not yet made. See `wayOutState`: `written` is not
+     * delivered.
+     */
+    wayOut: wayOutState("way_out"),
+    /** For `written`: the line as written, its link in it. */
+    wayOutLine: text("way_out_line"),
+    /** For `written`: the provider's link, as the adapter returned it and the line carries it. */
+    wayOutLink: text("way_out_link"),
+    /** For `written`: when the provider's record read back the line. Not when the person received it. */
+    wayOutReadBackAt: timestamp("way_out_read_back_at", { withTimezone: true }),
+    /** For `cut` and `absent`: why, in words. */
+    wayOutWhy: text("way_out_why"),
+
     /** Doctrine 5: the run that last wrote this row. */
     actorType: actorType("actor_type").notNull(),
     actorId: text("actor_id"),
@@ -462,6 +498,23 @@ export const enrolment = acquisition.table(
              (${t.suspensionReadBack} is not null and ${t.suspensionMethod} is not null and ${t.suspensionCosts} is not null and ${t.suspensionAttestation} is null)
           or (${t.suspensionAttestation} is not null and ${t.suspensionReadBack} is null and ${t.suspensionMethod} is null and ${t.suspensionCosts} is null)))
        or (${t.state}::text <> 'suspended' and ${t.suspensionAskedAt} is null and ${t.suspensionRunId} is null and ${t.suspensionReadBack} is null and ${t.suspensionMethod} is null and ${t.suspensionCosts} is null and ${t.suspensionAttestation} is null)`,
+    ),
+    /**
+     * The way out's record, whole or absent, in both directions (0067): each
+     * state carries the columns it needs and none of the others, and a row
+     * with no state carries none of them. A form "state = X equals these
+     * columns are set" is met when both sides are false, and would let a row
+     * with no state carry part of a record. Only a made enrolment carries
+     * one: `enrolled`, or `suspended` after it. Each branch says `is not
+     * null` first: a comparison with a null state is null, not false, and a
+     * check that comes out null passes — it let a row with no state carry a
+     * reason alone until a test refused it.
+     */
+    check(
+      "enrolment_way_out_recorded",
+      sql`(${t.wayOut} is null and ${t.wayOutLine} is null and ${t.wayOutLink} is null and ${t.wayOutReadBackAt} is null and ${t.wayOutWhy} is null)
+       or (${t.wayOut} is not null and ${t.wayOut} = 'written' and ${t.state}::text in ('enrolled', 'suspended') and ${t.wayOutLine} is not null and ${t.wayOutLink} is not null and ${t.wayOutReadBackAt} is not null and ${t.wayOutWhy} is null)
+       or (${t.wayOut} is not null and ${t.wayOut} in ('cut', 'absent') and ${t.state}::text in ('enrolled', 'suspended') and ${t.wayOutLine} is null and ${t.wayOutLink} is null and ${t.wayOutReadBackAt} is null and ${t.wayOutWhy} is not null)`,
     ),
   ],
 );

@@ -63,6 +63,33 @@ one run with two steps saw them about 26 minutes apart for a delay of 20.
 A binding with a sequence that has no parking subsequence
 declares that it cannot suspend, and `kernel-enrol` refuses it.
 
+**The way out (0065, 0067).** The link is Instantly's unsubscribe link for
+the lead, whose host is the workspace's own tracking domain: a delivered
+message's `List-Unsubscribe` header shows it, and nothing in the API was
+seen to. The instance binds it:
+
+    options:
+      unsubscribeLink: https://<the workspace's tracking domain>/unsub/1/{lead}
+
+Bound, the adapter declares its way out *known only after the call*.
+Unbound, it declares none, and says why. Once the lead is uploaded,
+`writeWayOut`:
+
+1. finds the lead by email in the campaign, and refuses one that does not
+   carry the enrolment's key;
+2. writes every variable the lead holds, the line among them, with
+   `PATCH /api/v2/leads/{id}`: whether `custom_variables` is merged or
+   replaced whole was not measured, and either way the bodies stay;
+3. reads the lead again (`GET /api/v2/leads/{id}`), and answers only if
+   every variable reads back as written. The PATCH's 200 proves nothing: the
+   same route answered 200 to a status it never applied.
+
+What reads back is the provider's record, not the message a person
+receives. A step's body is the message's variable, then the way-out
+variable after a blank space, and nothing else: **a body of two variables
+has not been sent at this provider yet.** The send of 2026-10-22 rewrote a
+single variable that held the body and the link together.
+
 Before 0051, `withdraw` deleted the lead and reported success on the status
 code.
 

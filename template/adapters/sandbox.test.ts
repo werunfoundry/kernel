@@ -8,7 +8,7 @@
  */
 
 import { strict as assert } from "node:assert";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -141,8 +141,8 @@ describe("the sequencer", () => {
     const r = await two.readSteps!("follow-up", ctx(true));
     assert.ok(r.ok);
     assert.deepEqual(r.value.steps, [
-      { step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, variants: 1 },
-      { step: 2, channel: "email", afterPreviousMinutes: 3 * 24 * 60, subject: null, body: { variable: "engine_body_2" }, variants: 1 },
+      { step: 1, channel: "email", afterPreviousMinutes: 0, subject: { variable: "engine_subject_1" }, body: { variable: "engine_body_1" }, wayOut: { variable: "engine_way_out" }, variants: 1 },
+      { step: 2, channel: "email", afterPreviousMinutes: 3 * 24 * 60, subject: null, body: { variable: "engine_body_2" }, wayOut: { variable: "engine_way_out" }, variants: 1 },
     ]);
     const one = await sequencer.readSteps!("welcome", ctx(true));
     assert.ok(one.ok && one.value.steps.length === 1);
@@ -157,6 +157,29 @@ describe("the sequencer", () => {
     const kept = loadState(join(dir, "carried.json"));
     assert.ok(kept.ok);
     assert.deepEqual(kept.value.enrolments.welcome?.["ada@open.example.com"]?.variables, variables);
+  });
+
+  // 0067: it writes the line, keeps every other variable, reads them back —
+  // and refuses a sequence its state file lists, so that a run can be seen
+  // enrolling someone without a way out.
+  it("writes the way-out line with its link, keeps the bodies, and refuses a sequence it is told to", async () => {
+    const file = join(dir, "way-out.json");
+    const s = sequencerFactory({ options: { stateFile: file }, env: {} });
+    assert.ok((await s.enrol({ ...enrolment, variables: { engine_body_1: "One.", engine_way_out: "" } }, ctx(false))).ok);
+    const asked = { idempotencyKey: enrolment.idempotencyKey, sequenceKey: "welcome", person: ada, variable: "engine_way_out", line: (link: string) => `Stop: ${link}` };
+    const wrote = await s.writeWayOut!(asked, ctx(false));
+    assert.ok(wrote.ok, JSON.stringify(wrote));
+    assert.equal(wrote.value.readBack, `Stop: https://sandbox.invalid/stop/${enrolment.idempotencyKey}`);
+    const kept = loadState(file);
+    assert.ok(kept.ok);
+    assert.deepEqual(kept.value.enrolments.welcome?.["ada@open.example.com"]?.variables, { engine_body_1: "One.", engine_way_out: wrote.value.readBack });
+    const refusing = loadState(file);
+    assert.ok(refusing.ok);
+    writeFileSync(file, JSON.stringify({ ...refusing.value, wayOutRefused: ["welcome"] }));
+    const refused = await s.writeWayOut!(asked, ctx(false));
+    assert.ok(!refused.ok && /refuses the way out of "welcome"/.test(refused.error.message), JSON.stringify(refused));
+    const another = await s.writeWayOut!({ ...asked, idempotencyKey: "someone else's" }, ctx(false));
+    assert.ok(!another.ok && another.error.code === "not_found", JSON.stringify(another));
   });
 
   it("says which enrolment it read, by the key its record holds, in status and in a withdrawal (0060)", async () => {

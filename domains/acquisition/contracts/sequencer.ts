@@ -274,8 +274,41 @@ export interface SequenceStep {
   /** `null`: the step has no subject of its own, and goes as a reply in the thread. */
   subject: StepCopy | null;
   body: StepCopy;
+  /**
+   * What the step renders after the body, and nothing after it (decision
+   * 0067's closing rule): the way-out line, as a variable of the kernel's,
+   * or nothing. Copy written at the provider after the body is not one.
+   */
+  wayOut: StepCopy | null;
   /** How many variants the provider chooses between at send time. The kernel writes one message per step. */
   variants: number;
+}
+
+/** The way-out line to write after the upload (decisions 0065, 0067). */
+export interface WayOutWrite {
+  /** The enrolment's key, as the adapter was handed it. */
+  idempotencyKey: string;
+  sequenceKey: string;
+  person: Identity;
+  /** The variable every step renders after its body. */
+  variable: string;
+  /** The line, given the provider's link: the instance's words, the link in its place. */
+  line: (link: string) => string;
+}
+
+/**
+ * The line as the provider's record read it back, after the write. **Not
+ * the message delivered**: the provider's record has twice been shown to
+ * differ from what a person received (0065, 0066). The kernel records what
+ * was written and read back, and when.
+ */
+export interface WayOutWritten {
+  /** The provider's link, as the adapter built the line with it. */
+  link: string;
+  /** The variable, as the provider's record read it back. */
+  readBack: string;
+  /** When that read was made. */
+  readBackAt: string;
 }
 
 /** A sequence's steps, read from the provider (0064). */
@@ -578,6 +611,9 @@ export function checkDeclaration(declaration: unknown, adapter?: unknown): Valid
         } else if (!isText(win.why)) error("wayOut.window.why", "an unknown window says why it is unknown");
       }
     } else error("wayOut.offered", `"${String(w.offered)}" is not none, known_before or known_after`);
+    if (w && w.offered === "known_after" && adapter !== undefined && typeof (adapter as Record<string, unknown> | null)?.writeWayOut !== "function") {
+      error("wayOut", "declared known after the call, but `writeWayOut` is not a function on the adapter (decision 0054)");
+    }
   }
   if (d.classesStop !== undefined) {
     const c = d.classesStop as Record<string, unknown> | null;
@@ -787,6 +823,19 @@ export interface Sequencer extends Contract {
    * no method (0054).
    */
   pullTouches?(request: { after?: string }, ctx: CallContext): Promise<CallResult<TouchesPage>>;
+
+  /**
+   * Decisions 0065 and 0067: for an adapter whose way out is known only
+   * after the call, write the way-out line into the variable the steps
+   * render after the body, once the enrolment is made, and read it back.
+   * The adapter writes every variable the person holds with it, not that one
+   * alone, and reads them all back: a provider that replaces a lead's
+   * variables whole would otherwise erase the bodies. A dry run writes
+   * nothing.
+   *
+   * Required of an adapter that declares its way out `known_after` (0054).
+   */
+  writeWayOut?(request: WayOutWrite, ctx: CallContext): Promise<CallResult<WayOutWritten>>;
 
   /**
    * Stop this provider reaching a person or a whole account, on every

@@ -204,6 +204,13 @@ async function main(): Promise<number> {
       `  capacity: ${report.capacity.checked ? `budget ${report.capacity.budget}` : `not checked — ${report.capacity.why}`}`,
     );
     console.log(`  cap: ${report.cap.judged ? `${report.cap.max} unsolicited touches in any ${report.cap.withinDays} days, judged ahead over each person's plan (decision 0064 §3)` : `not capped — ${report.cap.why}`}`);
+    // The way out after each body (0067, 0069): written and read back — the
+    // provider's record, not what anyone received — cut, or absent and why,
+    // said every time it happens.
+    const w = report.wayOut;
+    const would = report.dryRun ? "would be " : "";
+    console.log(`  way out: ${w.written} ${would}written and read back at the provider, ${w.cut} ${would}cut by the instance (decision 0067)`);
+    for (const a of w.absent) console.log(`  ! ${a.people} ${a.people === 1 ? "person" : "people"} ${would}enrolled without a way out: ${a.why}`);
     console.log(`  ${report.dryRun ? "would enrol" : "enrolled"}: ${report.enrolled.length}`);
     for (const e of report.enrolled) console.log(`    + ${shown(e.person)} (${e.state})`);
     if (report.reconciled.length > 0) {

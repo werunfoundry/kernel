@@ -113,6 +113,12 @@ outside sourcing — a referral, a conversation, an address of one's own to
 test with — cannot be put on a list (`kernel-list`) except by writing the
 row directly, outside any command and any run.
 
+**An experiment's status conditions the contact only half the time.** A
+known defect. The message gate refuses a lane's approval for an experiment
+that is not running, and not a person's: drafts a person approved are
+enrolled for an experiment that is `measuring` (measured). Written at the
+gate, in `relations/runtime/message.ts`.
+
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
 

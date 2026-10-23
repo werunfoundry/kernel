@@ -41,6 +41,23 @@
  * provider: enrolled there means confirmed here, not enrolled twice. Every
  * skip is kept with its reason, for a dry run too; a dry run writes its run
  * and its skips, and nothing else — no registry row, no person, no company.
+ *
+ * **A dry run is what a person reads before they commit.** One that
+ * announces someone enrolled whom the live run would not enrol is the worse
+ * defect of the two: a live run that skips for the wrong reason reaches
+ * nobody, and a dry run that says yes misleads the one reader who can still
+ * stop the run. So every check that needs no write runs on a dry run too,
+ * before the first write: protection, a company with no key, the objection,
+ * the registry, the steps, the cap. Two do not yet:
+ *
+ * - the message gate (0038) is not asked on a dry run. An approval the gate
+ *   refuses live is announced as enrolled — measured with drafts a lane
+ *   approved for an experiment no longer running. Drafts a person approved
+ *   are not concerned: the gate then asks nothing the dry run has not;
+ * - the company's and the person's records are written only live, so a
+ *   conflict between recorded keys is met only then.
+ *
+ * The provider's own answer is the one thing a dry run cannot know.
  */
 
 import { createHash } from "node:crypto";

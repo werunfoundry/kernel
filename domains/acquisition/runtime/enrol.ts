@@ -58,6 +58,12 @@
  *   conflict between recorded keys is met only then.
  *
  * The provider's own answer is the one thing a dry run cannot know.
+ *
+ * **And one check neither asks.** The experiment's status conditions the
+ * contact only for a lane's approval: drafts a person approved are carried
+ * for an experiment that is not running, dry and live alike — measured with
+ * one that is `measuring`. The gap is the gate's (`relations/runtime/message`,
+ * *lane*); known, not fixed.
  */
 
 import { createHash } from "node:crypto";

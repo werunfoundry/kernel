@@ -97,6 +97,13 @@ after the enrichment sources were asked (`source.ts`): a person who objected
 under a key the people source already gave is paid for, then excluded.
 Protection by address is asked before paying; the objection is not.
 
+**The enrolment's dry run does not ask the message gate.** A known
+defect. A dry run is what a person reads before committing, and it reports
+enrolled someone the live run refuses at the gate: measured with drafts a
+lane approved for an experiment no longer running. Drafts a person approved
+are not concerned. The rule, and the other check met only live, are written
+at the top of `enrol.ts`.
+
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
 

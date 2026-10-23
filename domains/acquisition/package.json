@@ -92,7 +92,8 @@
       "kernel-stage": "./dist/bin/stage.js",
       "kernel-list": "./dist/bin/list.js",
       "kernel-attest-stop": "./dist/bin/attest-stop.js",
-      "kernel-stop-protected": "./dist/bin/stop-protected.js"
+      "kernel-stop-protected": "./dist/bin/stop-protected.js",
+      "kernel-approve": "./dist/bin/approve.js"
     }
   },
   "dependencies": {
@@ -121,6 +122,7 @@
     "kernel-stage": "./bin/stage.ts",
     "kernel-list": "./bin/list.ts",
     "kernel-attest-stop": "./bin/attest-stop.ts",
-    "kernel-stop-protected": "./bin/stop-protected.ts"
+    "kernel-stop-protected": "./bin/stop-protected.ts",
+    "kernel-approve": "./bin/approve.ts"
   }
 }

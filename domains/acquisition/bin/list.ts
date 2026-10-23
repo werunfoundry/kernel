@@ -11,6 +11,10 @@
  * query: the list is frozen, and where its members came from is kept beside
  * it.
  *
+ * A recorded subject is one sourcing wrote: no command records a person the
+ * instance knows otherwise, so one met outside sourcing cannot be listed
+ * without writing their row directly (README, *Where the work is*).
+ *
  * A list is a selection, never a permission: nobody is filtered for an
  * opt-out or for protection here. Both are read when something is sent.
  *

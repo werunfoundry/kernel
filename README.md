@@ -104,6 +104,15 @@ lane approved for an experiment no longer running. Drafts a person approved
 are not concerned. The rule, and the other check met only live, are written
 at the top of `enrol.ts`.
 
+**No command records a person the instance already knows.** A product
+limit, not a detail of one run. A person is written only by the sourcing
+path, and again by the enrolment of someone already on record
+(`recordPerson`); the inbound pulls create nobody from an event, and a
+person's commands refuse a key that names nothing (0047). So a contact met
+outside sourcing — a referral, a conversation, an address of one's own to
+test with — cannot be put on a list (`kernel-list`) except by writing the
+row directly, outside any command and any run.
+
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
 

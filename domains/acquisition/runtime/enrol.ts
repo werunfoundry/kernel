@@ -77,7 +77,7 @@ import type { Fingerprinter } from "@werunfoundry/core/runtime/fingerprint";
 import type { Registry } from "@werunfoundry/core/runtime/resolve";
 import type { ActorKind, Database, OpenRun, Trigger } from "@werunfoundry/core/runtime/run";
 import { openRun } from "@werunfoundry/core/runtime/run";
-import { experiment as experimentTable, run as runTable } from "@werunfoundry/core/db/schema";
+import { experiment as experimentTable } from "@werunfoundry/core/db/schema";
 import type { FoundPerson } from "@werunfoundry/relations/contracts/people-source";
 import { company as companyTable, person as personTable, touch as touchTable } from "@werunfoundry/relations/db/schema";
 import { readList } from "@werunfoundry/relations/runtime/list";
@@ -234,17 +234,6 @@ class Stop extends Error {}
 export class CannotSuspend extends Error {}
 
 /**
- * PROVISIONAL — removed when the guard decision 0055 brings lands, and not to
- * be extended to anything else. A live enrolment once an erasure has run,
- * while the passage that holds 0055's threshold is not built. The one reader
- * now finds an erased objector by the keys the erasure kept (0052, 0062), and
- * enrolment asks it; 0055 removes this guard with `clear`, never before.
- * Thrown before a run is opened, here and not only in `kernel-enrol`, so that
- * no other caller goes round it.
- */
-export class ErasedWithoutRegister extends Error {}
-
-/**
  * A domain as protection compares it: the host it names (decision 0028). The
  * target list's two routes come from different sources, and one spelling a
  * company as `http://Example.com` must not let it past the other's `example.com`.
@@ -337,21 +326,6 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
   // shows what the live run would do, and the live run would do nothing.
   const declared = readDeclaration(sequencer);
   if (!declared.suspends) throw new CannotSuspend(declared.refusal);
-  // PROVISIONAL (above). The register would only ever hold people the kernel
-  // erased, so the window opens with the first live erasure run; one deleted
-  // by hand reopens it. Read by `run_process_started_at_idx`.
-  if (!request.dryRun) {
-    const erased = await deps.db
-      .select({ id: runTable.id })
-      .from(runTable)
-      .where(and(eq(runTable.processKey, "relations.person.erase"), eq(runTable.dryRun, false)))
-      .limit(1);
-    if (erased.length > 0) {
-      throw new ErasedWithoutRegister(
-        "an erasure has run on this instance, and the passage that holds the threshold is not built (decision 0055): live enrolment stays refused until it is",
-      );
-    }
-  }
   if (!(request.protectedMaxAgeMinutes > 0)) throw new Error("protectedMaxAgeMinutes must be a positive number of minutes");
   // 0064 §3: an unsolicited enrolment is capped ahead, over its whole plan,
   // or not made.
@@ -716,8 +690,8 @@ export async function enrol(deps: EnrolDeps, request: EnrolRequest): Promise<Enr
         // Erasure suspends their enrolments and keeps the rows naming nobody
         // (0053, 0056), so none of them is found here: a later run that finds
         // the person records a new one, with no row in this sequence. What
-        // stops that is 0052's register, once 0055's reader reads it; until
-        // then, the provisional refusal above.
+        // stops them is 0052's register, which the one reader read above
+        // (0055, 0070).
         if (row?.state === "suspended") {
           await skip({ reason: "suspended", person, company, detail: "suspended from this sequence, by the registry: not enrolled in it again (decision 0051)" });
           continue;

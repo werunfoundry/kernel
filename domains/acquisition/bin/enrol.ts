@@ -34,9 +34,6 @@
  * often as this or `kernel-stop-protected` runs, and an instance that stops
  * enrolling stops withdrawing — schedule `kernel-stop-protected`.
  *
- * Provisionally, a live run is refused once an erasure has run on the
- * instance, until 0052's suppression register exists (below).
- *
  * Exits 0 when the run succeeded, 1 otherwise — a run that protection
  * stopped is not a success, even though it is the right outcome.
  */
@@ -44,14 +41,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { and, eq } from "drizzle-orm";
-
-import { run } from "@werunfoundry/core/db/schema";
 import { boot } from "@werunfoundry/core/runtime/boot";
 import { connect } from "@werunfoundry/core/runtime/connect";
 
 import { readDeclaration, type Sequencer } from "../contracts/sequencer.js";
-import { CannotSuspend, CONTRACTS, enrol, ErasedWithoutRegister } from "../runtime/enrol.js";
+import { CannotSuspend, CONTRACTS, enrol } from "../runtime/enrol.js";
 import { describeStop, PROMISE } from "../runtime/protected.js";
 
 const args = process.argv.slice(2);
@@ -111,30 +105,6 @@ async function main(): Promise<number> {
     return 1;
   }
   try {
-    // PROVISIONAL — removed when the guard decision 0055 brings lands, and not
-    // to be extended to anything else in the meantime. The one reader finds
-    // an erased objector by the keys the erasure kept, and enrolment asks it;
-    // the threshold is the passage's to hold, and 0055 removes this guard
-    // with it, never before. The register would only ever hold people the
-    // kernel erased, so a live run is refused once one has run here. It holds
-    // only as long as those runs do: an erasure run deleted by hand reopens
-    // it. Read by `run_process_started_at_idx`. The runtime refuses the same
-    // (`ErasedWithoutRegister`), for every caller; this says it before
-    // anything else is read, as 0051's refusal does.
-    if (flag("live")) {
-      const erased = await connection.db
-        .select({ id: run.id })
-        .from(run)
-        .where(and(eq(run.processKey, "relations.person.erase"), eq(run.dryRun, false)))
-        .limit(1);
-      if (erased.length > 0) {
-        console.log(
-          "enrol: refused — an erasure has run on this instance, and the passage that holds the threshold is not built (decision 0055): " +
-            "live enrolment stays refused until it is. Nobody was enrolled and no provider was called; a dry run is still allowed.",
-        );
-        return 1;
-      }
-    }
     let report;
     try {
       report = await enrol(
@@ -157,7 +127,7 @@ async function main(): Promise<number> {
       },
       );
     } catch (error) {
-      if (error instanceof CannotSuspend || error instanceof ErasedWithoutRegister) {
+      if (error instanceof CannotSuspend) {
         console.log(`enrol: refused — ${error.message}. Nobody was enrolled and no provider was called.`);
         return 1;
       }

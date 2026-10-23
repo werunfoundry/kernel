@@ -288,7 +288,7 @@ export async function recordOptOut(db: Database, personId: string, at: Date): Pr
  * that would read as protection.
  */
 export const OPT_OUT_AFTER_ERASURE =
-  "the opt-out survives only as fingerprints in the register (decision 0052), one per key the erasure gathered: the one reader (decision 0055) finds the person objecting by any of those keys, and by no other. Live enrolment stays refused once an erasure has run, until the passage holds the threshold. A person who did not object leaves nothing"
+  "the opt-out survives only as fingerprints in the register (decision 0052), one per key the erasure gathered: the one reader (decision 0055) finds the person objecting by any of those keys, and by no other. A person who did not object leaves nothing"
 
 /**
  * The one reader of an objection (decision 0055, §3). Whether a person

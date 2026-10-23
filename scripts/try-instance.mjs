@@ -478,17 +478,47 @@ try {
     expect((await naming()) === 0, "a sourcing row still names Ada");
     expect((await count("acquisition.sourcing_result")) === results, "erasing deleted a run's history instead of anonymising it");
 
-    // The provisional guard in `kernel-enrol`: once anyone is erased, and
-    // until 0055's reader reads 0052's register, a live run is refused; a dry
-    // run is not.
-    step("enrol, after an erasure: refused live, a dry run still read");
-    const runs = await count("core.run");
-    const afterLive = await bin("kernel-enrol", [...carryArgs, "--solicited", "--live"]);
+    // After an erasure, the one reader holds the line (decision 0070). Ada,
+    // erased as an objector, is found again by the same address, as sourcing
+    // would find her; Cy, at the same company, is the witness. Each has an
+    // approved draft, written past the draft's gate — which would refuse
+    // Ada's — so that only the enrolment's own read of the objection stands
+    // between her and the sequencer.
+    step("enrol, after an erasure: the erased objector found again is skipped, the witness enrolled");
+    const recordAgain = `
+      import { boot } from "@werunfoundry/core/runtime/boot";
+      import { connect } from "@werunfoundry/core/runtime/connect";
+      import { normalizeIdentity } from "@werunfoundry/core/identity";
+      import { recordCompany, recordPerson } from "@werunfoundry/relations/runtime/record";
+      const root = process.cwd();
+      const booted = await boot({ root, env: process.env });
+      if (!booted.ok) throw new Error("boot refused: " + booted.issues.map((i) => i.message).join("; "));
+      const { db, end } = await connect(process.env.DATABASE_URL, root, "try-record-again");
+      const company = await recordCompany(db, normalizeIdentity({ subject: "company", keys: [{ kind: "domain", value: "open.example.com" }] }, booted.identity), { name: "open.example.com" });
+      const ids = {};
+      for (const [email, fullName] of [["ada@open.example.com", "Ada"], ["cy@open.example.com", "Cy"]]) {
+        const r = await recordPerson(db, normalizeIdentity({ subject: "person", keys: [{ kind: "email", value: email }] }, booted.identity), { fullName, companyId: company.id });
+        ids[email] = r.id;
+      }
+      await end();
+      console.log(JSON.stringify(ids));
+    `;
+    const recorded = await spawnAsync(process.execPath, ["--input-type=module", "-e", recordAgain], { cwd: root, env });
+    show(recorded);
+    expect(recorded.status === 0, "Ada and Cy could not be recorded again from the packs");
+    const again = JSON.parse(recorded.stdout.trim().split("\n").pop() || "{}");
+    writeFileSync(join(root, "after-erasure.list"), "ada@open.example.com\ncy@open.example.com\n");
+    const afterList = await typed("kernel-list", ["--key", "after-erasure", "--from-file", "after-erasure.list", "--by", "an operator"], "after-erasure\n");
+    expect(afterList.status === 0, `kernel-list after the erasure: ${afterList.stdout.trim().split("\n").pop()}`);
+    for (const email of ["ada@open.example.com", "cy@open.example.com"]) {
+      const [{ id }] = (await client.query("insert into acquisition.draft (experiment_id, person_id, template_id, step, state, rendered_subject, rendered_body, actor_type, actor_id) values ($1, $2, $3, 1, 'awaiting_review', 'A subject', 'A first line.', 'agent', 'a drafting agent') returning id", [experimentId, again[email], templateId])).rows;
+      await client.query("update acquisition.draft set state = 'approved', decided_by = 'an operator', decided_at = now() where id = $1", [id]);
+    }
+    const afterLive = await bin("kernel-enrol", ["--sequence", "follow-up", "--channel", "email", "--max-age", "60", "--list", "after-erasure", "--experiment", experimentId, "--solicited", "--live"]);
     show(afterLive);
-    expect(afterLive.status === 1 && /an erasure has run on this instance/.test(afterLive.stdout), `kernel-enrol --live after an erasure: ${afterLive.stdout.trim()}`);
-    expect((await count("core.run")) === runs, "the refused live run opened a run");
-    const afterDry = await bin("kernel-enrol", [...carryArgs, "--solicited"]);
-    expect(afterDry.status === 0 && /dry run/.test(afterDry.stdout), `kernel-enrol dry after an erasure: ${afterDry.stdout.trim()}`);
+    expect(afterLive.status === 0 && enrolled(afterLive.stdout) === 1, `kernel-enrol --live after an erasure: ${afterLive.stdout.trim().split("\n").pop()}`);
+    expect(/skipped, opted_out: 1\n\s+- ada@open\.example\.com: objected before an erasure; the register holds it/.test(afterLive.stdout), "the erased objector found again was not skipped by the register");
+    expect(heldNow().length === 0, `the sandbox holds Ada again, in [${heldNow()}]`);
   }
   await client.end();
 } catch (error) {

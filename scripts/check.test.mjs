@@ -411,6 +411,44 @@ describe("rule 6 — an adapter sees contracts, and nothing else of the engine",
   });
 });
 
+describe("rule 6 — one place calls a contact verb (decision 0070)", () => {
+  /** The domain that holds the one call, as the repository has it: enough for the other rules to pass. */
+  const home = (body) => ({
+    "domains/acquisition/domain.yaml": "name: acquisition\nversion: 0.0.0\ndescription: x\nschema: acquisition\ndependsOn: []\n",
+    "domains/acquisition/package.json":
+      '{ "name": "@werunfoundry/acquisition", "exports": { "./domain.yaml": "./domain.yaml" }, "publishConfig": { "exports": { "./domain.yaml": "./domain.yaml" } } }\n',
+    "domains/acquisition/db/schema.ts": 'import { pgSchema } from "drizzle-orm/pg-core";\nexport const acquisition = pgSchema("acquisition");\n',
+    "domains/acquisition/runtime/enrol.ts": body,
+  });
+  const ONE_CALL = "export async function enrol(sequencer) {\n  return sequencer.enrol({}, {});\n}\n";
+
+  it("allows the one call in its home, and the verb in an adapter, a test and prose", () => {
+    accepts(
+      repo({
+        ...home(ONE_CALL),
+        "adapters/vendor/index.ts": "export const s = { async enrol() {} };\nawait s.enrol();\n",
+        "domains/alpha/runtime/enrol.test.ts": "await fake.enrol({}, {});\n",
+        "domains/alpha/runtime/note.ts": "// a second caller of `sequencer.enrol(` is refused\nexport const x = 1;\n",
+      }),
+    );
+  });
+
+  it("refuses a second caller, and names it", () => {
+    refuses(repo({ ...home(ONE_CALL), "domains/alpha/runtime/shortcut.ts": "export const go = (s) => s.enrol({}, {});\n" }), 6, "domains/alpha/runtime/shortcut\\.ts:1.*\\n.*calls the contact verb `enrol`");
+  });
+
+  it("refuses the verb named in brackets, called optionally, or taken out by destructuring", () => {
+    for (const line of ['export const go = (s) => s["enrol"]({}, {});', "export const go = (s) => s?.enrol({}, {});", "export const go = (s) => { const { enrol } = s; return enrol({}, {}); };"]) {
+      refuses(repo({ ...home(ONE_CALL), "api/shortcut.ts": `${line}\n` }), 6, "api/shortcut\\.ts:1");
+    }
+  });
+
+  it("refuses a second call in the home itself, and a home that no longer calls it", () => {
+    refuses(repo(home(`${ONE_CALL}export const again = (s) => s.enrol({}, {});\n`)), 6, "calls the contact verb `enrol` 2 times");
+    refuses(repo(home("export const nothing = 1;\n")), 6, "calls the contact verb `enrol` 0 times");
+  });
+});
+
 describe("rule 6 — a rule can only hold where it can see", () => {
   it("refuses an adapter in the core, which would switch rule 1 off there", () => {
     refuses(repo({ "core/adapters/crm.ts": "export const x = 1;\n" }), 6, "adapter lives in");

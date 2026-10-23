@@ -30,6 +30,14 @@
  *   caller's window — an inbound touch, the same license the draft's gate
  *   reads (0042).
  *
+ *   **Not checked: the experiment's status, for an approval a person gave.**
+ *   Only a lane's approval is refused for an experiment that is not running.
+ *   A message a person approved is written for an experiment that is
+ *   `measuring` — measured through the enrolment, which writes every message
+ *   here since the hand-over was withdrawn (0064 §1). `queue`, which refused
+ *   it, is no longer on that path. Known, not fixed: the experiment's status
+ *   is meant to condition the contact, and does so for half the approvals.
+ *
  * Protection is not part of it: it is a rule of the addressing motion, and an
  * answer to a customer's question must not be refused by it.
  */

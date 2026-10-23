@@ -104,6 +104,12 @@ lane approved for an experiment no longer running. Drafts a person approved
 are not concerned. The rule, and the other check met only live, are written
 at the top of `enrol.ts`.
 
+**An experiment's status conditions the contact only half the time.** A
+known defect. The message gate refuses a lane's approval for an experiment
+that is not running, and not a person's: drafts a person approved are
+enrolled for an experiment that is `measuring` (measured). Written at the
+gate, in `relations/runtime/message.ts`.
+
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
 

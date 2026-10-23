@@ -44,6 +44,16 @@ when the register cannot be read.
 objector found again is skipped by the register, and a witness is enrolled
 live.
 
+**`check.mjs` holds the one place.** Everything above rests on the
+sequencer's `enrol` being called in one place, after the reader. Until the
+passage holds that by type, a rule holds it by text: outside an adapter and
+a test, a contact verb is called in `domains/acquisition/runtime/enrol.ts`
+and nowhere else, and there exactly once. A second caller is refused and
+named — as a property, in brackets, or taken out by destructuring. A
+computed name passes it, as 0055 says of its own two checks. Counter-checked:
+a planted second caller is refused by name, and without the rule its tests
+fail. Doctrine 6's *Not built yet* says so.
+
 **Why the threshold does not keep it.** 0055 ties the guard's removal to
 `clear`'s threshold. The threshold refuses a live contact while the reader
 cannot answer from the record and the register, and the reader already
@@ -56,8 +66,8 @@ an erasure, whoever was asked about. Its going weakens none of them.
 ## What stays 0055's, and is not built
 
 - The passage: `clear` and `reach`, the clearance's type, the run-time
-  refusal, and the two checks. A third path to a person is held out by
-  review, not by code.
+  refusal, and the two checks. Until then a second path to a person is held
+  out by the rule above, on text, and a computed call is not.
 - A dry run through the message gate, the known defect written at the top of
   `runtime/enrol.ts`.
 - The sandbox, moved into the kernel's package.
@@ -69,7 +79,8 @@ an erasure, whoever was asked about. Its going weakens none of them.
 
 ## Would reverse it
 
-- **A path that reaches a person without asking the reader.** Until the
-  passage holds it by code, such a path needs a guard of its own.
+- **A path that reaches a person without asking the reader.** `check.mjs`
+  refuses one written as a call it can read; one it cannot read — a
+  computed name — would need a guard of its own, or the passage.
 - **A reader that answers *none* when it cannot read the register.** The
   threshold would no longer be held, and a guard would be needed again.

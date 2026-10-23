@@ -11,6 +11,13 @@
 >
 > Completed by [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md):
 > the sending path writes `sent` and `failed`, and a failed draft says why.
+>
+> Not built, on `main` at `0cf5178`: a way for a person to approve. *Only a
+> human approves* held as an actor type a caller passed: `approve`'s only
+> caller was a script, and the trace said a person approved.
+>
+> Built by #144: `kernel-approve`, at a terminal, one draft at a time, shown
+> whole and approved when its address is typed again (0047's form).
 
 ## Decided
 

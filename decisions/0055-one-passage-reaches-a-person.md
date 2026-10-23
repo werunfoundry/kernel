@@ -13,6 +13,10 @@
 > Superseded in part by [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md):
 > the whole of section 2 — cadence and lane move to the enrolment — the
 > hand-over among section 1's contact verbs, and "for a send" in section 5.
+>
+> Superseded in part by [0070](0070-once-an-erasure-has-run-the-one-reader-holds-what-the-guard-held.md):
+> section 4's provisional guard is removed; once an erasure has run, the one
+> reader holds what it held.
 
 Completes [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md),
 whose first defect said that a single gate would have to close the

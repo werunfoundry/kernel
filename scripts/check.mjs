@@ -580,6 +580,62 @@ for (const file of allFiles) {
   }
 }
 
+/* -- Rule 6: one place calls a contact verb (decisions 0055, 0070) -------- */
+
+/**
+ * A contact verb is a contract's verb that delivers something to a person:
+ * today the sequencer's `enrol`, and nothing else. Decision 0070 removed the
+ * guard that refused every live enrolment after an erasure because the one
+ * reader is asked before that verb is called — in one place, which reads the
+ * objection for every person first. That holds only while the place stays
+ * one, and until 0055's passage holds it by type, this is what holds it.
+ *
+ * Outside an adapter, which implements the verb, and a test, which reaches
+ * nobody, the verb is called in `CONTACT_VERB_HOME` and nowhere else, and
+ * there exactly once. A call as a property — `.enrol(`, `?.enrol(` — by its
+ * name in brackets, or taken out by destructuring, is seen. A computed name
+ * is not: this is a tripwire on text, as 0055 says of its own two checks.
+ */
+
+const CONTACT_VERBS = ["enrol"];
+const CONTACT_VERB_HOME = "domains/acquisition/runtime/enrol.ts";
+const ENGINE_CODE = /\.(ts|tsx|js|mjs|cjs)$/;
+const IS_TEST = /\.test\.(ts|tsx|js|mjs|cjs)$/;
+const verbCalls = (verb) =>
+  new RegExp(`\\??\\.\\s*${verb}\\s*\\(|\\[\\s*["'\`]${verb}["'\`]\\s*\\]|\\{[^{}]*\\b${verb}\\b[^{}]*\\}\\s*=(?!=)`, "g");
+
+const homeCalls = new Map(CONTACT_VERBS.map((v) => [v, []]));
+for (const file of allFiles) {
+  if (!ENGINE_CODE.test(file) || IS_TEST.test(file) || ADAPTER_SEGMENT.test(file)) continue;
+  // The two files that hold the list, by exact path, as for providers.
+  if (PROVIDER_LIST_HOMES.has(file)) continue;
+  let body;
+  try {
+    body = readFileSync(file, "utf8");
+  } catch {
+    continue;
+  }
+  const lines = body.split("\n");
+  const prose = (index) => /^\s*(\*|\/\/)/.test(lines[lineAt(body, index) - 1] ?? "");
+  for (const verb of CONTACT_VERBS) {
+    for (const match of body.matchAll(verbCalls(verb))) {
+      if (prose(match.index)) continue;
+      const line = lineAt(body, match.index);
+      if (file === CONTACT_VERB_HOME) homeCalls.get(verb).push(line);
+      else fail(6, file, line, `calls the contact verb \`${verb}\`: only ${CONTACT_VERB_HOME} calls it, after the one reader, so that it is the one place a person is reached (decision 0070)`);
+    }
+  }
+}
+// The home's own count, once it exists: a second call there is a second
+// place as much as one elsewhere, and none means the rule watches nothing.
+if (allFiles.includes(CONTACT_VERB_HOME)) {
+  for (const [verb, at] of homeCalls) {
+    if (at.length !== 1) {
+      fail(6, CONTACT_VERB_HOME, at[1] ?? at[0] ?? 0, `calls the contact verb \`${verb}\` ${at.length} times: once, in one place (decision 0070)`);
+    }
+  }
+}
+
 /* -- Rule 6: a decision's cross-references hold (decision 0059) ---------- */
 
 /**

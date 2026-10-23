@@ -38,3 +38,20 @@ protected read returns those rows too, and one of them stops it: an unknown
 subscription is not an absent one, and protecting less in silence is the
 failure doctrine 6 exists for. Measured on the same instance: no NULL among
 its 1,277 accounts, so the rule blocks nothing there today.
+
+## One row written by hand can make a stale table read fresh
+
+The protected route's age is its table's **oldest** extraction time by
+default: a row added today cannot make an old table look younger, only the
+reverse, which fails closed. With `protected.freshness: newest`, the age is
+the **latest** extraction time, and one row dated today — written by hand,
+or by a load that touched one row — makes a table whose other rows are weeks
+old read as fresh. That is a stale answer that looks like protection, the
+failure doctrine 6 names first.
+
+So a row is never written into the protected table by hand, and least of
+all to exercise protection on a test company: in a table rebuilt on the
+warehouse's schedule it is gone at the next rebuild, in a view it has to be
+written upstream — a customer that does not exist, in the billing or the
+CRM — and under `newest` it lies about the age of every other row. A test of
+protection belongs on a company the protected set already holds.

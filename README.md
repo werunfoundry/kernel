@@ -91,6 +91,14 @@ identifier alone: the registry records no such identifier. It names those
 accounts each time, and an enrolment there keeps running until a person
 stops it at the provider (0068).
 
+**Never exercised on a real enrolment.** The first real run stops one of its
+people by erasure instead (0056), because exercising this needs a company
+that becomes protected while someone there is in a sequence, and a protected
+row written by hand to stage it lies about the protected set (the warehouse
+adapter's README, *One row written by hand*). It is the central mechanism of
+protection's half that acts after enrolment, and it is the second run's to
+exercise, on a company the protected set comes to hold for real.
+
 **Sourcing pays before it reads the opt-out.** A known defect, next in
 line. The person pass reads the objection (0055) on the completed identity,
 after the enrichment sources were asked (`source.ts`): a person who objected

@@ -55,3 +55,33 @@ warehouse's schedule it is gone at the next rebuild, in a view it has to be
 written upstream — a customer that does not exist, in the billing or the
 CRM — and under `newest` it lies about the age of every other row. A test of
 protection belongs on a company the protected set already holds.
+
+## Metrics from the warehouse: someone else's record (not built)
+
+Not built: this adapter serves the target list, and nothing else. A warehouse
+may also keep a sequencer's email events, and this adapter could then serve
+`MetricSource`. Three things hold before it reads one number.
+
+- **It is someone else's record.** A count in a warehouse is what a pipeline
+  wrote of what a provider recorded — the same family as the provider's own
+  list of sends, which was found once listing a send late. The reading's
+  `source` names the table and what fills it, never the kernel. The kernel
+  never presents it as its own observation: no touch, no event and no cap is
+  written or counted from it, and a decision that cites it cites the table.
+- **It joins a kernel message by an exact key, or it is not read.** For every
+  send the touches pull records, the kernel keeps the provider's id of that
+  email (`relations.touch.provider_event_id`), tied to the message it
+  carried. A row that holds that id joins exactly. A row that holds only an
+  address and a time joins approximately, and an approximate number feeds
+  neither a cap nor a decision. The kernel does not keep the delivered
+  message's `Message-ID`.
+- **Its age is read, as the protected route's is.** A table filled
+  continuously and a frozen export are not the same source. The reading's
+  `asOf` is the table's extraction time, and an export that stopped reads
+  as old, never as fresh. History from before the kernel ran measures none
+  of its runs.
+
+**It does not replace the sequencer's inbound.** The warehouse gives replies
+and bounces as numbers; it does not give a person's act. The reactive lane,
+a reply asking to stop, and the suspension of someone who unsubscribed need
+the inbound, person by person.

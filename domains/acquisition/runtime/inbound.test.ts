@@ -62,17 +62,18 @@ beforeEach(async () => {
 const relations = loadDomain(join(import.meta.dirname, "../../relations/domain.yaml")).manifest!;
 const identity = identityVocabulary([relations]);
 const declared = {
-  eventTypes: new Set(["acquisition.reply", "acquisition.unsubscribe", "acquisition.meeting_booked"]),
+  eventTypes: new Set(["acquisition.reply", "acquisition.bounce", "acquisition.unsubscribe", "acquisition.meeting_booked"]),
   channels: new Set(["email"]),
 };
 const rows = async (sql: string, params: unknown[] = []) => (await client.query(sql, params)).rows;
 
-const ev = (id: string, type: string, email: string, channel?: string): InboundEvent => ({
+const ev = (id: string, type: string, email: string, channel?: string, byThePerson?: boolean): InboundEvent => ({
   providerEventId: id,
   type,
   occurredAt: "2026-09-01T10:00:00Z",
   subject: { subject: "person", keys: [{ kind: "email", value: email }] },
   ...(channel ? { attribution: { channel } } : {}),
+  ...(byThePerson !== undefined ? { byThePerson } : {}),
 });
 
 /** A source over a fixed list, the cursor being a position; it records what it was asked. */
@@ -80,7 +81,7 @@ function memory(events: InboundEvent[], opts: { failAfter?: number; delayMs?: nu
   const asked: (string | undefined)[] = [];
   const source: Inbound & { asked: typeof asked } = {
     provider: "memory",
-    eventTypes: ["acquisition.reply", "acquisition.unsubscribe", "acquisition.meeting_booked"],
+    eventTypes: ["acquisition.reply", "acquisition.bounce", "acquisition.unsubscribe", "acquisition.meeting_booked"],
     asked,
     async events({ after, limit }): Promise<CallResult<InboundPage>> {
       asked.push(after);
@@ -182,21 +183,40 @@ describe("pulling inbound", { skip: base ? false : "TEST_DATABASE_URL is not set
   it("stores every event once, ties it to a recorded person, applies an opt-out, and advances the cursor", async () => {
     const [{ id: ada }] = await rows("insert into relations.person (email) values ('ada@example.com') returning id");
     const source = memory([
-      ev("r1", "acquisition.reply", "ada@example.com", "email"),
+      ev("r1", "acquisition.reply", "ada@example.com", "email", true),
       ev("m1", "acquisition.meeting_booked", "ada@example.com"),
-      ev("u1", "acquisition.unsubscribe", "ada@example.com", "email"),
-      ev("r2", "acquisition.reply", "nobody@example.org", "email"),
+      ev("u1", "acquisition.unsubscribe", "ada@example.com", "email", true),
+      ev("r2", "acquisition.reply", "nobody@example.org", "email", true),
     ]);
     const [r] = await pull(source);
-    assert.deepEqual({ ...r, runId: undefined }, { provider: "memory", runId: undefined, pages: 3, read: 4, recorded: 4, replayed: 0, touches: 2, optOuts: 1, unknownPeople: 1, stopped: { suspended: 0, notHeld: 0, byAddress: 0, would: 0 }, cursor: "4" });
+    assert.deepEqual({ ...r, runId: undefined }, { provider: "memory", runId: undefined, pages: 3, read: 4, recorded: 4, replayed: 0, touches: 1, optOuts: 1, unknownPeople: 1, notTheirAct: 1, stopped: { suspended: 0, notHeld: 0, byAddress: 0, would: 0 }, cursor: "4" });
     assert.equal((await rows("select count(*)::int as n from core.event"))[0].n, 4);
-    assert.deepEqual(await rows("select provider_event_id as id, direction::text from relations.touch order by 1"), [{ id: "r1", direction: "inbound" }, { id: "u1", direction: "inbound" }]);
+    assert.deepEqual(await rows("select provider_event_id as id, direction::text from relations.touch order by 1"), [{ id: "r1", direction: "inbound" }]);
     assert.ok((await rows("select opted_out_at from relations.person where id = $1", [ada]))[0].opted_out_at instanceof Date);
     assert.deepEqual(await rows("select cursor from acquisition.inbound_cursor"), [{ cursor: "4" }]);
 
     const [again] = await pull(source);
     assert.equal(again!.recorded, 0);
     assert.deepEqual(source.asked.slice(-1), ["4"]);
+  });
+
+  it("writes a touch only for an act of the person's toward us that its source says they did themselves (0071)", async () => {
+    await rows("insert into relations.person (email) values ('ada@example.com')");
+    const source = memory([
+      ev("theirs", "acquisition.reply", "ada@example.com", "email", true),
+      ev("unsaid", "acquisition.reply", "ada@example.com", "email"),
+      ev("not-them", "acquisition.reply", "ada@example.com", "email", false),
+      ev("bounce", "acquisition.bounce", "ada@example.com", "email", true),
+      ev("stop", "acquisition.unsubscribe", "ada@example.com", "email", true),
+      ev("meeting", "acquisition.meeting_booked", "ada@example.com", "email", true),
+    ]);
+    const [r] = await pull(source, { pageSize: 10 });
+    assert.deepEqual([r!.recorded, r!.touches, r!.notTheirAct, r!.optOuts], [6, 2, 4, 1]);
+    assert.deepEqual(await rows("select provider_event_id as id, outcome from relations.touch order by 1"), [
+      { id: "meeting", outcome: "acquisition.meeting_booked" },
+      { id: "theirs", outcome: "acquisition.reply" },
+    ]);
+    assert.equal((await rows("select count(*)::int as n from core.event"))[0].n, 6, "every event is still stored");
   });
 
   it("stops at an event that fails its check, stores nothing of its page, and leaves the cursor before it", async () => {

@@ -28,6 +28,11 @@
  * - **No interpretation.** Whether a reply is interested is not decided
  *   here. A provider's own label may travel in `detail`; nothing branches on
  *   it.
+ *
+ * Who did it is not what it says (decision 0071). The source says whether
+ * the person named did it themselves, in `byThePerson`; only then does an
+ * act of theirs toward us leave an inbound touch, the reactive lane's
+ * license (0042).
  */
 
 import type {
@@ -60,6 +65,13 @@ export interface InboundEvent {
     experimentSlug?: string;
     variant?: string;
   };
+  /**
+   * The source's word that the person in `subject` did it themselves
+   * (0071): a reply they wrote, not one a machine wrote for them or someone
+   * else wrote in the thread. Absent is not theirs: the event is stored and
+   * writes no touch. A source that cannot tell leaves it out.
+   */
+  byThePerson?: boolean;
   /** Small facts about the event, never a body. Not interpreted. */
   detail?: Record<string, string | number | boolean | null>;
 }

@@ -1,5 +1,10 @@
 # 0042 — A reactive reply is licensed by the person's inbound touch
 
+> Superseded in part by [0071](0071-an-inbound-touch-is-the-persons-own-act-and-its-source-says-so.md):
+> not every pulled event with a channel is the person's own act; only a
+> reply, a meeting booked or a signup its source says they did leaves the
+> touch that licenses the lane.
+
 Completes [0027](0027-a-draft-waits-on-its-lane.md), whose `reactive` lane
 failed closed until inbound could be verified, and
 [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md),

@@ -50,7 +50,7 @@ scripts/              checks that make the doctrine enforceable
 | Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not. Before any of it, each enrolment a provider may hold is suspended there, or the erasure is refused (0056); where retrying cannot help, a person attests the stop with `kernel-attest-stop`. An objector's keys survive as fingerprints in `relations.suppression`, written by the erasure alone (0052, 0062) under versions `kernel-fingerprint` generates (0058); the one reader (0055) reads them wherever the objection is read: sourcing, enrolment, drafting, queueing and the message gate. The API's plan shows the rules only |
 | Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent. After the body, the way-out line the instance sets on the sequencer's binding is written and read back at the provider, or the enrolment records that it went without one and why; the run says so aloud (0067, 0069). Written means read back there, not received: the closing rule was measured once in a message received, in the email adapter's README. The hand-over is withdrawn, and so is the enrolment without messages: `--list` is the only form |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
-| Adapters | one live sequencer, verified read-only against a real provider (0011); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
+| Adapters | one live sequencer, verified read-only against a real provider (0011), and its mailbox as an inbound source of replies, against a fake of its API only (0071); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
 | Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
 
 ## Where the work is
@@ -68,8 +68,14 @@ In this order, because each one is what the next needs.
 - a sandbox for every contract, so a generated instance runs as is.
 
 Next:
-- **inbound and metrics on that same email provider.** Read-only. They read
-  real people's replies, so they wait for the owner's explicit agreement.
+- **inbound on that same email provider: built, never read live.** It reads
+  the replies to the bound campaigns, and says a reply is the person's only
+  when the provider marks it not automatic and it came from the lead's own
+  address (0071). Those two fields are read from the provider's published
+  document. Its first live read reads real people's replies, so it waits
+  for the owner's explicit agreement.
+- **metrics on that same email provider.** Read-only, and waiting on the
+  same agreement.
 - **the target list, against a real warehouse.** The adapter reads candidates
   and protected accounts from two tables and its age from an extraction
   column; it has run against a fake of the warehouse's API, not a real one.
@@ -244,7 +250,9 @@ whatever writes it, reads it, or connects it to the rest.
   `Inbound` is read after its cursor (`acquisition.inbound_cursor`, locked for the
   read: one writer per source), and each event is stored once, with an
   inbound `touch` when it names a recorded person and a declared channel,
-  and the opt-out applied for `acquisition.unsubscribe`.
+  is a reply, a meeting booked or a signup, and its source says the person
+  did it themselves (0071), and the opt-out applied for
+  `acquisition.unsubscribe`.
 - *Read by:* nobody directly. The inbound touch written beside it is read
   by the reactive lane, in the draft's gate and the message's: a touch from
   the person, on the channel, inside the caller's window, licenses a reply

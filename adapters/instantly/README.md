@@ -155,6 +155,53 @@ provider on that date, measured on one send, not a rule: a row whose
 `Message-ID` is on another domain, or whose local part is not a uuid, is not
 one of these sends.
 
+## Reading replies (built, not observed)
+
+`adapters/instantly/inbound` binds the sequencer's mailbox to the `Inbound`
+contract (decision 0071). Nothing in this section was observed: it is read
+in the OpenAPI document, and in the one reply of *The throwaway campaign of
+2026-10-22* below.
+
+- **The read.** `GET /api/v2/emails?email_type=received&sort_order=asc&preview_only=true`,
+  after `min_timestamp_created`, paged by `starting_after`. One event per
+  reply to a bound campaign (`campaign.<sequenceKey>`, as on the sequencer
+  binding), typed `acquisition.reply`; a reply to any other campaign is
+  passed over. The same 20 requests a minute as the sends apply, shared
+  with the touches pull.
+- **Whose reply.** The subject is `lead`, the lead the provider ties the
+  reply to. On 2026-10-22 it tied to the lead a reply written from another
+  address in the same thread.
+- **Whether the person wrote it** (`byThePerson`). True only when
+  `is_auto_reply` is 0 and the first entry of `from_address_json` has an
+  `address` equal to the lead's. The document types `is_auto_reply` as 0 or
+  1, and `from_address_json` as a "list of from address details" without
+  their shape. If either reads otherwise on a live reply, no reply is said
+  to be the person's: the reactive lane stays shut, it does not open.
+- **No body is read.** `preview_only` asks for as little of it as the API
+  allows; the adapter reads none of it. Its event carries `automatic` and
+  `fromTheLead` as small facts, never an address.
+
+What the first run will not measure. Its leads are aliases of the
+operator's, and the operator's replies leave from the primary address: on
+2026-10-22 the reply asking to stop did, and the provider still tied it to
+the lead. So every reply of the first run fails the rule that the author is
+the lead's own address, by construction. What such a reply can show:
+- the shape of a `from_address_json` entry, and that a reply from another
+  address than the lead's writes no touch;
+- what `lead` reads for it.
+
+What it cannot show, and what a later throwaway campaign would measure:
+- a reply sent from the lead's own address, which needs that address set up
+  to send: its `is_auto_reply`, and whether the lane opens;
+- an automatic reply, which needs an automatic responder on the lead's
+  address: whether `is_auto_reply` reads 1;
+- whether `sort_order=asc` and `starting_after` page together, and how long
+  a reply takes to be listed, which any reply shows once there are enough.
+
+A person who answers from another address — a phone, an assistant, a
+forward — is the same case: the reply is stored as the lead's, and the
+lane stays shut on it (0071, *What this does not reach*).
+
 ## Unsubscribes
 
 The campaign had `insert_unsubscribe_header: true`. The email carried

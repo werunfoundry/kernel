@@ -92,6 +92,7 @@ async function main(): Promise<number> {
       if (flag("live")) {
         console.log(`  recorded: ${r.recorded}, already stored: ${r.replayed}`);
         console.log(`  touches: ${r.touches}, opt-outs: ${r.optOuts}, about nobody recorded: ${r.unknownPeople}`);
+        console.log(`  no touch, not the person's own act (0071): ${r.notTheirAct}`);
         console.log(`  opted out, stopped at the provider: ${r.stopped.suspended} suspended, ${r.stopped.byAddress} stopped by address only (left pending, 0060), ${r.stopped.notHeld} no longer held there`);
       } else {
         console.log(`  opted out, would be stopped at the provider: ${r.stopped.would}`);

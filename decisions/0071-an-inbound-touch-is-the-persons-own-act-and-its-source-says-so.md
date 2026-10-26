@@ -81,7 +81,8 @@ refuses, and this decision is no precedent for it.
 ## What opens the lane today
 
 One source can say `byThePerson: true`: the sequencer's mailbox, for a
-reply its record marks not automatic and ties to the lead's own address.
+reply its record marks not automatic and shows written from the lead's own
+address.
 Its two fields have not been observed (below), so the lane is reachable by
 construction and not yet shown to open.
 

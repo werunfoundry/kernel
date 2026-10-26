@@ -143,6 +143,18 @@ minute. All eleven sends of the test were still listed after the leads and
 the campaigns were deleted, with their now dangling ids. The limit is 20
 requests a minute, unlike the rest of the API. It needs `emails:read`.
 
+**The delivered message's `Message-ID` is the send's id.** Measured once,
+on 2026-10-21, on one send: its record read `id` = `<uuid>` and
+`message_id` = `<<uuid>@<sending domain>>`, and the message received carried
+that same `Message-ID` header. The local part of the header is the id the
+touches pull keeps for the send (`relations.touch.provider_event_id`). So a
+row written from the mail infrastructure rather than from this API — a
+warehouse fed by the mail server, say — joins a send of the kernel by its
+`Message-ID` alone, without a column of this provider's. A fact of this
+provider on that date, measured on one send, not a rule: a row whose
+`Message-ID` is on another domain, or whose local part is not a uuid, is not
+one of these sends.
+
 ## Unsubscribes
 
 The campaign had `insert_unsubscribe_header: true`. The email carried

@@ -6,8 +6,11 @@
  *
  * - **the event**, once, through the core's one write path;
  * - **an inbound touch**, when the event names a person already recorded and
- *   a channel a domain declares — the person-level trace the reactive lane
- *   needs (0027). Nobody is created from an event;
+ *   a channel a domain declares, is one of the person's acts toward us, and
+ *   its source says they did it themselves (0071) — the person-level trace
+ *   the reactive lane needs (0027, 0042). A bounce is the mail system's, and
+ *   an unsubscribe asks for no contact: neither leaves one. Nobody is created
+ *   from an event;
  * - **the opt-out**, for `acquisition.unsubscribe`: an opt-out read and not applied
  *   would be a contact with someone who asked to stop. Once the pages are
  *   stored, every enrolment still running for someone who opted out is
@@ -43,6 +46,9 @@ import { suspendOptedOut } from "./suspend.js";
 
 export const INBOUND = "inbound";
 
+/** The person's acts toward us: the events that may leave an inbound touch (0071). */
+export const ACTS_OF_THE_PERSON: ReadonlySet<string> = new Set(["acquisition.reply", "acquisition.meeting_booked", "acquisition.signup"]);
+
 export interface PullDeps {
   db: Database;
   registry: Registry;
@@ -74,6 +80,12 @@ export interface SourceReport {
   /** Events about someone the engine never recorded: stored, not tied to a person. */
   unknownPeople: number;
   /**
+   * Events tied to a recorded person, on a declared channel, that left no
+   * touch: not an act of theirs toward us, or not one their source says
+   * they did themselves (0071).
+   */
+  notTheirAct: number;
+  /**
    * The enrolments of people who opted out, stopped at their provider after
    * the pages were stored (0051): suspended, found already gone, or — on a
    * dry run — that would be suspended.
@@ -103,7 +115,7 @@ async function pullSource(deps: PullDeps, request: PullRequest, provider: string
   const { db } = deps;
   const open = await openRun(db, { processKey: `acquisition.inbound.${provider}`, trigger: request.trigger, actor: request.actor, dryRun: request.dryRun });
   const ctx: CallContext = open.context;
-  const report: SourceReport = { provider, runId: open.id, pages: 0, read: 0, recorded: 0, replayed: 0, touches: 0, optOuts: 0, unknownPeople: 0, stopped: { suspended: 0, notHeld: 0, byAddress: 0, would: 0 }, cursor: null };
+  const report: SourceReport = { provider, runId: open.id, pages: 0, read: 0, recorded: 0, replayed: 0, touches: 0, optOuts: 0, unknownPeople: 0, notTheirAct: 0, stopped: { suspended: 0, notHeld: 0, byAddress: 0, would: 0 }, cursor: null };
 
   const check = (e: InboundEvent) => {
     const issues = checkInboundEvent(e, { eventTypes: deps.declared.eventTypes, identity: deps.identity });
@@ -150,18 +162,24 @@ async function pullSource(deps: PullDeps, request: PullRequest, provider: string
             }
             const channel = e.attribution?.channel;
             if (channel && deps.declared.channels.has(channel)) {
-              const t = await recordTouch(tx, {
-                personId: found.id,
-                channel,
-                direction: "inbound",
-                provider,
-                providerEventId: e.providerEventId,
-                occurredAt,
-                outcome: e.type,
-                actor: { type: "system" },
-                runId: open.id,
-              });
-              if (t.recorded) report.touches++;
+              // The reactive lane's license is the person's own act (0071):
+              // never a bounce or an unsubscribe, never what the source does
+              // not say they did themselves.
+              if (!ACTS_OF_THE_PERSON.has(e.type) || e.byThePerson !== true) report.notTheirAct++;
+              else {
+                const t = await recordTouch(tx, {
+                  personId: found.id,
+                  channel,
+                  direction: "inbound",
+                  provider,
+                  providerEventId: e.providerEventId,
+                  occurredAt,
+                  outcome: e.type,
+                  actor: { type: "system" },
+                  runId: open.id,
+                });
+                if (t.recorded) report.touches++;
+              }
             }
             if (e.type === "acquisition.unsubscribe" && (await recordOptOut(tx, found.id, occurredAt)).recorded) report.optOuts++;
           }

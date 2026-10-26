@@ -252,6 +252,6 @@ describe("0065's declarations", () => {
     assert.match(text, /delivers a body as: plain text \(one send, read at the client, measured 2026-10-21\)/);
     assert.match(text, /a way out in the body: the provider's unsubscribe link, known only after the call/);
     assert.match(text, /window before a first step can leave: unknown — never measured/);
-    assert.match(text, /a reply asking to stop: not classed by the provider — not proved; a person records it at a terminal/);
+    assert.match(text, /a reply asking to stop: not classed by the provider — not proved; a person records it at a terminal, with kernel-opt-out/);
   });
 });

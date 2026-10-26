@@ -22,6 +22,10 @@
 > after the upload and recorded on the enrolment, with a cut and an
 > absence (0067); the shipped adapter offers it once its link is bound.
 
+> Built by #153, in part: the command that records an objection read in a
+> reply, `kernel-opt-out`, at a terminal, on `opted_out_at` (section 3).
+> Nothing pulls the sequencer's mailbox yet.
+
 Completes [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md),
 whose kernel writes the whole message without knowing the form the
 provider delivers, and leaves open where the unsubscribe link goes.

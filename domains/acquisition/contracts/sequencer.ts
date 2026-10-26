@@ -665,7 +665,7 @@ const deliveryLines = (d: SequencerDeclaration): string[] => {
   lines.push(
     c?.classes === "yes"
       ? `  a reply asking to stop: classed by the provider as an unsubscribe (${c.basis}, measured ${c.measuredOn})`
-      : `  a reply asking to stop: not classed by the provider${c ? ` — ${c.why}` : " — not declared, so held not to be (decision 0065)"}; a person records it at a terminal`,
+      : `  a reply asking to stop: not classed by the provider${c ? ` — ${c.why}` : " — not declared, so held not to be (decision 0065)"}; a person records it at a terminal, with kernel-opt-out`,
   );
   return lines;
 };

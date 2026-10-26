@@ -181,14 +181,26 @@ in the OpenAPI document, and in the one reply of *The throwaway campaign of
   allows; the adapter reads none of it. Its event carries `automatic` and
   `fromTheLead` as small facts, never an address.
 
-What the first live read would measure, on the operator's own addresses:
-- a reply from the lead's own address: its `is_auto_reply`, and the shape
-  of `from_address_json`;
-- a reply from another address in the thread: what `lead` and
-  `from_address_json` read;
-- an automatic reply: whether `is_auto_reply` reads 1;
+What the first run will not measure. Its leads are aliases of the
+operator's, and the operator's replies leave from the primary address: on
+2026-10-22 the reply asking to stop did, and the provider still tied it to
+the lead. So every reply of the first run fails the rule that the author is
+the lead's own address, by construction. What such a reply can show:
+- the shape of a `from_address_json` entry, and that a reply from another
+  address than the lead's writes no touch;
+- what `lead` reads for it.
+
+What it cannot show, and what a later throwaway campaign would measure:
+- a reply sent from the lead's own address, which needs that address set up
+  to send: its `is_auto_reply`, and whether the lane opens;
+- an automatic reply, which needs an automatic responder on the lead's
+  address: whether `is_auto_reply` reads 1;
 - whether `sort_order=asc` and `starting_after` page together, and how long
-  a reply takes to be listed.
+  a reply takes to be listed, which any reply shows once there are enough.
+
+A person who answers from another address — a phone, an assistant, a
+forward — is the same case: the reply is stored as the lead's, and the
+lane stays shut on it (0071, *What this does not reach*).
 
 ## Unsubscribes
 

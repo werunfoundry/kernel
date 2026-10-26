@@ -46,6 +46,16 @@ written from the lead's own address. A reply from someone else in the
 thread, or one whose author cannot be read, is stored as the lead's reply,
 the provider's attribution, and is not their act.
 
+**`replied` is counted from the events, never from the touches.** The two
+want opposite errors. The lane wants to be strict: a touch wrongly written
+is a contact nobody asked for. A count of replies wants to be complete: a
+reply missed makes outbound read worse than it is. Every reply is stored
+as an event, whoever wrote it, with the source's `byThePerson` in its
+payload; a touch is written for some of them only. A metric that counts
+touches undercounts by exactly what this decision leaves out. A metric of
+replies reads `acquisition.reply` events, and says whether it counts the
+replies its source does not say the person wrote.
+
 **This reads who, never what.** 0017 keeps the reply's words out of the
 kernel and its meaning undecided. Neither moves: no body is read, and
 whether a reply is interested, or asks to stop, is still a person's
@@ -58,11 +68,18 @@ reading (0065 §3).
 - A touch written on the kernel's guess, from an event's type alone or from
   its words.
 
+## What this does not reach
+
+- **A person who answers from another address**: a phone, an assistant, a
+  forward. The reply is stored as the lead's, its author is not the lead's
+  address, and the lane stays shut on it. That is the side this decision
+  chooses to fail on: a person then approves the reply, as on `reviewed`.
+
 ## Would reverse it
 
 - **An automatic-reply mark found wrong in practice.** A person's replies
   marked automatic would shut the lane on them; a mark that misses would
-  open it to a machine. The first run reads both.
+  open it to a machine. Neither has been read yet (below).
 - **A lane that answers the mail system**, a bounce resent elsewhere. It
   would need a license of its own, not this one.
 
@@ -71,4 +88,8 @@ reading (0065 §3).
 The reply's author and its mark are read from fields of the provider's
 published document, never yet seen on a live reply. Until one is read, a
 field that reads otherwise writes no touch: the lane stays shut, it does not
-open.
+open. The first run does not settle it: its leads are aliases of the
+operator's, and the operator's replies leave from the primary address, as
+on 2026-10-22. They can show the author field's shape and that a reply
+from another address fails closed, never that a reply from the lead's own
+address opens the lane.

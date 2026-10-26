@@ -61,12 +61,47 @@ kernel and its meaning undecided. Neither moves: no body is read, and
 whether a reply is interested, or asks to stop, is still a person's
 reading (0065 §3).
 
+**It is not the interpretation the `Inbound` contract refuses.** The
+contract's *No interpretation* is why no adapter recognises a stop in free
+text (0065). `byThePerson` is computed by the adapter, and it opens the
+lane, so the line between them is drawn here: what an adapter may read to
+say it is **structured fields of the provider's record** — a flag the
+provider sets, an address it records — and **never the words of the
+message**: not its body, not its subject, not a preview. An adapter that
+derived `byThePerson` from what a message says would be doing what 0065
+refuses, and this decision is no precedent for it.
+
 ## Rules out
 
 - A reactive reply licensed by a bounce, an automatic reply, an unsubscribe,
   or a message from someone else in the thread.
 - A touch written on the kernel's guess, from an event's type alone or from
   its words.
+
+## What opens the lane today
+
+One source can say `byThePerson: true`: the sequencer's mailbox, for a
+reply its record marks not automatic and ties to the lead's own address.
+Its two fields have not been observed (below), so the lane is reachable by
+construction and not yet shown to open.
+
+**A meeting booked does not open it, and did not before this decision.**
+On `main` at `a80282a`, the one meeting source, the shipped CRM's
+inbound adapter:
+- sets no channel, so it never wrote a touch (0042 says so);
+- sets no `byThePerson`, so under this decision it would not write one
+  either;
+- passes over a meeting's organiser, so a person who sent us the invitation
+  is no event at all.
+
+What it would take, not built here: a decision on which channel a meeting
+licenses a reply on — a meeting is no channel, and the license is checked
+on the draft's template's channel (0042); the CRM adapter saying
+`byThePerson` from a field of its record, its participant's status or who
+organised, once read on a live meeting; and the organiser no longer passed
+over when it is not the instance's own. Until then the most legitimate
+reactive trigger there is leaves the lane shut, and a person approves the
+reply.
 
 ## What this does not reach
 

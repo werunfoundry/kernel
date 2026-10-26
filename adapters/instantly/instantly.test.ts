@@ -919,7 +919,9 @@ const ALLOWED = [
   "GET /api/v2/emails",
 ].sort();
 
-const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+// Every file of this provider's adapters that can make a request: the
+// sequencer, the mailbox, and the client both share.
+const source = ["./index.ts", "./inbound/index.ts", "./client.ts"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")).join("\n");
 
 describe("the endpoint surface", () => {
   it("is exactly the pinned list, read from the source — including paths no test exercises", () => {

@@ -10,6 +10,10 @@
 > the opt-out gains a second writer, which applies it as the inbound pull
 > does and never writes an event.
 
+> Superseded in part by [0071](0071-an-inbound-touch-is-the-persons-own-act-and-its-source-says-so.md):
+> an inbound touch is written only for a reply, a meeting booked or a
+> signup that its source says the person did themselves.
+
 Completes [0017](0017-inbound-is-pulled.md), which fixed the contract and
 left the loop and its cursor to a decision of their own.
 

@@ -26,6 +26,11 @@
 > reply, `kernel-opt-out`, at a terminal, on `opted_out_at` (section 3).
 > Nothing pulls the sequencer's mailbox yet.
 
+> Completed by [0071](0071-an-inbound-touch-is-the-persons-own-act-and-its-source-says-so.md):
+> the sequencer's mailbox is read as an inbound source; a reply leaves a
+> touch only when it is marked not automatic and written from the lead's
+> own address.
+
 Completes [0064](0064-one-verb-reaches-a-person-and-carries-the-message.md),
 whose kernel writes the whole message without knowing the form the
 provider delivers, and leaves open where the unsubscribe link goes.

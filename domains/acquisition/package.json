@@ -93,7 +93,8 @@
       "kernel-list": "./dist/bin/list.js",
       "kernel-attest-stop": "./dist/bin/attest-stop.js",
       "kernel-stop-protected": "./dist/bin/stop-protected.js",
-      "kernel-approve": "./dist/bin/approve.js"
+      "kernel-approve": "./dist/bin/approve.js",
+      "kernel-opt-out": "./dist/bin/opt-out.js"
     }
   },
   "dependencies": {
@@ -123,6 +124,7 @@
     "kernel-list": "./bin/list.ts",
     "kernel-attest-stop": "./bin/attest-stop.ts",
     "kernel-stop-protected": "./bin/stop-protected.ts",
-    "kernel-approve": "./bin/approve.ts"
+    "kernel-approve": "./bin/approve.ts",
+    "kernel-opt-out": "./bin/opt-out.ts"
   }
 }

@@ -97,7 +97,10 @@ const factory: AdapterFactory<Inbound> = ({ options, env }) => {
     timeoutMs: typeof options.timeoutMs === "number" ? options.timeoutMs : 30_000,
   });
   const overlapMinutes = typeof options.repliesOverlapMinutes === "number" ? options.repliesOverlapMinutes : 60;
-  const scanPages = typeof options.scanPages === "number" ? options.scanPages : 10;
+  // The emails list allows 20 requests a minute (README, *Pulling what was
+  // sent*), shared with the touches pull: one call reads few pages, and a
+  // limit reached stops the pull, to resume at its cursor.
+  const scanPages = typeof options.scanPages === "number" ? options.scanPages : 5;
   /** Campaign id → its sequence key, from `campaign.<sequenceKey>`. */
   const bound = new Map(
     Object.entries(options)

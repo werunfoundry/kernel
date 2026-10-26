@@ -74,12 +74,24 @@ may also keep a sequencer's email events, and this adapter could then serve
   carried. A row that holds that id joins exactly. A row that holds only an
   address and a time joins approximately, and an approximate number feeds
   neither a cap nor a decision. The kernel does not keep the delivered
-  message's `Message-ID`.
+  message's `Message-ID`, and needs not: for the shipped sequencer, its
+  local part is that same id, measured once (that adapter's README, *Pulling
+  what was sent*), so a row written from the mail infrastructure joins too.
 - **Its age is read, as the protected route's is.** A table filled
   continuously and a frozen export are not the same source. The reading's
   `asOf` is the table's extraction time, and an export that stopped reads
   as old, never as fresh. History from before the kernel ran measures none
   of its runs.
+
+**What the join cannot cover, written so it is not rediscovered.** The
+touches pull records the sends of the campaigns a binding names, and only
+those. A send made by any other campaign of the same workspace is in the
+warehouse and in no touch: its row joins nothing, and every reply to it is
+unattributable. On the first instance, one campaign no binding named had
+sent more than a thousand emails. A reply rate that counts the
+warehouse's sends but only the replies that join reads low, and that is
+where this will first be seen. A metric is read over the rows that join a
+touch, numerator and denominator alike, and says how many rows it left out.
 
 **It does not replace the sequencer's inbound.** The warehouse gives replies
 and bounces as numbers; it does not give a person's act. The reactive lane,

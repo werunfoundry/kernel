@@ -3,6 +3,10 @@
 > Completed by [0025](0025-an-instance-consumes-what-is-published.md): an
 > instance consumes a published version or a packed tarball, never a folder.
 
+> Completed by [0073](0073-a-merge-publishes-the-commit-it-names.md): a merge
+> to main publishes the five packages; the cost that they were not on the
+> registry is closed.
+
 Completes [0006](0006-the-published-artifact-is-javascript.md), which decided
 *what* is published — compiled JavaScript and declarations — and stands
 entirely. This decides *when*, and how the instance side runs.

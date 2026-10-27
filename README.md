@@ -51,7 +51,7 @@ scripts/              checks that make the doctrine enforceable
 | Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent. After the body, the way-out line the instance sets on the sequencer's binding is written and read back at the provider, or the enrolment records that it went without one and why; the run says so aloud (0067, 0069). Written means read back there, not received: the closing rule was measured once in a message received, in the email adapter's README. The hand-over is withdrawn, and so is the enrolment without messages: `--list` is the only form |
 | Instance template | runs as generated: every contract bound to a sandbox adapter on invented data |
 | Adapters | one live sequencer, verified read-only against a real provider (0011), and its mailbox as an inbound source of replies, against a fake of its API only (0071); a warehouse target list, run against a fake of its API only; a people source and enrichment on a social network, and an asynchronous paid enrichment, both against fakes of their APIs only; a CRM, and an inbound source on the same CRM that reads booked meetings only, both against a fake of its API only; a sandbox for every contract; an API example to copy |
-| Published build | wired (0008); packs installed and run as an instance in CI; not yet on the registry |
+| Published build | wired (0008); every merge to main publishes the five as `0.1.0-main.g` and the commit (0073); packs still installed and run as an instance in CI |
 
 ## Where the work is
 
@@ -163,9 +163,10 @@ provider's steps, not against the declared ones (0064). Adding a vocabulary key 
 changes how a domain contributes its vocabulary, which is a decision record
 when the change is made.
 
-**Publication.** The packs are built, checked and run as an instance in CI
-(0008). Putting them on the registry needs the `@werunfoundry` scope to exist
-there, which is an account, not code.
+**Publication.** Every merge to main publishes the five packages to the
+public registry as `0.1.0-main.g` and the commit (0073). The packs are still
+built and run as an instance in CI (0008); that proves the packed bytes, not
+what the registry serves.
 
 **The first instance runs.** Generated from `template/`, in its own
 repository, with real adapters, it has run against real data: 0043 to 0045

@@ -1,5 +1,5 @@
 /**
- * Metric source, sandbox. Reads every metric a acquisition experiment type is judged
+ * Metric source, sandbox. Reads every metric an acquisition experiment type is judged
  * on, guardrails included, from the sandbox's own data and state. A key it
  * does not read is refused, never answered with zero; a zero it does answer
  * is a count of invented events that happens to be zero.

@@ -5,15 +5,19 @@
  * The template is a workspace package here, so that it is typechecked in CI
  * against the real contracts rather than being a folder of hopeful examples.
  * That means its dependencies read `workspace:*`, which means exactly nothing
- * outside this repository — so the copy rewrites them to the engine's current
- * version, which is the one the template was last verified against.
+ * outside this repository — so the copy rewrites them to the version this
+ * commit publishes: `0.1.0-main.g` and seven characters of HEAD (decision
+ * 0073). A caret on `0.1.0` matches no prerelease; the instance pins exactly.
  *
  *   node scripts/new-instance.mjs ../my-instance
  */
 
+import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { versionOf } from "./publish.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const target = process.argv[2];
@@ -29,7 +33,8 @@ if (existsSync(to)) {
   process.exit(1);
 }
 
-const version = JSON.parse(readFileSync(join(root, "core/package.json"), "utf8")).version;
+const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const version = versionOf(sha);
 
 // Everything except the workspace links, which mean nothing outside it.
 cpSync(join(root, "template"), to, {
@@ -54,7 +59,7 @@ writeFileSync(icpPath, dated);
 const pkgPath = join(to, "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 for (const [name, spec] of Object.entries(pkg.dependencies ?? {})) {
-  if (spec === "workspace:*") pkg.dependencies[name] = `^${version}`;
+  if (spec === "workspace:*") pkg.dependencies[name] = version;
 }
 pkg.name = target.split("/").filter(Boolean).pop();
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);

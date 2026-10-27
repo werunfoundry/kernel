@@ -35,13 +35,20 @@ follow:
 ## How this instance gets the engine
 
 As a published version, or as a packed tarball — never as a folder
-(decision 0025). A tarball is what a publish would upload: `pnpm pack`
-applies the package's `publishConfig` and rebuilds its JavaScript, which a
-folder path skips, and an instance installed from a folder fails at its first
-command.
+(decision 0025). Every merge to main publishes the five packages as
+`0.1.0-main.g` and the first seven characters of that commit (decision
+0073). `scripts/new-instance.mjs` pins that version; the lockfile then says
+which engine this instance runs. A range like `^0.1.0` matches no
+prerelease — pin the exact version.
 
-Until the packages are on the registry, or to try a change to the engine
-before it is published, pack them from a checkout of the engine:
+```json
+"dependencies": { "@werunfoundry/core": "0.1.0-main.g81b2db8" }
+```
+
+To try a change to the engine before it is published, pack from a checkout
+and point the dependencies at the tarballs, here and in the overrides (one
+engine package depends on another, and pnpm must take that one from the
+tarball too):
 
 ```
 mkdir -p ../packs
@@ -49,10 +56,6 @@ mkdir -p ../packs
 (cd ../kernel/domains/relations && pnpm pack --pack-destination ../../../packs)
 (cd ../kernel/domains/acquisition       && pnpm pack --pack-destination ../../../packs)
 ```
-
-and point the dependencies at the tarballs, here and in the overrides (one
-engine package depends on another, and pnpm must take that one from the
-tarball too):
 
 ```json
 "dependencies": { "@werunfoundry/core": "file:../packs/werunfoundry-core-0.1.0.tgz" }

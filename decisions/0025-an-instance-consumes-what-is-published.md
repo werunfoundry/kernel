@@ -1,5 +1,8 @@
 # 0025 — An instance consumes what is published
 
+> Completed by [0073](0073-a-merge-publishes-the-commit-it-names.md): a merge
+> to main publishes the five packages as `0.1.0-main.g` and the commit.
+
 Completes [0008](0008-the-build-now-and-no-loader-anywhere.md), which wired
 the build and ruled out a loader in an instance, and rests on
 [0006](0006-the-published-artifact-is-javascript.md) and

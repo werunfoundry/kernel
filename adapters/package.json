@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Adapters the kernel ships: one folder per provider, each satisfying contracts the domains declare.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/werunfoundry/kernel",
+    "directory": "adapters"
+  },
   "type": "module",
   "exports": {
     "./*": "./*/index.ts"

@@ -8,7 +8,13 @@
  * Each draft awaiting review is shown whole — who it goes to, its step, its
  * subject and its body as they will be sent — and approved only when the
  * address it goes to is typed again. Enter, or anything else, leaves it
- * awaiting review and shows the next. There is no flag that approves several,
+ * awaiting review and shows the next.
+ *
+ * `edit` corrects it first (decision 0072): the draft opens in the person's
+ * editor (`VISUAL`, or `EDITOR`), the corrected text is shown whole, and the
+ * address is typed again to approve that text. A correction is marked on
+ * the draft, and the experiment's streak goes back to zero. It is the only
+ * recourse for a person drafted from a template since corrected. There is no flag that approves several,
  * or one without its text being shown: an approval is the one guarantee
  * between a draft and a message that leaves, and a function call cannot give
  * it (`runtime/approve`).
@@ -20,7 +26,9 @@
  * shows what awaits review, and writes nothing.
  */
 
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
@@ -44,6 +52,36 @@ function show(d: AwaitingDraft, n: number, of: number): string {
     d.body ?? "",
     "---- end of body ----",
   ].join("\n");
+}
+
+const BODY_LINE = "---- body: edit below this line ----";
+
+/**
+ * The draft's text, corrected in the person's editor, or why it was not.
+ * A step without a subject stays without one: the provider's step decides it.
+ */
+function correct(d: AwaitingDraft): { subject: string | null; body: string } | { not: string } {
+  const editor = process.env.VISUAL?.trim() || process.env.EDITOR?.trim();
+  if (!editor) return { not: "no editor is set: set VISUAL or EDITOR to correct a draft" };
+  const dir = mkdtempSync(join(tmpdir(), "kernel-approve-"));
+  const file = join(dir, "draft.txt");
+  try {
+    writeFileSync(file, `${d.subject !== null ? `subject: ${d.subject}\n` : ""}${BODY_LINE}\n${d.body ?? ""}\n`);
+    // The editor takes the terminal while it runs, then gives it back.
+    const ran = spawnSync("sh", ["-c", `${editor} "$1"`, "sh", file], { stdio: "inherit" });
+    if (ran.status !== 0) return { not: `the editor exited ${ran.status ?? ran.signal}` };
+    const text = readFileSync(file, "utf8");
+    const at = text.indexOf(`${BODY_LINE}\n`);
+    if (at < 0) return { not: `the line "${BODY_LINE}" is gone, so the body cannot be told from the subject` };
+    const head = text.slice(0, at).replace(/\n$/, "");
+    const body = text.slice(at + BODY_LINE.length + 1).replace(/\n$/, "");
+    if (!body.trim()) return { not: "the corrected body is empty" };
+    if (d.subject === null) return head.trim() ? { not: "this step is sent without a subject, and stays without one" } : { subject: null, body };
+    if (!head.startsWith("subject: ") || head.includes("\n") || !head.slice(9).trim()) return { not: 'the subject is one line, "subject: …", and not empty' };
+    return { subject: head.slice(9), body };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 async function main(): Promise<number> {
@@ -103,10 +141,25 @@ async function main(): Promise<number> {
           console.log("Nothing to type again for a person whose keys were erased: left awaiting review.");
           continue;
         }
-        process.stdout.write(`Approving lets this text go to ${d.label} when they are enrolled; it sends nothing now. Type the address again to approve, or press Enter to leave it: `);
-        const next = await lines.next();
+        process.stdout.write(`Approving lets this text go to ${d.label} when they are enrolled; it sends nothing now. Type the address again to approve, "edit" to correct it first, or press Enter to leave it: `);
+        let next = await lines.next();
         // Input that ends — a closed terminal — approves nothing more.
-        const typed: string | null = next.done ? null : next.value;
+        let typed: string | null = next.done ? null : next.value;
+        let corrected: { subject: string | null; body: string } | undefined;
+        if (typed?.trim() === "edit") {
+          rl.pause();
+          const c = correct(d);
+          rl.resume();
+          if ("not" in c) {
+            console.log(`not corrected: ${c.not}. Left awaiting review.`);
+            continue;
+          }
+          corrected = c;
+          console.log(show({ ...d, subject: c.subject, body: c.body }, i + 1, drafts.length).replace("---- body, as it will be sent ----", "---- body, corrected, as it will be sent ----"));
+          process.stdout.write(`A correction is marked on the draft, and the experiment's streak goes back to zero. Type the address again to approve the corrected text, or press Enter to leave it as it was: `);
+          next = await lines.next();
+          typed = next.done ? null : next.value;
+        }
         if (typed === null) {
           console.log("\napprove: the input ended. Nothing more was approved.");
           break;
@@ -119,10 +172,10 @@ async function main(): Promise<number> {
           console.log("what was typed does not match: left awaiting review.");
           continue;
         }
-        const r = await approveAsPerson(connection.db, { draftId: d.id, by, trigger: "cli" });
+        const r = await approveAsPerson(connection.db, { draftId: d.id, by, trigger: "cli", ...(corrected ? { corrected } : {}) });
         if (r.decided.ok) {
           approved++;
-          console.log(`run: ${r.runId} — approved by ${by}`);
+          console.log(`run: ${r.runId} — approved by ${by}${corrected ? ", corrected" : ""}`);
         } else {
           refused++;
           console.log(`run: ${r.runId} — refused: ${r.decided.refused}`);

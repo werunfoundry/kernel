@@ -111,7 +111,7 @@ async function main(): Promise<number> {
         return 1;
       }
     }
-    console.log(`would record: variant ${given.variant}${given.corrects ? ` (a correction of ${given.corrects}: not an arm)` : ""}, step ${given.step}, ${given.channel}${given.delayDays !== undefined ? `, ${given.delayDays} days after the step before` : ""}`);
+    console.log(`would record: variant ${given.variant}${given.corrects ? ` (a correction of ${given.corrects}: not an arm)` : ""}, step ${given.step}, ${given.channel}${given.delayDays !== undefined ? `, ${given.delayDays} day${given.delayDays === 1 ? "" : "s"} after the step before` : ""}`);
     if (given.subject !== undefined) console.log(`subject: ${given.subject}`);
     console.log(`---- body, as every draft of this step will start ----\n${body}\n---- end of body ----`);
     if (dryRun) {

@@ -7,7 +7,8 @@
 
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
 
@@ -73,11 +74,11 @@ const states = async () =>
 const quote = (a: string) => `'${a.replace(/'/g, `'\\''`)}'`;
 
 /** The command as a process. `terminal` runs it on a pseudo-terminal; `typed` is what the person types. */
-function run(args: string[], opts: { terminal?: boolean; typed?: string } = {}): Promise<{ status: number | null; out: string }> {
+function run(args: string[], opts: { terminal?: boolean; typed?: string; env?: Record<string, string> } = {}): Promise<{ status: number | null; out: string }> {
   const argv = [process.execPath, "--import", "tsx", command, ...args];
-  const child = opts.terminal
-    ? spawn("script", ["-qec", argv.map(quote).join(" "), "/dev/null"], { cwd, env: { ...process.env, DATABASE_URL: url } })
-    : spawn(argv[0]!, argv.slice(1), { cwd, env: { ...process.env, DATABASE_URL: url } });
+  // No editor but the one a test gives: the person's own is not the test's.
+  const env = { ...process.env, VISUAL: "", EDITOR: "", DATABASE_URL: url, ...opts.env };
+  const child = opts.terminal ? spawn("script", ["-qec", argv.map(quote).join(" "), "/dev/null"], { cwd, env }) : spawn(argv[0]!, argv.slice(1), { cwd, env });
   let out = "";
   child.stdout.on("data", (d) => (out += d));
   child.stderr.on("data", (d) => (out += d));
@@ -164,5 +165,63 @@ describe("kernel-approve", { skip: base ? false : "TEST_DATABASE_URL is not set"
     }
     assert.deepEqual(await states(), untouched);
     assert.equal(await count("core.run"), 0);
+  });
+});
+
+/** An editor that does to the file what a person would: a script, given the file's path. */
+const editors = mkdtempSync(join(tmpdir(), "kernel-approve-editors-"));
+after(() => rmSync(editors, { recursive: true, force: true }));
+const editor = (name: string, script: string) => {
+  const path = join(editors, name);
+  writeFileSync(path, `#!/bin/sh\n${script}\n`);
+  chmodSync(path, 0o755);
+  return { EDITOR: path };
+};
+const correcting = editor("correct", `sed -i -e 's/^subject: Hello Ada$/subject: Hello again, Ada/' -e 's/^A first line\\.$/A corrected line./' "$1"`);
+
+describe("kernel-approve, correcting a draft at approval (0072)", { skip: base ? false : "TEST_DATABASE_URL is not set" }, () => {
+  const ada = async () => (await client.query("select d.state, d.rendered_subject, d.rendered_body, d.edited_before_approval from acquisition.draft d join relations.person p on p.id = d.person_id where p.email = 'ada@example.com'")).rows[0];
+  const streak = async () => (await client.query("select autonomy_streak from core.experiment")).rows[0].autonomy_streak as number;
+
+  it("approves the corrected text once the address is typed again, marks it edited, and sets the streak back to zero", async () => {
+    await client.query("update core.experiment set autonomy_streak = 3");
+    const r = await run(approveAll, { terminal: true, typed: "edit\nada@example.com\n\n", env: correcting });
+    assert.equal(r.status, 0, r.out);
+    const shown = r.out.replace(/\r\n/g, "\n");
+    assert.ok(shown.includes("subject: Hello again, Ada\n---- body, corrected, as it will be sent ----\nHello Ada,\n\nA corrected line.\n\nA second one.\n---- end of body ----"), shown);
+    assert.match(shown, /approved by an operator, corrected/);
+    assert.deepEqual(await ada(), { state: "approved", rendered_subject: "Hello again, Ada", rendered_body: "Hello Ada,\n\nA corrected line.\n\nA second one.", edited_before_approval: true });
+    assert.equal(await streak(), 0);
+  });
+
+  it("leaves the draft as it was when the corrected text is not approved", async () => {
+    const r = await run(approveAll, { terminal: true, typed: "edit\n\n\n", env: correcting });
+    assert.equal(r.status, 0, r.out);
+    assert.deepEqual(await ada(), { state: "awaiting_review", rendered_subject: "Hello Ada", rendered_body: BODY, edited_before_approval: false });
+    assert.deepEqual(await states(), untouched);
+  });
+
+  it("corrects nothing, and leaves the draft awaiting review, with no editor or with a text it cannot read", async () => {
+    for (const [env, why] of [
+      [{}, /no editor is set/],
+      [editor("drop-line", `sed -i '/^---- body/d' "$1"`), /is gone, so the body cannot be told from the subject/],
+      [editor("empty", `printf 'subject: Hello Ada\\n---- body: edit below this line ----\\n' > "$1"`), /the corrected body is empty/],
+      [editor("fails", "exit 3"), /the editor exited 3/],
+    ] as const) {
+      const r = await run(approveAll, { terminal: true, typed: "edit\n\n", env });
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.out, why);
+      assert.match(r.out, /not corrected: .* Left awaiting review\./);
+    }
+    assert.deepEqual(await states(), untouched);
+    assert.equal(await count("core.run"), 0);
+  });
+
+  it("keeps a step without a subject without one", async () => {
+    const addSubject = editor("add-subject", `sed -i '1i subject: Hello Bob' "$1"`);
+    const r = await run(approveAll, { terminal: true, typed: "\nedit\n", env: addSubject });
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /this step is sent without a subject, and stays without one/);
+    assert.deepEqual(await states(), untouched);
   });
 });

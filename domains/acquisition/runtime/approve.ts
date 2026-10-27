@@ -69,12 +69,21 @@ export async function awaitingReview(db: Database, experimentId: string): Promis
   }));
 }
 
-/** One approval, as a run of its own with the person as its actor. A refusal fails the run with its reason. */
-export async function approveAsPerson(db: Database, input: { draftId: string; by: string; trigger: Trigger }): Promise<{ runId: string; decided: Decided }> {
+/**
+ * One approval, as a run of its own with the person as its actor. A refusal
+ * fails the run with its reason. A corrected text is the person's correction
+ * at approval (decision 0072): `approve` marks the draft edited, and the
+ * experiment's streak goes back to zero.
+ */
+export async function approveAsPerson(
+  db: Database,
+  input: { draftId: string; by: string; trigger: Trigger; corrected?: { subject: string | null; body: string } },
+): Promise<{ runId: string; decided: Decided }> {
   const by = input.by.trim();
   const open = await openRun(db, { processKey: "acquisition.draft.approve", trigger: input.trigger, actor: { type: "human", id: by }, dryRun: false });
   try {
-    const decided = await approve(db, input.draftId, { by }, { actor: { type: "human", id: by }, runId: open.id });
+    const review = input.corrected ? { by, renderedBody: input.corrected.body, ...(input.corrected.subject !== null ? { renderedSubject: input.corrected.subject } : {}) } : { by };
+    const decided = await approve(db, input.draftId, review, { actor: { type: "human", id: by }, runId: open.id });
     await open.finish(decided.ok ? { status: "succeeded" } : { status: "failed", error: decided.refused.slice(0, 500) });
     return { runId: open.id, decided };
   } catch (error) {

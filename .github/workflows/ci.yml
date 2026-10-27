@@ -128,11 +128,20 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - name: publish the five at this commit
-        run: node scripts/publish.mjs
-        env:
+        run: |
           # Granular write token on @werunfoundry. Expires 25 January 2027 —
           # npm caps a write token at 90 days, with no exception. Trusted
           # publishing (OIDC, no token) is the state this moves to once the
           # five exist; until then this secret is what publishes (decision
           # 0073). Read here when a publish fails.
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "publish: NODE_AUTH_TOKEN is empty — repository secret NPM_TOKEN is missing or not granted to Actions (decision 0073)."
+            exit 1
+          fi
+          # setup-node writes an .npmrc that expands NODE_AUTH_TOKEN for npm;
+          # pnpm publish still needs the token on the line for this job. Home
+          # only — never a file in the repository.
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
+          node scripts/publish.mjs
+        env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

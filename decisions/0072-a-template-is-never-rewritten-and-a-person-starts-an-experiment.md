@@ -11,6 +11,9 @@
 > that is not running, whoever approved it, and an enrolment from a list
 > reads the status first, so a dry run says what the live run will do.
 
+> Built by #159, in part: `kernel-approve` corrects a draft at approval, in
+> the person's editor; the correction is marked and the streak reset.
+
 Completes [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md),
 whose gate refuses a contact for an experiment that is not running only
 when a lane approved it. Rests on

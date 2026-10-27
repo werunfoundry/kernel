@@ -7,6 +7,10 @@
 > with no template; `kernel-template`, which never rewrites, replaces while
 > no draft cites, and records a correction.
 
+> Built by #158, in part: the gate refuses every message of an experiment
+> that is not running, whoever approved it, and an enrolment from a list
+> reads the status first, so a dry run says what the live run will do.
+
 Completes [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md),
 whose gate refuses a contact for an experiment that is not running only
 when a lane approved it. Rests on

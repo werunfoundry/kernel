@@ -99,3 +99,40 @@ jobs:
         # changed here, because an advisory was published elsewhere — that is
         # the point of it, not a flake.
         run: pnpm audit --prod --audit-level high
+
+  # Publishes only once every gate above has passed on this same commit
+  # (decision 0073). The gates live as steps of `doctrine` today — the
+  # checks, their tests, the engine's tests, the packed instance, the
+  # typecheck, the migrations, the advisories. If that job is later split,
+  # every piece must stay in `needs:` here: a version that failed its own
+  # tests cannot be taken back.
+  publish:
+    needs: doctrine
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: publish-${{ github.sha }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          # Makes the registry read NODE_AUTH_TOKEN. No .npmrc is committed:
+          # an instance's identifiers live in .env, never in a file (0073).
+          registry-url: https://registry.npmjs.org
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: publish the five at this commit
+        run: node scripts/publish.mjs
+        env:
+          # Granular write token on @werunfoundry. Expires 25 January 2027 —
+          # npm caps a write token at 90 days, with no exception. Trusted
+          # publishing (OIDC, no token) is the state this moves to once the
+          # five exist; until then this secret is what publishes (decision
+          # 0073). Read here when a publish fails.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -266,6 +266,17 @@ describe("an enrolment from a list carries the kernel's messages (0064)", { skip
     ]);
   });
 
+  it("enrols no one, dry or live, for an experiment that is not running, though its drafts were approved by a person (0072)", async () => {
+    const ada = await aPerson("ada@example.com", "example.com");
+    const { experimentId, templates } = await aCampaign([{ personId: ada }]);
+    await drafted(experimentId, ada, templates);
+    for (const status of ["draft", "measuring"]) {
+      await client.query("update core.experiment set status = $1 where id = $2", [status, experimentId]);
+      for (const dryRun of [true, false]) await assert.rejects(run(request(experimentId, {}, { dryRun })), new RegExp(`is ${status}, not running: .* \\(0072\\)`));
+    }
+    assert.deepEqual([(await one("select count(*)::int as n from core.run where process_key like 'acquisition.enrol.%'")).n, (await one("select count(*)::int as n from relations.message")).n], [0, 0]);
+  });
+
   it("refuses an unsolicited enrolment without a cap, before any run: there is no default (0038)", async () => {
     const { experimentId } = await aCampaign([]);
     await assert.rejects(run(request(experimentId, { unsolicited: true })), /an unsolicited enrolment needs a cap — a count and a window — and there is no default/);

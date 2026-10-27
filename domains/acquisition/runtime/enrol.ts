@@ -52,18 +52,17 @@
  *
  * - the message gate (0038) is not asked on a dry run. An approval the gate
  *   refuses live is announced as enrolled — measured with drafts a lane
- *   approved for an experiment no longer running. Drafts a person approved
- *   are not concerned: the gate then asks nothing the dry run has not;
+ *   approved for an experiment whose lane is not the approval's. An
+ *   experiment that is not running is read before either, below;
  * - the company's and the person's records are written only live, so a
  *   conflict between recorded keys is met only then.
  *
  * The provider's own answer is the one thing a dry run cannot know.
  *
- * **And one check neither asks.** The experiment's status conditions the
- * contact only for a lane's approval: drafts a person approved are carried
- * for an experiment that is not running, dry and live alike — measured with
- * one that is `measuring`. The gap is the gate's (`relations/runtime/message`,
- * *lane*); known, not fixed.
+ * **An experiment that is not running enrols no one**, dry or live. The gate
+ * refuses its every message, whoever approved it (0072); the run reads the
+ * status first, so that a dry run does not announce what the gate will
+ * refuse.
  */
 
 import { createHash } from "node:crypto";
@@ -281,8 +280,12 @@ async function listed(deps: EnrolDeps, from: NonNullable<EnrolRequest["fromList"
   const list = await readList(deps.db, from.listKey.trim());
   if (!list) throw new Error(`no list ${from.listKey} is on record`);
   if (!list.sealedAt) throw new Error(`the list ${from.listKey} is not sealed: it is still being constituted`);
-  const [exp] = await deps.db.select({ slug: experimentTable.slug }).from(experimentTable).where(eq(experimentTable.id, from.experimentId));
+  const [exp] = await deps.db.select({ slug: experimentTable.slug, status: experimentTable.status }).from(experimentTable).where(eq(experimentTable.id, from.experimentId));
   if (!exp) throw new Error(`no experiment ${from.experimentId} is on record`);
+  // The gate refuses every message of an experiment that is not running
+  // (0072), and is not asked on a dry run: read here, the dry run says what
+  // the live run will do.
+  if (exp.status !== "running") throw new Error(`the experiment ${exp.slug} is ${exp.status}, not running: ${exp.status === "draft" ? "no person has started it" : "it no longer sends"} (0072)`);
   const templates = await deps.db
     .select({ variant: template.variant, step: template.step, channel: template.channel, delayDays: template.delayDays, subject: template.subject })
     .from(template)

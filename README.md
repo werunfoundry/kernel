@@ -127,12 +127,6 @@ outside sourcing — a referral, a conversation, an address of one's own to
 test with — cannot be put on a list (`kernel-list`) except by writing the
 row directly, outside any command and any run.
 
-**An experiment's status conditions the contact only half the time.** A
-known defect. The message gate refuses a lane's approval for an experiment
-that is not running, and not a person's: drafts a person approved are
-enrolled for an experiment that is `measuring` (measured). Written at the
-gate, in `relations/runtime/message.ts`.
-
 **Lifecycle stages are a closed enum, and must not be.** A known defect, not
 an open question: what to do is settled, and it gets expensive on a date.
 
@@ -216,8 +210,9 @@ whatever writes it, reads it, or connects it to the rest.
 - *Written by:* nobody creates one. `core/runtime/experiment.ts` writes
   `autonomy_streak` only, on each human review (0027).
 - *Read by:* `laneOf` (lane and streak), the draft's gate (`status` must be
-  `running` to queue) and the message's (`lane` and `status`, for a lane's
-  approval — 0038). `acquisition.template`, `acquisition.draft`, `relations.message` and
+  `running` to queue) and the message's: `status` must be `running` for
+  every message tied to an experiment, whoever approved it (0072), and
+  `lane` for a lane's approval (0038). `acquisition.template`, `acquisition.draft`, `relations.message` and
   `relations.touch` reference it.
 - *Not wired:* a writer that creates an experiment and checks its `type`
   against the declared types; the status transitions, enforced in the schema

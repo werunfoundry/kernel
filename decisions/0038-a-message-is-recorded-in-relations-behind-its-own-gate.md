@@ -12,6 +12,10 @@
 > Superseded in part by [0050](0050-the-sending-path-end-to-end-with-its-hand-over-stubbed.md):
 > the cap counts unsolicited touches, and the messages no touch confirms yet.
 
+> Completed by [0072](0072-a-template-is-never-rewritten-and-a-person-starts-an-experiment.md):
+> the gate refuses every contact for an experiment that is not running,
+> whoever approved it.
+
 Completes [0027](0027-a-draft-waits-on-its-lane.md), whose gate is on the
 draft.
 

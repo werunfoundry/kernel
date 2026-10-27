@@ -14,6 +14,10 @@
 > Built by #159, in part: `kernel-approve` corrects a draft at approval, in
 > the person's editor; the correction is marked and the streak reset.
 
+> Built by #160, in part: the one reading by variant, whose answer carries
+> the mark, and `check.mjs` refusing a variant put in a metric query
+> anywhere else. It has no caller yet.
+
 Completes [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md),
 whose gate refuses a contact for an experiment that is not running only
 when a lane approved it. Rests on

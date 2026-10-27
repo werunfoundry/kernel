@@ -636,6 +636,50 @@ if (allFiles.includes(CONTACT_VERB_HOME)) {
   }
 }
 
+/* -- Rule 6: one place reads a metric by variant (decision 0072) --------- */
+
+/**
+ * A variant is an arm of an experiment, or a correction of one, which is not
+ * an arm: compared with the arm it corrects as if randomised, it gives a
+ * false conclusion. The core cannot hold that mark, so the one reading by
+ * variant is `VARIANT_READING_HOME`, whose answer carries the mark beside
+ * the number. That holds only while it is the one place a variant is put in
+ * a metric query, and this is what holds it.
+ *
+ * Outside an adapter, which reads the variant it is passed, and a test, a
+ * metric query's `params` is given a `variant` in `VARIANT_READING_HOME` and
+ * nowhere else, and there exactly once: in an object literal after
+ * `params:`, or set as `params.variant` or `params["variant"]`. A computed
+ * key is not seen: a tripwire on text, as for the contact verb.
+ */
+
+const VARIANT_READING_HOME = "domains/acquisition/runtime/variant-reading.ts";
+const VARIANT_IN_PARAMS = /\bparams\s*:\s*\{[^{}]*\bvariant\b|\bparams\s*\??\.\s*variant\s*=(?!=)|\bparams\s*\[\s*["'`]variant["'`]\s*\]\s*=(?!=)/g;
+
+const variantReadings = [];
+for (const file of allFiles) {
+  if (!ENGINE_CODE.test(file) || IS_TEST.test(file) || ADAPTER_SEGMENT.test(file)) continue;
+  // This file names the pattern it looks for.
+  if (file === "scripts/check.mjs") continue;
+  let body;
+  try {
+    body = readFileSync(file, "utf8");
+  } catch {
+    continue;
+  }
+  const lines = body.split("\n");
+  const prose = (index) => /^\s*(\*|\/\/)/.test(lines[lineAt(body, index) - 1] ?? "");
+  for (const match of body.matchAll(VARIANT_IN_PARAMS)) {
+    if (prose(match.index)) continue;
+    const line = lineAt(body, match.index);
+    if (file === VARIANT_READING_HOME) variantReadings.push(line);
+    else fail(6, file, line, `puts a variant in a metric query: only ${VARIANT_READING_HOME} does, so that a reading by variant always carries whether the variant is a correction (decision 0072)`);
+  }
+}
+if (allFiles.includes(VARIANT_READING_HOME) && variantReadings.length !== 1) {
+  fail(6, VARIANT_READING_HOME, variantReadings[1] ?? 0, `puts a variant in a metric query ${variantReadings.length} times: once, in one place (decision 0072)`);
+}
+
 /* -- Rule 6: a decision's cross-references hold (decision 0059) ---------- */
 
 /**

@@ -449,6 +449,48 @@ describe("rule 6 — one place calls a contact verb (decision 0070)", () => {
   });
 });
 
+describe("rule 6 — one place reads a metric by variant (decision 0072)", () => {
+  /** The domain that holds the one reading, as the repository has it: enough for the other rules to pass. */
+  const home = (body) => ({
+    "domains/acquisition/domain.yaml": "name: acquisition\nversion: 0.0.0\ndescription: x\nschema: acquisition\ndependsOn: []\n",
+    "domains/acquisition/package.json":
+      '{ "name": "@werunfoundry/acquisition", "exports": { "./domain.yaml": "./domain.yaml" }, "publishConfig": { "exports": { "./domain.yaml": "./domain.yaml" } } }\n',
+    "domains/acquisition/db/schema.ts": 'import { pgSchema } from "drizzle-orm/pg-core";\nexport const acquisition = pgSchema("acquisition");\n',
+    "domains/acquisition/runtime/variant-reading.ts": body,
+  });
+  const ONE_READING = "export const query = (slug, variant) => ({ key: 'k', params: { experiment: slug, variant } });\n";
+
+  it("allows the one reading in its home, and a variant in an adapter, a test and prose", () => {
+    accepts(
+      repo({
+        ...home(ONE_READING),
+        "adapters/vendor/index.ts": "export const read = (q) => q.params.variant;\nexport const again = { params: { variant: 'a' } };\n",
+        "domains/alpha/runtime/reading.test.ts": "read({ key: 'k', params: { variant: 'b' } });\n",
+        "domains/alpha/runtime/note.ts": "// never `params: { variant }` outside the one reading\nexport const x = 1;\n",
+      }),
+    );
+  });
+
+  it("refuses a variant put in a metric query elsewhere, and names the place", () => {
+    refuses(repo({ ...home(ONE_READING), "domains/alpha/runtime/shortcut.ts": "export const q = { key: 'k', params: { experiment: 'e', variant: 'b' } };\n" }), 6, "domains/alpha/runtime/shortcut\\.ts:1.*\\n.*puts a variant in a metric query");
+  });
+
+  it("refuses a variant set on params by property or in brackets", () => {
+    for (const line of ["export const set = (params) => { params.variant = 'b'; };", "export const set = (params) => { params[\"variant\"] = 'b'; };"]) {
+      refuses(repo({ ...home(ONE_READING), "api/shortcut.ts": `${line}\n` }), 6, "api/shortcut\\.ts:1");
+    }
+  });
+
+  it("does not take reading a variant for putting one", () => {
+    accepts(repo({ ...home(ONE_READING), "api/report.ts": "export const which = (params) => params.variant === 'a';\n" }));
+  });
+
+  it("refuses a second reading in the home itself, and a home that no longer has one", () => {
+    refuses(repo(home(`${ONE_READING}export const again = { params: { variant: 'c' } };\n`)), 6, "puts a variant in a metric query 2 times");
+    refuses(repo(home("export const nothing = 1;\n")), 6, "puts a variant in a metric query 0 times");
+  });
+});
+
 describe("rule 6 — a rule can only hold where it can see", () => {
   it("refuses an adapter in the core, which would switch rule 1 off there", () => {
     refuses(repo({ "core/adapters/crm.ts": "export const x = 1;\n" }), 6, "adapter lives in");

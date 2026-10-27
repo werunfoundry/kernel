@@ -56,12 +56,25 @@ in the DDL. It carries every step, since a variant is a whole plan, and it
 reaches only the people not drafted yet. It is not an arm: those it
 reaches were chosen by when they were drafted, not at random, and
 comparing it with what it corrects as if they were randomised arms is the
-false conclusion this system exists to prevent. Nothing in the kernel
-reads by variant today: `readMetric` has no caller, and a variant reaches
-a source only as a value passed through (0018). The first path that does
-reads the mark, and keeps a correction out of a comparison with what it
-corrects, or shows it beside it named as a correction — never compared in
-silence.
+false conclusion this system exists to prevent.
+
+**A correction names an arm, never another correction.** A second
+correction of the same arm names that arm, as the first did; the DDL
+refuses `corrects` naming a variant that is itself a correction, or none
+of the experiment's. There is no chain to follow: every variant is an arm
+or a correction of one.
+
+**The mark is in the type of the one reading by variant.** Nothing in the
+kernel reads by variant today: `readMetric` has no caller, and a variant
+reaches a source only as a value passed through (0018). The core cannot
+hold the mark: it knows no variant and no template, and cannot read the
+domain that does. So `acquisition` holds the one reader by variant, and
+its answer carries, beside the reading, the variant and the arm it
+corrects or none: a caller cannot have the number without the mark in its
+hands, and decides what to do with it. `check.mjs` holds the one place: a
+variant put in a metric query anywhere else is refused, as 0070's rule
+holds the one contact verb, with the same limit — a computed key passes
+it.
 
 **A drafted person is corrected at approval.** `kernel-approve` lets the
 person reading a draft change its text before approving it. That is what a
@@ -89,10 +102,17 @@ enrolments still running at the sequencer, approved drafts not yet
 enrolled. Until a decision says it, no command leaves `running`, and the
 gate above stops new contacts only for an experiment that never started.
 
+This holds today only because nothing runs on its own: every enrolment is
+a person running a command, so stopping is not running it again. **A
+scheduler ends that.** The day one runs enrolments or drafts by itself, a
+started experiment can no longer be stopped by anyone, and the scheduler
+must not be built before the act that stops it is decided.
+
 ## Rules out
 
 - A template rewritten in place, or deleted under a draft.
-- A correction measured as an arm.
+- A correction measured as an arm, or a correction of a correction.
+- A number read by variant without the mark beside it.
 - A contact authorised by an experiment no person started.
 
 ## Would reverse it

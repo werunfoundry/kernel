@@ -205,6 +205,16 @@ describe("writing a message", { skip: base ? false : "TEST_DATABASE_URL is not s
     assert.ok((await writeMessage(db, register, input(personId, { unsolicited: true, cap: { max: 1, withinDays: 30 } }))).ok);
   });
 
+  it("experiment: refuses a message for an experiment no person started, or that no longer sends, whoever approved it (0072)", async () => {
+    const personId = await aPerson();
+    const approved = (experimentId?: string, key = `k-${Math.random()}`) =>
+      writeMessage(db, register, input(personId, { key, actor: { type: "agent" }, approvedBy: "an operator", ...(experimentId ? { experimentId } : {}) }));
+    assert.deepEqual(await refusal(approved(await anExperiment("reviewed", "draft"))), ["experiment: the experiment is draft, not running: no person has started it (0072)"]);
+    assert.deepEqual(await refusal(approved(await anExperiment("reviewed", "measuring"))), ["experiment: the experiment is measuring, not running: it no longer sends (0072)"]);
+    assert.ok((await approved(await anExperiment("reviewed", "running"))).ok);
+    assert.ok((await approved()).ok, "a message tied to no experiment is not concerned");
+  });
+
   it("lane: refuses an agent's message that names no approval, and takes a person's", async () => {
     const personId = await aPerson();
     const agent = { type: "agent" as const, id: "support-agent" };

@@ -95,6 +95,7 @@ describe("kernel-template", { skip: base ? false : "TEST_DATABASE_URL is not set
     const r = await run(recordAt("a", "1", body("one.txt", "Hello {{firstName}},\n\nA first line."), ["--subject", "A subject", "--delay-days", "2"]), { terminal: true, typed: "spring\n" });
     assert.equal(r.status, 0, r.out);
     assert.match(r.out, /subject: A subject/);
+    assert.match(r.out, /step 1, email, 2 days after the step before/);
     assert.match(r.out, /Hello \{\{firstName\}\},\r?\n\r?\nA first line\./);
     assert.deepEqual(await rows("select variant, step, channel, subject, body, delay_days, corrects from acquisition.template"), [
       { variant: "a", step: 1, channel: "email", subject: "A subject", body: "Hello {{firstName}},\n\nA first line.", delay_days: 2, corrects: null },
@@ -141,6 +142,12 @@ describe("kernel-template", { skip: base ? false : "TEST_DATABASE_URL is not set
       { variant: "a", corrects: null },
       { variant: "b", corrects: "a" },
     ]);
+  });
+
+  it("says one day, not one days", async () => {
+    const r = await run([...recordAt("a", "2", body("two.txt", "Hello")), "--delay-days", "1", "--dry-run"]);
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /step 2, email, 1 day after the step before/);
   });
 
   it("refuses a channel no domain declares, and shows a dry run without writing", async () => {

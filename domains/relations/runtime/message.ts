@@ -30,13 +30,11 @@
  *   caller's window — an inbound touch, the same license the draft's gate
  *   reads (0042).
  *
- *   **Not checked: the experiment's status, for an approval a person gave.**
- *   Only a lane's approval is refused for an experiment that is not running.
- *   A message a person approved is written for an experiment that is
- *   `measuring` — measured through the enrolment, which writes every message
- *   here since the hand-over was withdrawn (0064 §1). `queue`, which refused
- *   it, is no longer on that path. Known, not fixed: the experiment's status
- *   is meant to condition the contact, and does so for half the approvals.
+ * - **experiment** — a message tied to an experiment that is not running,
+ *   whoever approved it (decision 0072). Starting an experiment is the
+ *   person's act that authorises its contacts; a start the gate did not
+ *   read would authorise nothing. A message tied to no experiment — an
+ *   answer to a customer — is not concerned.
  *
  * Protection is not part of it: it is a rule of the addressing motion, and an
  * answer to a customer's question must not be refused by it.
@@ -127,6 +125,12 @@ export async function writeMessage(db: Database, fingerprints: Fingerprinter, in
       }
     }
 
+    if (input.experimentId) {
+      const [e] = await tx.select({ status: experiment.status }).from(experiment).where(eq(experiment.id, input.experimentId));
+      if (!e) refused.push("experiment: the experiment is not recorded");
+      else if (e.status !== "running") refused.push(`experiment: the experiment is ${e.status}, not running: ${e.status === "draft" ? "no person has started it" : "it no longer sends"} (0072)`);
+    }
+
     const approval = input.approvedBy?.trim() || undefined;
     if (input.actor.type !== "human") {
       if (!approval) refused.push("lane: a message not written by a person names who approved it");
@@ -135,12 +139,9 @@ export async function writeMessage(db: Database, fingerprints: Fingerprinter, in
         if (!input.experimentId) refused.push("lane: a reactive approval needs the experiment whose lane gives it");
         else if (within === undefined || !(within > 0)) refused.push("lane: a reactive approval needs a window, in minutes, and there is no default");
         else {
-          const [e] = await tx.select({ lane: experiment.lane, status: experiment.status }).from(experiment).where(eq(experiment.id, input.experimentId));
-          if (!e) refused.push("lane: the experiment is not recorded");
-          else {
-            if (e.lane !== "reactive") refused.push(`lane: the experiment's lane is ${e.lane}, not reactive`);
-            if (e.status !== "running") refused.push(`lane: the experiment is ${e.status}, not running`);
-          }
+          const [e] = await tx.select({ lane: experiment.lane }).from(experiment).where(eq(experiment.id, input.experimentId));
+          // Recorded and running are the experiment's checks, above.
+          if (e && e.lane !== "reactive") refused.push(`lane: the experiment's lane is ${e.lane}, not reactive`);
           if (!(await engagedSince(tx, input.personId, input.channel, new Date(now.getTime() - within * 60_000)))) {
             refused.push(`lane: the person has not reached us on ${input.channel} in the last ${within} minutes`);
           }
@@ -148,12 +149,9 @@ export async function writeMessage(db: Database, fingerprints: Fingerprinter, in
       } else if (approval === "lane:autonomous") {
         if (!input.experimentId) refused.push("lane: an autonomous approval needs the experiment whose lane gives it");
         else {
-          const [e] = await tx.select({ lane: experiment.lane, status: experiment.status }).from(experiment).where(eq(experiment.id, input.experimentId));
-          if (!e) refused.push("lane: the experiment is not recorded");
-          else {
-            if (e.lane !== "autonomous") refused.push(`lane: the experiment's lane is ${e.lane}, not autonomous`);
-            if (e.status !== "running") refused.push(`lane: the experiment is ${e.status}, not running`);
-          }
+          const [e] = await tx.select({ lane: experiment.lane }).from(experiment).where(eq(experiment.id, input.experimentId));
+          // Recorded and running are the experiment's checks, above.
+          if (e && e.lane !== "autonomous") refused.push(`lane: the experiment's lane is ${e.lane}, not autonomous`);
         }
       } else if (approval.startsWith("lane:")) refused.push(`lane: ${approval} is not a lane that approves`);
     }

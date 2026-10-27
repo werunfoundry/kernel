@@ -190,6 +190,13 @@
       "when": 1792706276992,
       "tag": "0026_skip_no_key",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793088112978,
+      "tag": "0027_a_template_is_never_rewritten",
+      "breakpoints": true
     }
   ]
 }

@@ -138,6 +138,12 @@ export const lifecycleStage = acquisition.enum("lifecycle_stage", ["targeted", "
  *
  * A template, not a message: it has no recipient. What is sent to a person
  * is `relations.message` (decision 0038).
+ *
+ * Never rewritten (decision 0072): a trigger refuses any update. While no
+ * draft cites it, a person may withdraw it and record another at its step;
+ * once one does, the draft's foreign key refuses the delete. What was said
+ * is on the draft and the message, not here; what is here is where a draft
+ * came from, and the plan `enrol` holds against the provider's steps.
  */
 export const template = acquisition.table(
   "template",
@@ -149,6 +155,15 @@ export const template = acquisition.table(
       .references(() => experiment.id, { onDelete: "cascade" }),
 
     variant: text("variant").notNull(),
+    /**
+     * The arm this variant corrects, when it is a correction and not an arm
+     * of its own (decision 0072): those it reaches were chosen by when they
+     * were drafted, not at random, and it is never compared with that arm as
+     * if they were randomised. A trigger holds that every step of a variant
+     * carries the same mark, and that it names an arm of the experiment,
+     * never another correction.
+     */
+    corrects: text("corrects"),
     step: integer("step").notNull(),
     channel: text("channel").notNull(),
 
@@ -205,7 +220,12 @@ export const draft = acquisition.table(
       .notNull()
       .references(() => person.id, { onDelete: "restrict" }),
 
-    templateId: uuid("template_id").references(() => template.id, { onDelete: "set null" }),
+    /**
+     * Where the draft came from. A template a draft cites is never deleted
+     * (decision 0072): the delete is refused at the end of its statement,
+     * so an experiment's own deletion, which takes both, still goes through.
+     */
+    templateId: uuid("template_id").references(() => template.id),
 
     step: integer("step").notNull(),
     state: draftState("state").notNull().default("drafting"),

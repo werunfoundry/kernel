@@ -126,9 +126,15 @@ describe("kernel-experiment", { skip: base ? false : "TEST_DATABASE_URL is not s
     const empty = await run(start, { terminal: true, typed: "spring\n" });
     assert.equal(empty.status, 1, empty.out);
     assert.match(empty.out, /it has no template/);
+    assert.doesNotMatch(empty.out, /Type the slug again/, "a start that cannot happen is refused before the person is asked to confirm it");
     assert.equal(await status(), "draft");
 
     await rows("insert into acquisition.template (experiment_id, variant, step, channel, subject, body) values ($1, 'a', 1, 'email', 'Hello', 'A first line.')", [id]);
+    const mistyped = await run(start, { terminal: true, typed: "autumn\n" });
+    assert.equal(mistyped.status, 1, mistyped.out);
+    assert.match(mistyped.out, /does not match\. Nothing was written/);
+    assert.equal(await status(), "draft");
+
     const started = await run(start, { terminal: true, typed: "spring\n" });
     assert.equal(started.status, 0, started.out);
     assert.match(started.out, /variant a, step 1, email: Hello/);
@@ -139,6 +145,7 @@ describe("kernel-experiment", { skip: base ? false : "TEST_DATABASE_URL is not s
     const again = await run(start, { terminal: true, typed: "spring\n" });
     assert.equal(again.status, 1, again.out);
     assert.match(again.out, /the experiment is running: only one in draft is started/);
+    assert.doesNotMatch(again.out, /Type the slug again/);
   });
 
   it("shows what a start would do on a dry run, without a terminal, and writes nothing", async () => {

@@ -33,12 +33,11 @@ BEGIN
     RAISE EXCEPTION 'acquisition.template: every step of variant "%" carries the same mark: an arm, or a correction of the same arm (decision 0072)', NEW.variant
       USING ERRCODE = 'check_violation';
   END IF;
-  IF NEW.corrects IS NOT NULL AND (
-       NEW.corrects = NEW.variant
-    OR NOT EXISTS (
-      SELECT 1 FROM "acquisition"."template"
-      WHERE experiment_id = NEW.experiment_id AND variant = NEW.corrects AND corrects IS NULL
-    )
+  -- A variant naming itself is refused here too: either it has rows, which
+  -- carry another mark, or it has none, and is no arm.
+  IF NEW.corrects IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM "acquisition"."template"
+    WHERE experiment_id = NEW.experiment_id AND variant = NEW.corrects AND corrects IS NULL
   ) THEN
     RAISE EXCEPTION 'acquisition.template: a correction names an arm of its experiment, and "%" is none (decision 0072)', NEW.corrects
       USING ERRCODE = 'check_violation';

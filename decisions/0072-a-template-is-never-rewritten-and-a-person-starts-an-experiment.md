@@ -1,5 +1,12 @@
 # 0072 — A template is never rewritten, and a person starts an experiment
 
+> Built by #156, in part: the template's DDL — never rewritten, not deleted
+> under a draft, its correction's mark held.
+
+> Built by #157, in part: `kernel-experiment`, record then start, refused
+> with no template; `kernel-template`, which never rewrites, replaces while
+> no draft cites, and records a correction.
+
 Completes [0038](0038-a-message-is-recorded-in-relations-behind-its-own-gate.md),
 whose gate refuses a contact for an experiment that is not running only
 when a lane approved it. Rests on

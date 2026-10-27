@@ -45,7 +45,7 @@ scripts/              checks that make the doctrine enforceable
 | Boot | written; resolves every name from the instance (0007) |
 | End to end | in CI, a generated instance migrates, verifies, and from the packs on plain Node runs the inbound pull, the API, the sourcing path dry and live, a person's acts (0047), the enrolment from the list they constitute, carrying its approved messages — dry, live and replayed (0019, 0064) — and an erasure (0049) |
 | Sourcing path | written (0031): company pass by protection and the CRM before any spend — lazy, only as far as the run needs, resuming after what earlier live runs examined (0043) — people, completion in sequence, person pass on the completed identity, every address at the targeted company (0045); run in CI on a generated instance, and on a real instance (0043–0045); what a run kept reaches a person through a list, drafts and their approval (0064) |
-| A person's acts | commands at a terminal, refused without one (0047): `kernel-stage`, `kernel-relationship`, `kernel-list`, `kernel-decide`, `kernel-approve` — a draft approved one at a time, its address typed again (0027) — `kernel-opt-out` — an objection read in a reply, recorded and its sequences stopped (0065 §3) — beside `kernel-acknowledge`, `kernel-erase` and `kernel-attest-stop` |
+| A person's acts | commands at a terminal, refused without one (0047): `kernel-stage`, `kernel-relationship`, `kernel-list`, `kernel-decide`, `kernel-approve` — a draft approved one at a time, its address typed again (0027) — `kernel-opt-out` — an objection read in a reply, recorded and its sequences stopped (0065 §3) — `kernel-experiment` — an experiment recorded in draft, then started, refused with no template (0072) — `kernel-template` — a template recorded, its whole text shown, never rewritten: replaced while no draft cites it, corrected after by a variant marked as a correction (0072) — beside `kernel-acknowledge`, `kernel-erase` and `kernel-attest-stop` |
 | HTTP API | written (0040): `kernel-api`, one token per instance; health, a run, listing and proposing drafts, an erasure's plan. It refuses `actorType: human`, so no act reserved to a person is on it |
 | Erasure | written (0040, 0049): declared per domain, reaching a person by id and by keys, anonymising a run's history rather than deleting it; `kernel-erase` at a terminal, `--plan` and the API show what it reaches and what it does not. Before any of it, each enrolment a provider may hold is suspended there, or the erasure is refused (0056); where retrying cannot help, a person attests the stop with `kernel-attest-stop`. An objector's keys survive as fingerprints in `relations.suppression`, written by the erasure alone (0052, 0062) under versions `kernel-fingerprint` generates (0058); the one reader (0055) reads them wherever the objection is read: sourcing, enrolment, drafting, queueing and the message gate. The API's plan shows the rules only |
 | Sending path | the enrolment carries the kernel's messages (0064): from a frozen list to drafts and a person's approval, then `kernel-enrol --list` reads the provider's steps against the templates, writes each step's message through the gate, and enrols with the messages as the variables the steps render. Unsolicited, a cap is required and judged ahead over each person's whole plan, through a sequencer that pulls what it sent. After the body, the way-out line the instance sets on the sequencer's binding is written and read back at the provider, or the enrolment records that it went without one and why; the run says so aloud (0067, 0069). Written means read back there, not received: the closing rule was measured once in a message received, in the email adapter's README. The hand-over is withdrawn, and so is the enrolment without messages: `--list` is the only form |
@@ -207,15 +207,17 @@ whatever writes it, reads it, or connects it to the rest.
   measurement window; `baseline_snapshot`. The domains declare `metrics` and
   `experimentMetrics`, and `kernel-verify` reports which experiment types the
   bound metric sources can judge (0018).
-- *Written by:* nobody creates one. `core/runtime/experiment.ts` writes
-  `autonomy_streak` only, on each human review (0027).
+- *Written by:* `kernel-experiment` (0072), at a terminal: `record`, in
+  `draft`, its `type` checked against the declared types; `start`, to
+  `running`, refused with no template. Nothing leaves `running`: stopping
+  is not decided. `core/runtime/experiment.ts` writes `autonomy_streak` on
+  each human review (0027).
 - *Read by:* `laneOf` (lane and streak), the draft's gate (`status` must be
   `running` to queue) and the message's: `status` must be `running` for
   every message tied to an experiment, whoever approved it (0072), and
   `lane` for a lane's approval (0038). `acquisition.template`, `acquisition.draft`, `relations.message` and
   `relations.touch` reference it.
-- *Not wired:* a writer that creates an experiment and checks its `type`
-  against the declared types; the status transitions, enforced in the schema
+- *Not wired:* the status transitions past `running`, and in the schema
   as the draft's are; anything that reads the threshold, the sample, the
   budget, the windows or `targets`; the link to enrolment — the enrolment path
   enrols into a `sequenceKey`, the registry (0026) has no experiment, and the
